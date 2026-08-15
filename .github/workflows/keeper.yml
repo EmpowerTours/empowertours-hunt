@@ -1,0 +1,115 @@
+name: keeper
+
+# Drives the payout sweeper and the reconciler.
+#
+# WHY GITHUB ACTIONS AND NOT RAILWAY: railway.json has no `cron` array in its
+# schema. Entries added there are silently ignored — they never fire, nothing
+# errors, and the payout queue simply stops draining with no signal anywhere.
+# This file is the only thing making the keeper run.
+#
+# Required repo configuration:
+#   vars.HUNT_URL        e.g. https://hunt.empowertours.xyz  (no trailing slash)
+#   secrets.CRON_SECRET  must match the deployment's CRON_SECRET, >= 16 chars
+#
+# The routes fail closed: an unset or short CRON_SECRET makes them refuse to run
+# rather than run unauthenticated.
+
+on:
+  schedule:
+    # Sweep approved payouts every 5 minutes.
+    - cron: "*/5 * * * *"
+    # Reconcile ambiguous sends every 15.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Which job to run manually
+        required: true
+        default: both
+        type: choice
+        options: [both, payouts, reconcile]
+
+# Never let two sweeps overlap. Concurrent invocations would each read the
+# pending nonce and collide, and a replaced transaction is exactly the path that
+# turns one payout into two.
+concurrency:
+  group: keeper-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  payouts:
+    # Skip on the 15-minute reconcile-only tick.
+    if: >-
+      github.event_name == 'workflow_dispatch' && (inputs.job == 'both' || inputs.job == 'payouts')
+      || github.event.schedule == '*/5 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sweep APPROVED payouts
+        env:
+          HUNT_URL: ${{ vars.HUNT_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HUNT_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::HUNT_URL or CRON_SECRET is not configured; refusing to run."
+            exit 1
+          fi
+
+          # -f makes curl exit non-zero on 4xx/5xx so a broken keeper is a red
+          # build rather than a queue that quietly stops draining.
+          # Secrets are never echoed; only the response body is printed.
+          http=$(curl -sS -o /tmp/out.json -w '%{http_code}' \
+            -X POST "$HUNT_URL/api/cron/payouts" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            --max-time 300) || true
+
+          echo "HTTP $http"
+          cat /tmp/out.json || true
+          echo
+
+          # 409 means the route found an unresolved payout and halted the sweep
+          # on purpose. That needs a human, so surface it loudly.
+          if [ "$http" = "409" ]; then
+            echo "::error::Sweep halted — an unresolved payout needs reconciliation."
+            exit 1
+          fi
+          if [ "$http" != "200" ]; then
+            echo "::error::Payout sweep failed with HTTP $http"
+            exit 1
+          fi
+
+  reconcile:
+    if: >-
+      github.event_name == 'workflow_dispatch' && (inputs.job == 'both' || inputs.job == 'reconcile')
+      || github.event.schedule == '*/15 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Reconcile SENDING / NEEDS_RECONCILIATION against the chain
+        env:
+          HUNT_URL: ${{ vars.HUNT_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HUNT_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::HUNT_URL or CRON_SECRET is not configured; refusing to run."
+            exit 1
+          fi
+
+          http=$(curl -sS -o /tmp/out.json -w '%{http_code}' \
+            -X POST "$HUNT_URL/api/cron/reconcile" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            --max-time 300) || true
+
+          echo "HTTP $http"
+          cat /tmp/out.json || true
+          echo
+
+          if [ "$http" != "200" ]; then
+            echo "::error::Reconciler failed with HTTP $http"
+            exit 1
+          fi

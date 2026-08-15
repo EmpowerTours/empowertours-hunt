@@ -1,0 +1,756 @@
+// EmpowerTours Treasure Hunt — free-roam GPS collection feeding the TURBO cohort.
+//
+// TWO ECONOMIES, DELIBERATELY DIFFERENT. Do not merge them.
+//
+//   CACHE FINDS pay TURBO CREDIT (see CreditLedger). Credit is denominated in
+//   WMON-wei so it is directly comparable to TurboCohort.tierPrice — ~139 WMON
+//   is one month of Explorer. Credit is NOT withdrawable. It is a discount on a
+//   subscription, so a find costs margin rather than cash, and only converts to
+//   spend when someone actually joins. This is what makes acquisition cost
+//   measurable instead of a guess.
+//
+//   SPAWNS pay real native MON (see Spawn -> Payout). Small, random, ephemeral,
+//   visible on the radar. This is the only path in the system where money
+//   actually leaves the treasury, which is why every bound on it is atomic.
+//
+// Design notes that are load-bearing, not decoration:
+//
+//  * Cache coordinates live ONLY here and in server memory. They are never
+//    serialized to a client response. Spawn coordinates ARE public by design —
+//    the whole mechanic is seeing one appear — so for spawns the defence is
+//    movement plausibility, never secrecy.
+//  * Every claim attempt is persisted with its FINAL outcome. A dispute is
+//    answered by replaying ClaimAttempt rows through lib/hunt/validator.ts,
+//    which is a pure function precisely so that replay is exact. A row must
+//    never say `accepted` for a claim that was ultimately refused.
+//  * Paying MON is irreversible, so it is a two-phase commit: a Spawn collect
+//    accrues a debt, a Payout settles it. Separate rows because the send must
+//    not happen inside the transaction that decides whether it was earned.
+//
+// WEI IS `Decimal @db.Decimal(78, 0)`, NOT `String`.
+// Scale 0 means Postgres itself rejects "0.5", "1e18", "0x10" and "abc" at
+// write time. A malformed reward string used to be able to throw out of
+// BigInt() and wedge a payout mid-send; the database now refuses to store one.
+// Precision 78 holds any uint256. Never widen this to String for convenience.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// The payout lifecycle. Read the transitions before changing any of them —
+// each value exists to answer exactly one question: "may this row be sent?"
+//
+//   PENDING              earned, not yet released              -> APPROVED | VOIDED
+//   APPROVED             released, not yet broadcast           -> SENDING  | VOIDED
+//   SENDING              nonce pinned, broadcast may already   -> SENT | FAILED
+//                        have happened. NEVER auto-retryable.     | NEEDS_RECONCILIATION
+//   SENT                 receipt confirmed on Monad            terminal
+//   FAILED               failed BEFORE the money could move.   -> APPROVED (human)
+//                        Only ever set when txHash IS NULL.
+//   NEEDS_RECONCILIATION broadcast, outcome unknown. A human   -> SENT | FAILED
+//                        or reconciler resolves it against the
+//                        chain. Re-sending is forbidden.
+//   VOIDED               refused by an admin                   terminal
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  SENDING
+  SENT
+  FAILED
+  NEEDS_RECONCILIATION
+  VOIDED
+}
+
+enum AdminRole {
+  // Can review the queue, but cannot release money.
+  VIEWER
+  // Can approve and void payouts, manage hunts and caches.
+  OPERATOR
+  // Can additionally manage admins themselves.
+  OWNER
+}
+
+// How a credit entry arose. Append-only ledger, so this is the audit vocabulary.
+enum CreditReason {
+  CACHE_FIND
+  ADMIN_GRANT
+  ADMIN_REVOKE
+  TURBO_REDEMPTION
+}
+
+// ---------------------------------------------------------------------------
+// CAREER TRACKS
+//
+// A track is a curriculum PLUS a verifier. The curriculum is the cheap half —
+// anyone can write 52 weeks of topic titles in an afternoon. The verifier is
+// what makes a completed step mean anything, which is why it is declared per
+// step and enforced structurally rather than left to the route to remember.
+//
+// Two verifiers exist because two already work in production:
+//   GPS_FIND      a Find row in THIS database proves the player was there.
+//   GITHUB_PUSH   a webhook-confirmed push in the TURBO repo proves the work.
+// ADMIN_ATTEST is the escape hatch for everything else and is deliberately
+// unpleasant: it records the human who vouched, and it can never be the
+// default because a step must name it explicitly.
+//
+// NOTE ON REPEATABLE STEPS — a step here completes AT MOST ONCE per
+// enrollment. Daily attendance ("walked to school again today") is therefore
+// NOT expressible yet, and cannot be bolted on by relaxing the unique key:
+// `Find.@@unique([cacheId, playerId])` already forbids finding the same cache
+// twice, so the evidence for a second visit cannot exist in the first place.
+// Recurring attendance needs its own mechanic. Do not fake it by cloning a
+// cache per day.
+// ---------------------------------------------------------------------------
+
+// How a step is proven. A completion carries the verifier that ACTUALLY proved
+// it, and the route refuses to write one whose verifier differs from the
+// step's — otherwise GPS evidence could complete a coursework step.
+//
+// SUBMISSION is deliberately a COMPLETION check, not a QUALITY one: an
+// artifact arrived, and nobody has said it is any good. That is the same
+// standard GITHUB_PUSH holds — a file landed at the expected path — and it is
+// weaker than it sounds, so be honest about what a completed step claims.
+//
+// It is acceptable while TOURS is worth nothing, because there is no reason to
+// forge a study note for a token with no sink. It stops being acceptable the
+// moment TOURS is worth money. The upgrade path is review of the stored
+// artifact, which is possible ONLY because the CID is captured now — a
+// submission never collected cannot be audited later.
+enum VerifierKind {
+  GPS_FIND
+  GITHUB_PUSH
+  // An artifact the learner uploaded — a photo of handwritten notes, a
+  // write-up. Stored, not yet reviewed.
+  SUBMISSION
+  ADMIN_ATTEST
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  // The learner stopped. Kept rather than deleted so their completions, and
+  // any TOURS those completions justified, remain auditable.
+  WITHDRAWN
+  // Set by an admin. Distinct from Player.suspendedAt: a player may be fine in
+  // the hunt but barred from one track.
+  SUSPENDED
+}
+
+model Player {
+  id String @id @default(cuid())
+
+  // Stored lowercased, always. A checksummed row would silently never match
+  // the lowercased lookup in lib/auth and lock a registered player out.
+  walletAddress String @unique
+
+  // Mera passkey credential id, when the player onboarded via passkey rather
+  // than an injected wallet. The wallet address is still the primary identity;
+  // this only records how they proved it.
+  passkeyCredentialId String? @unique
+
+  // TURBO registry handle. Links a hunt player to their builder identity so
+  // credit can be redeemed against their cohort subscription.
+  turboUsername String?
+  displayName   String?
+
+  // Signup is open — anyone may register. `active` is therefore a moderation
+  // flag, not a whitelist: it starts true and an admin sets it false. Claims
+  // are rejected on it before any positional check runs, so a banned wallet
+  // learns nothing about cache locations from the shape of the error.
+  active Boolean @default(true)
+
+  // Set when an admin suspends a wallet for suspected spoofing; kept distinct
+  // from `active` so a suspension is legible in the audit trail.
+  suspendedAt   DateTime?
+  suspendReason String?
+
+  // Running TURBO credit balance in WMON-wei. Derived from CreditLedger and
+  // updated in the same transaction as the ledger row, so the two can be
+  // reconciled against each other. The ledger is the source of truth.
+  creditBalanceWei Decimal @default(0) @db.Decimal(78, 0)
+
+  createdAt DateTime @default(now())
+
+  finds        Find[]
+  attempts     ClaimAttempt[]
+  payouts      Payout[]
+  hintRequests HintRequest[]
+  huntStats    PlayerHunt[]
+  credits      CreditLedger[]
+  spawns       Spawn[]
+  enrollments  Enrollment[]
+
+  @@index([turboUsername])
+  @@index([active, suspendedAt])
+}
+
+model Hunt {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  active      Boolean   @default(false)
+  startsAt    DateTime?
+  endsAt      DateTime?
+
+  // --- Verifier rules (fed straight into validateClaim) ---
+  maxAccuracyM        Int @default(30)
+  maxSpeedKmh         Int @default(60)
+  cooldownSeconds     Int @default(60)
+  maxClockSkewSeconds Int @default(120)
+
+  // --- Credit bounds (cache finds) ---
+  // Ceiling on total TURBO credit this hunt may ever issue, in WMON-wei.
+  budgetCreditWei Decimal @default(0) @db.Decimal(78, 0)
+
+  // Running total of issued credit. Exists so the ceiling is enforced as one
+  // atomic conditional UPDATE
+  //   (... WHERE spentCreditWei + reward <= budgetCreditWei)
+  // instead of a read-then-write. A read-then-write let K concurrent claims
+  // all observe the same total and all pass, overspending by (K-1) rewards.
+  // Never recompute this by summing Find rows at request time.
+  spentCreditWei Decimal @default(0) @db.Decimal(78, 0)
+
+  // Belt-and-braces per-wallet cap; 0 disables it. Enforced via the atomic
+  // counter on PlayerHunt, never by counting Find rows in application code.
+  maxFindsPerPlayer Int @default(0)
+
+  // --- MON bounds (spawns) — the only path where cash actually leaves ---
+  spawnEnabled Boolean @default(false)
+
+  // Hard ceiling on native MON this hunt can ever pay out, and its atomic
+  // running total. Same CAS pattern as credit above.
+  budgetMonWei Decimal @default(0) @db.Decimal(78, 0)
+  spentMonWei  Decimal @default(0) @db.Decimal(78, 0)
+
+  // Inclusive bounds on a single random spawn's value.
+  spawnMinWei Decimal @default(0) @db.Decimal(78, 0)
+  spawnMaxWei Decimal @default(0) @db.Decimal(78, 0)
+
+  // Spawns are placed in an annulus around a player's last VERIFIED position,
+  // so collecting one always requires real movement.
+  spawnMinRadiusM Int @default(80)
+  spawnMaxRadiusM Int @default(600)
+
+  // Short-lived on purpose: a spoofer needs a plausible track to reach one in
+  // time, and an expired spawn cannot be banked for a later burst.
+  spawnTtlSeconds Int @default(900)
+
+  // Minimum seconds between spawns granted to the same player.
+  spawnCooldownSeconds Int @default(600)
+
+  // How stale PlayerHunt.lastVerified* may be and still anchor a spawn. Spawns
+  // are placed relative to the last position the verifier ACCEPTED, so an old
+  // fix would let a player collect around somewhere they have since left.
+  maxVerifiedFixAgeSeconds Int @default(1800)
+
+  // Ceiling on MON a single player may collect in a rolling 24h.
+  spawnDailyCapWeiPerPlayer Decimal @default(0) @db.Decimal(78, 0)
+
+  // --- Auto-approval policy (spawn payouts) ---
+  // A payout at or below this amount is approved and swept without a human.
+  // 0 disables auto-approval entirely, restoring the strict human gate.
+  autoApproveMaxWei Decimal @default(0) @db.Decimal(78, 0)
+
+  // Ceiling on what auto-approval may release across the whole hunt in any
+  // rolling 24h. Once exceeded everything falls back to PENDING until a human
+  // intervenes. This bounds the worst case if the verifier is ever fooled at
+  // scale. A payout whose attempt was flagged never auto-approves regardless.
+  autoApproveDailyCapWei Decimal @default(0) @db.Decimal(78, 0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  caches       Cache[]
+  finds        Find[]
+  attempts     ClaimAttempt[]
+  hintRequests HintRequest[]
+  playerStats  PlayerHunt[]
+  spawns       Spawn[]
+  credits      CreditLedger[]
+
+  @@index([active])
+}
+
+model Cache {
+  id     String @id @default(cuid())
+  hunt   Hunt   @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  huntId String
+
+  // NEVER include these two in a client-facing payload.
+  lat Float
+  lng Float
+
+  radiusMeters Int @default(25)
+
+  // TURBO credit in WMON-wei. Finds do not pay withdrawable MON.
+  rewardCreditWei Decimal @default(0) @db.Decimal(78, 0)
+
+  // Shown to the player only AFTER the find, as a reveal.
+  label    String?
+  blurb    String?
+  photoCid String?
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  finds      Find[]
+  trackSteps TrackStep[]
+
+  @@index([huntId, active])
+}
+
+// Per-(hunt, player) counters. Exists purely so the per-player find cap is an
+// atomic database invariant rather than a count() read in the route.
+model PlayerHunt {
+  hunt     Hunt   @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  huntId   String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  findCount       Int     @default(0)
+  earnedCreditWei Decimal @default(0) @db.Decimal(78, 0)
+  collectedMonWei Decimal @default(0) @db.Decimal(78, 0)
+
+  // Last position the verifier ACCEPTED. Spawns are placed relative to this,
+  // never relative to a self-reported position, so a spoofer cannot summon a
+  // spawn to arbitrary coordinates by lying about where they are.
+  lastVerifiedLat Float?
+  lastVerifiedLng Float?
+  lastVerifiedAt  DateTime?
+
+  lastSpawnAt DateTime?
+  firstFindAt DateTime?
+  lastFindAt  DateTime?
+
+  @@id([huntId, playerId])
+  @@index([playerId])
+}
+
+model Find {
+  id       String @id @default(cuid())
+  hunt     Hunt   @relation(fields: [huntId], references: [id])
+  huntId   String
+  cache    Cache  @relation(fields: [cacheId], references: [id])
+  cacheId  String
+  player   Player @relation(fields: [playerId], references: [id])
+  playerId String
+
+  foundAt          DateTime @default(now())
+  distanceMeters   Float
+  accuracyM        Float
+  lat              Float
+  lng              Float
+  speedKmhFromLast Float?
+
+  // Credit awarded, snapshotted at find time so later edits to
+  // Cache.rewardCreditWei cannot retroactively change what a find was worth.
+  rewardCreditSnapshot Decimal @db.Decimal(78, 0)
+
+  // Set when this find also proved a career track step. At most one, so a
+  // single physical find can never satisfy two steps.
+  stepCompletion StepCompletion?
+
+  // Exactly-once for the find, and therefore for the credit it issued.
+  @@unique([cacheId, playerId])
+  @@index([playerId, foundAt])
+  @@index([huntId, foundAt])
+}
+
+// Append-only TURBO credit ledger, denominated in WMON-wei. The source of
+// truth for Player.creditBalanceWei; the two are written in one transaction so
+// a drift between them is detectable. Never UPDATE or DELETE a row here —
+// a correction is a new negative entry.
+model CreditLedger {
+  id       String  @id @default(cuid())
+  player   Player  @relation(fields: [playerId], references: [id])
+  playerId String
+  hunt     Hunt?   @relation(fields: [huntId], references: [id])
+  huntId   String?
+
+  reason CreditReason
+
+  // Signed: positive issues credit, negative consumes or revokes it.
+  amountWei Decimal @db.Decimal(78, 0)
+
+  // Balance immediately after this entry, so the ledger can be audited without
+  // replaying every prior row.
+  balanceAfterWei Decimal @db.Decimal(78, 0)
+
+  // One credit entry per find, enforced below. This is what makes a find
+  // structurally incapable of issuing credit twice.
+  findId String? @unique
+
+  note      String?
+  actorId   String?
+  createdAt DateTime @default(now())
+
+  @@index([playerId, createdAt])
+  @@index([huntId, createdAt])
+  @@index([reason, createdAt])
+}
+
+// A random, VISIBLE, ephemeral MON drop — the Pokemon-style mechanic.
+//
+// Coordinates are public by design, so secrecy is not the control here.
+// What bounds the risk instead:
+//   * placed in an annulus around the player's last VERIFIED position
+//   * targeted at one player, single-collector via an atomic status CAS
+//   * short TTL, so it cannot be banked and swept in a burst
+//   * amount drawn server-side from a committed seed, never client-influenced
+model Spawn {
+  id     String @id @default(cuid())
+  hunt   Hunt   @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  huntId String
+
+  // The player this spawn was generated for. Another player cannot collect it.
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  lat Float
+  lng Float
+
+  radiusMeters Int     @default(25)
+  amountMonWei Decimal @db.Decimal(78, 0)
+
+  // Commit-reveal over the server CSPRNG draw. `seedCommit` is published when
+  // the spawn appears; `seedReveal` is written on collection or expiry, so a
+  // player can verify the amount was not chosen after the fact. Cheap
+  // auditability without paying for on-chain entropy on every small drop.
+  seedCommit String
+  seedReveal String?
+
+  expiresAt   DateTime
+  collectedAt DateTime?
+  // Atomic single-collector guard: a conditional UPDATE ... WHERE collectedAt
+  // IS NULL AND expiresAt > now() decides the winner. Never a read-then-write.
+  createdAt   DateTime  @default(now())
+
+  payout Payout?
+
+  @@index([playerId, expiresAt])
+  @@index([huntId, createdAt])
+  @@index([collectedAt])
+}
+
+model ClaimAttempt {
+  id       String @id @default(cuid())
+  hunt     Hunt   @relation(fields: [huntId], references: [id])
+  huntId   String
+  player   Player @relation(fields: [playerId], references: [id])
+  playerId String
+
+  attemptedAt DateTime @default(now())
+  clientTs    DateTime
+  lat         Float
+  lng         Float
+  accuracyM   Float?
+
+  // "cache" | "spawn" — both go through the same verifier and the same log.
+  kind String @default("cache")
+
+  // Written with the FINAL outcome, inside the same transaction as the Find.
+  // Writing this before the budget and cap checks used to record
+  // `accepted: true` for claims that were then refused — and this row is what
+  // a human reads when deciding whether to pay a disputed claim by hand.
+  accepted Boolean
+  // Null on accept; a RejectReason literal otherwise.
+  reason   String?
+  detail   String?
+
+  // Set by the verifier for rejections that suggest tampering rather than a
+  // near miss. The admin review queue sorts on this, and a flagged attempt
+  // blocks auto-approval of any resulting payout.
+  flagged Boolean @default(false)
+
+  @@index([huntId, attemptedAt])
+  @@index([playerId, attemptedAt])
+  @@index([flagged, attemptedAt])
+  @@index([huntId, accepted, attemptedAt])
+}
+
+// Hint requests are logged for the same reason claims are: a quantized
+// distance oracle is still an oracle, and boundary-walking it to trilaterate a
+// cache is invisible unless the probes are recorded. The admin abuse queue
+// reads spatial patterns out of this table.
+model HintRequest {
+  id       String @id @default(cuid())
+  hunt     Hunt   @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  huntId   String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  lat  Float
+  lng  Float
+  band String?
+
+  createdAt DateTime @default(now())
+
+  @@index([huntId, createdAt])
+  @@index([playerId, createdAt])
+}
+
+model Payout {
+  id String @id @default(cuid())
+
+  // One payout per spawn. THIS is the constraint that makes double-payment
+  // structurally impossible — a unique key on the earning event, not on the
+  // money row. Cache finds never create a Payout; they issue credit instead.
+  spawn   Spawn  @relation(fields: [spawnId], references: [id])
+  spawnId String @unique
+
+  player   Player       @relation(fields: [playerId], references: [id])
+  playerId String
+  status   PayoutStatus @default(PENDING)
+
+  amountMonWei Decimal @db.Decimal(78, 0)
+
+  // True when released by policy rather than by a person. Kept so the audit
+  // can answer "how much has ever moved without a human looking at it".
+  autoApproved Boolean   @default(false)
+  approvedBy   String?
+  approvedAt   DateTime?
+
+  // Pinned before broadcast. A SENDING row is resolved by asking the chain
+  // about (treasury, nonce) — never by sending again.
+  nonce  Int?
+  txHash String? @unique
+
+  sentAt       DateTime?
+  failReason   String?
+  voidReason   String?
+  reconciledBy String?
+  reconciledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([playerId, createdAt])
+  @@index([status, sentAt])
+}
+
+// A career path: "TURBO Developer", "Community Medicine". Steps hang off it.
+model Track {
+  id String @id @default(cuid())
+
+  // Stable, human-readable key used by external verifiers (the TURBO webhook
+  // names a track by slug). Renaming `name` is cosmetic; renaming `slug`
+  // breaks every integration, which is why they are separate columns.
+  slug        String  @unique
+  name        String
+  description String?
+
+  // When true, a step may only be completed once every lower ordinal in the
+  // track is done. Curricula that build on themselves want this; a track of
+  // independent achievements does not.
+  sequential Boolean @default(false)
+
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  steps       TrackStep[]
+  enrollments Enrollment[]
+
+  @@index([active])
+}
+
+// One unit of a curriculum — "Week 13: ERC-20 with Foundry", "Attend clinic
+// orientation". Ordering is explicit rather than implied by createdAt so a
+// curriculum can be reordered without rewriting history.
+model TrackStep {
+  id      String @id @default(cuid())
+  track   Track  @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  trackId String
+
+  // Position within the track. Drives the `sequential` gate.
+  ordinal Int
+
+  // Stable identifier within the track, e.g. "week-13". Completions are read
+  // by humans during a dispute, and an ordinal alone is meaningless once the
+  // curriculum has been reordered.
+  key String
+
+  title       String
+  description String?
+
+  // How this step is proven. There is no default on purpose: a step whose
+  // verifier was never chosen must fail to be created, not quietly accept a
+  // human's say-so.
+  verifier VerifierKind
+
+  // GPS_FIND only — the cache that proves attendance. Nullable because the
+  // other verifiers do not use it; the route requires it when verifier is
+  // GPS_FIND rather than the schema, since Prisma cannot express a
+  // conditional NOT NULL.
+  cache   Cache?  @relation(fields: [cacheId], references: [id])
+  cacheId String?
+
+  // GITHUB_PUSH only — the deliverable path the webhook must see, e.g.
+  // "week-13/src/MyToken.sol".
+  deliverablePath String?
+
+  // TOURS this step is worth, in wei (TOURS is 18 decimals like MON). Zero is
+  // a legal configuration: a step can be worth progress and nothing else.
+  //
+  // NOTHING IN THIS REPO PAYS THIS OUT YET, deliberately. The column exists
+  // now because the amount must be snapshotted onto the completion AT
+  // completion time — a value that was never recorded cannot be recovered
+  // later, and back-filling it would mean guessing what a step used to be
+  // worth.
+  toursAwardWei Decimal @default(0) @db.Decimal(78, 0)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  completions StepCompletion[]
+
+  // Both keys are unique per track, so a curriculum edit cannot silently
+  // create two "week-13"s or two steps at the same position.
+  @@unique([trackId, ordinal])
+  @@unique([trackId, key])
+  @@index([trackId, active])
+  @@index([cacheId])
+}
+
+// A player on a track. The counters are atomic totals, not derived reads —
+// same reasoning as Hunt.spentCreditWei: a count() at request time is a
+// read-then-write as soon as two completions race.
+model Enrollment {
+  id String @id @default(cuid())
+
+  track    Track  @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  trackId  String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  status EnrollmentStatus @default(ACTIVE)
+
+  // Maintained in the same transaction as the StepCompletion that moves them.
+  // StepCompletion rows are the source of truth; a drift between the two is
+  // detectable precisely because both exist.
+  completedStepCount Int     @default(0)
+  earnedToursWei     Decimal @default(0) @db.Decimal(78, 0)
+
+  // Highest ordinal completed so far, or null. Cached here so the `sequential`
+  // gate is one row read rather than a scan of every completion.
+  highestCompletedOrdinal Int?
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  suspendedAt   DateTime?
+  suspendReason String?
+
+  completions StepCompletion[]
+
+  // One enrollment per player per track.
+  @@unique([trackId, playerId])
+  @@index([playerId, status])
+  @@index([trackId, status])
+}
+
+// Proof that a step was done. Append-only: a mistake is corrected by an admin
+// action that records itself, never by editing or deleting a completion, since
+// this row is what justified issuing TOURS.
+model StepCompletion {
+  id String @id @default(cuid())
+
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  enrollmentId String
+  step         TrackStep  @relation(fields: [stepId], references: [id])
+  stepId       String
+
+  // The verifier that ACTUALLY proved this, snapshotted. Compared against
+  // TrackStep.verifier before the write; stored because a later edit to the
+  // step must not rewrite the claim about how an old completion was proven.
+  verifier VerifierKind
+
+  // GPS_FIND — the Find row that proves it. Unique, so one physical find can
+  // never satisfy two steps.
+  find   Find?   @relation(fields: [findId], references: [id])
+  findId String? @unique
+
+  // GITHUB_PUSH — the commit SHA the webhook confirmed. Unique per step for
+  // the same reason: one push, one completion.
+  commitSha String?
+
+  // SUBMISSION — IPFS CID of the uploaded artifact, matching the `photoCid`
+  // convention already used on Cache. This is the whole point of the
+  // verifier: the evidence outlives the completion, so a step accepted
+  // unreviewed today can still be reviewed a year from now.
+  submissionCid String?
+
+  // Corroborating GPS, recorded for ANY verifier when the client offered a
+  // position. Never load-bearing on its own — a combi ride makes the
+  // movement-plausibility check that defends cache finds meaningless for
+  // attendance, so this is a signal to compare against later, not a proof.
+  // Deliberately not the school's coordinates: this is where the LEARNER
+  // claimed to be.
+  observedLat      Float?
+  observedLng      Float?
+  observedAccuracy Float?
+
+  // ADMIN_ATTEST — who vouched. Null for machine-verified completions, and
+  // that asymmetry is the point: a completion with no evidence pointer and no
+  // attestor is a bug worth finding.
+  attestedBy String?
+  note       String?
+
+  // What the step was worth when it was completed. Snapshotted so that later
+  // edits to TrackStep.toursAwardWei cannot retroactively change what someone
+  // earned — the same rule as Find.rewardCreditSnapshot.
+  toursAwardSnapshotWei Decimal @db.Decimal(78, 0)
+
+  completedAt DateTime @default(now())
+
+  // THE exactly-once constraint. A unique key on the earning event, not on any
+  // downstream reward row — the same shape as Payout.spawnId, and for the same
+  // reason: it makes double-crediting structurally impossible rather than
+  // conditionally avoided.
+  @@unique([enrollmentId, stepId])
+  // One push, one completion.
+  @@unique([stepId, commitSha])
+  // One artifact, one completion — so the same photo cannot be re-submitted
+  // against a second step once uploads are cheap.
+  @@unique([stepId, submissionCid])
+  @@index([enrollmentId, completedAt])
+  @@index([stepId, completedAt])
+}
+
+model AdminUser {
+  id            String    @id @default(cuid())
+  walletAddress String    @unique
+  role          AdminRole @default(VIEWER)
+  label         String?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+
+  actions AdminAction[]
+}
+
+// Append-only. Every privileged mutation writes one row: who released money,
+// who suspended a wallet, who edited a cache reward. Never update or delete.
+model AdminAction {
+  id      String    @id @default(cuid())
+  admin   AdminUser @relation(fields: [adminId], references: [id])
+  adminId String
+
+  action     String
+  targetType String
+  targetId   String
+  detail     String?
+  ip         String?
+
+  createdAt DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}

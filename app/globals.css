@@ -1,0 +1,293 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   EmpowerTours Hunt — phosphor scope theme.
+
+   Tailwind v4 is CSS-first: this @theme block IS the config. There is no
+   tailwind.config.js and adding one would split the source of truth.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Hull — the instrument casing the scope sits in. */
+  --color-void: #03080a;
+  --color-hull: #081215;
+  --color-hull-2: #0e2028;
+  --color-hull-line: #17343d;
+
+  /* Phosphor — the neutral, un-banded scope colour. */
+  --color-phosphor: #46ffbe;
+  --color-phosphor-dim: #1d6b53;
+
+  /* Type. */
+  --color-ink: #d9f5ec;
+  --color-ink-dim: #78a094;
+  --color-ink-faint: #47645d;
+
+  /* Heat ramp. These are the band colours and nothing else may use them —
+     a stray amber elsewhere in the UI reads as a proximity signal. */
+  --color-band-cold: #3d7ea6;
+  --color-band-cool: #1fbdd2;
+  --color-band-warm: #9fe339;
+  --color-band-hot: #ff9d2e;
+  --color-band-burning: #ff3b30;
+
+  --color-alert: #ff3b30;
+  --color-spawn: #ffd12e;
+
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+}
+
+/* --------------------------------------------------------------------------
+   Base
+-------------------------------------------------------------------------- */
+
+html {
+  background: var(--color-void);
+  color-scheme: dark;
+  /* Outdoor, one-handed, gloves-optional. Never let a stray drag scroll the
+     page out from under a thumb that meant to press claim. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-void);
+  color: var(--color-ink);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  min-height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+/* Sunlight legibility: hairlines vanish outdoors, so nothing structural is
+   allowed to be thinner than this. */
+.rule {
+  border-color: var(--color-hull-line);
+}
+
+.safe-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* --------------------------------------------------------------------------
+   Radar scope
+
+   Every animation below moves ONLY transform or opacity. Nothing here can
+   trigger layout or paint on the main thread, which is what keeps the scope at
+   60fps on a mid-range phone while a GPS watch is running.
+
+   The band drives the scope through four custom properties, set inline from
+   components/radar/bands.ts:
+     --band          colour
+     --sweep-dur     one revolution
+     --pulse-dur     range-ring pulse period (0s = no pulse)
+     --breathe-dur   ambient hum
+-------------------------------------------------------------------------- */
+
+.scope {
+  --band: var(--color-phosphor);
+  --sweep-dur: 6s;
+  --pulse-dur: 0s;
+  --breathe-dur: 6s;
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Contain the glow so a bright burning frame cannot repaint siblings. */
+  contain: paint;
+}
+
+.scope-sweep {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: scope-rotate var(--sweep-dur) linear infinite;
+  will-change: transform;
+}
+
+@keyframes scope-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Expanding range ring. Reads as the scope "listening" harder the warmer the
+   reading gets. Two of them, offset, so the rhythm is continuous. */
+.scope-pulse {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: scope-pulse var(--pulse-dur) ease-out infinite;
+  will-change: transform, opacity;
+}
+.scope-pulse-2 {
+  animation-delay: calc(var(--pulse-dur) / -2);
+}
+
+@keyframes scope-pulse {
+  0% {
+    transform: scale(0.08);
+    opacity: 0.75;
+  }
+  80% {
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* Ambient hum. Slow at cold, urgent at burning. */
+.scope-breathe {
+  animation: scope-breathe var(--breathe-dur) ease-in-out infinite;
+  will-change: opacity;
+}
+
+@keyframes scope-breathe {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 0.62;
+  }
+}
+
+/* Burning only: the rim flutters like an overdriven tube. */
+.scope-alarm {
+  animation: scope-alarm 0.9s steps(2, end) infinite;
+}
+
+@keyframes scope-alarm {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* Spawn blip ping. Scales about its own centre — fill-box, because the blip
+   sits inside a translated group and view-box would scale it about the scope
+   centre and send it flying. */
+.blip-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: blip-ping 2.4s ease-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes blip-ping {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.blip-core {
+  animation: blip-core 1.6s ease-in-out infinite;
+}
+
+@keyframes blip-core {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reward moment
+-------------------------------------------------------------------------- */
+
+.reveal-in {
+  animation: reveal-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.reveal-flare {
+  animation: reveal-flare 1.6s ease-out both;
+}
+
+@keyframes reveal-flare {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.12;
+    transform: scale(1);
+  }
+}
+
+.spin-slow {
+  animation: scope-rotate 9s linear infinite;
+}
+
+/* --------------------------------------------------------------------------
+   prefers-reduced-motion
+
+   The sweep is load-bearing — a parked scope reads as a crashed app — so it is
+   damped to a crawl rather than removed. Everything that flashes, pings or
+   throbs is switched off outright.
+-------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .scope-sweep,
+  .spin-slow {
+    animation-duration: 24s;
+  }
+  .scope-pulse,
+  .scope-breathe,
+  .scope-alarm,
+  .blip-ping,
+  .blip-core,
+  .reveal-flare {
+    animation: none;
+  }
+  .scope-breathe {
+    opacity: 0.4;
+  }
+  .blip-ping {
+    opacity: 0.35;
+  }
+  .reveal-in {
+    animation-duration: 1ms;
+  }
+}

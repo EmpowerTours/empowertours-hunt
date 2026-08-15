@@ -1,0 +1,20 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Secrets. HUNT_TREASURY_PRIVATE_KEY lives here — a leak is a drained treasury.
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.pem
+*.key
+npm-debug.log*
+yarn-error.log*
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+coverage/
