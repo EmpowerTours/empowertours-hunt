@@ -22,6 +22,7 @@ const NAV: Array<{ href: string; label: string; min: AdminRole }> = [
   { href: "/admin/payouts", label: "Payouts", min: AdminRole.VIEWER },
   { href: "/admin/abuse", label: "Abuse", min: AdminRole.VIEWER },
   { href: "/admin/hunts", label: "Hunts & caches", min: AdminRole.VIEWER },
+  { href: "/admin/survey", label: "Survey", min: AdminRole.OPERATOR },
   { href: "/admin/players", label: "Players", min: AdminRole.VIEWER },
   { href: "/admin/audit", label: "Audit", min: AdminRole.VIEWER },
   { href: "/admin/admins", label: "Admins", min: AdminRole.OWNER },
