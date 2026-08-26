@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useGeoCapability } from "@/components/hooks/useGeoCapability";
+import { usePersistentJson } from "@/components/hooks/usePersistentJson";
 import {
   appendSample,
   averagePosition,
@@ -52,58 +54,32 @@ type GeoStatus =
 const inputClass =
   "w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-sm text-slate-100";
 
-function loadCaptures(): Capture[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as Capture[]) : [];
-  } catch {
-    return [];
-  }
+// Module-level so the empty case keeps one identity: `usePersistentJson`
+// compares snapshots by reference, and a fresh `[]` per call would never
+// settle.
+const NO_CAPTURES: Capture[] = [];
+
+function reviveCaptures(stored: unknown): Capture[] {
+  return Array.isArray(stored) ? (stored as Capture[]) : NO_CAPTURES;
 }
 
 export function SurveyField() {
   const [status, setStatus] = useState<GeoStatus>({ kind: "idle" });
   const [samples, setSamples] = useState<Sample[]>([]);
   const [reading, setReading] = useState(false);
-  const [captures, setCaptures] = useState<Capture[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [captures, setCaptures] = usePersistentJson(
+    STORAGE_KEY,
+    reviveCaptures,
+  );
+  const capability = useGeoCapability();
   const [label, setLabel] = useState("");
   const [radius, setRadius] = useState("25");
   const [copied, setCopied] = useState<string | null>(null);
 
-  useEffect(() => {
-    setCaptures(loadCaptures());
-    setLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (!loaded) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(captures));
-    } catch {
-      // Private mode or a full quota. The on-screen values still work.
-    }
-  }, [captures, loaded]);
-
+  // Nothing to check here any more: `start` refuses before it ever sets
+  // `reading`, so by the time this runs the receiver is known to be usable.
   useEffect(() => {
     if (!reading) return;
-
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setStatus({ kind: "unsupported" });
-      setReading(false);
-      return;
-    }
-    // Geolocation is refused outside a secure context — the usual reason this
-    // screen looks broken when opened over plain http on a LAN address.
-    if (!window.isSecureContext) {
-      setStatus({ kind: "insecure" });
-      setReading(false);
-      return;
-    }
-
-    setStatus({ kind: "watching" });
 
     const id = navigator.geolocation.watchPosition(
       (pos) => {
@@ -144,10 +120,18 @@ export function SurveyField() {
   const radiusNum = Number(radius);
   const radiusValid = Number.isFinite(radiusNum) && radiusNum > 0;
 
+  // Refuses at the button rather than arming a watch that cannot fire. On a
+  // plain-http LAN address — the usual way this screen looks broken — the
+  // reason is now on screen the moment it is asked for.
   const start = useCallback(() => {
+    if (capability === "unsupported" || capability === "insecure") {
+      setStatus({ kind: capability });
+      return;
+    }
     setSamples([]);
+    setStatus({ kind: "watching" });
     setReading(true);
-  }, []);
+  }, [capability]);
 
   const capture = useCallback(() => {
     if (!fix || !radiusValid) return;
@@ -166,7 +150,7 @@ export function SurveyField() {
     setLabel("");
     setSamples([]);
     setReading(false);
-  }, [fix, label, radiusNum, radiusValid]);
+  }, [fix, label, radiusNum, radiusValid, setCaptures]);
 
   const copy = useCallback(async (text: string, what: string) => {
     try {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 /**
  * One interval for the whole screen.
@@ -29,8 +29,12 @@ export function useTicker(intervalMs = 1000, enabled = true): number {
  * server and client (clock readouts, `matchMedia`), rather than reaching for
  * `suppressHydrationWarning` and hiding a real mismatch.
  */
+// Hydration is not a subscription, so there is nothing to listen to; the whole
+// answer is that the server and the client disagree, on purpose.
+const neverChanges = () => () => {};
+const onTheClient = () => true;
+const onTheServer = () => false;
+
 export function useMounted(): boolean {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  return mounted;
+  return useSyncExternalStore(neverChanges, onTheClient, onTheServer);
 }

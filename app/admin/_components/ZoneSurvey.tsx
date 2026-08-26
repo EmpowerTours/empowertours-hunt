@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useGeoCapability } from "@/components/hooks/useGeoCapability";
+import { usePersistentJson } from "@/components/hooks/usePersistentJson";
 import {
   appendSample,
   averagePosition,
@@ -77,42 +79,39 @@ const inputClass =
 const btnClass =
   "rounded border border-slate-600 px-3 py-2 text-sm text-slate-100 disabled:opacity-40";
 
-function loadDraft(): Corner[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as Corner[]) : [];
-  } catch {
-    return [];
-  }
+// Module-level so the empty case keeps one identity: `usePersistentJson`
+// compares snapshots by reference, and a fresh `[]` per call would never
+// settle.
+const NO_CORNERS: Corner[] = [];
+
+function reviveCorners(stored: unknown): Corner[] {
+  return Array.isArray(stored) ? (stored as Corner[]) : NO_CORNERS;
 }
 
-export function ZoneSurvey({ huntId }: { huntId: string }) {
+export function ZoneSurvey({
+  huntId,
+  initialZones,
+}: {
+  huntId: string;
+  initialZones: ZoneRow[];
+}) {
   const [status, setStatus] = useState<GeoStatus>({ kind: "idle" });
   const [samples, setSamples] = useState<Sample[]>([]);
   const [reading, setReading] = useState(false);
-  const [corners, setCorners] = useState<Corner[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  // Restored on the FIRST render, not a frame later. A zone survey is a
+  // twenty minute walk and a phone browser will discard the tab inside that;
+  // showing an empty corner list before the draft loads would read as having
+  // lost the walk.
+  const [corners, setCorners] = usePersistentJson(STORAGE_KEY, reviveCorners);
+  const capability = useGeoCapability();
   const [kind, setKind] = useState<Kind>("INCLUDE");
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [zones, setZones] = useState<ZoneRow[]>([]);
-
-  useEffect(() => {
-    setCorners(loadDraft());
-    setLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (!loaded) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(corners));
-    } catch {
-      // Private mode or a full quota. The on-screen list still works.
-    }
-  }, [corners, loaded]);
+  // Server-rendered, so this screen is never briefly wrong about what has
+  // already been surveyed. `refreshZones` below is for after a change, and it
+  // runs from the handler that made the change — not from an effect.
+  const [zones, setZones] = useState<ZoneRow[]>(initialZones);
 
   const refreshZones = useCallback(async () => {
     try {
@@ -125,25 +124,10 @@ export function ZoneSurvey({ huntId }: { huntId: string }) {
     }
   }, [huntId]);
 
-  useEffect(() => {
-    void refreshZones();
-  }, [refreshZones]);
-
+  // Nothing to check here any more: `start` refuses before it ever sets
+  // `reading`, so by the time this runs the receiver is known to be usable.
   useEffect(() => {
     if (!reading) return;
-
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setStatus({ kind: "unsupported" });
-      setReading(false);
-      return;
-    }
-    if (!window.isSecureContext) {
-      setStatus({ kind: "insecure" });
-      setReading(false);
-      return;
-    }
-
-    setStatus({ kind: "watching" });
 
     const id = navigator.geolocation.watchPosition(
       (pos) => {
@@ -189,6 +173,19 @@ export function ZoneSurvey({ huntId }: { huntId: string }) {
   const areaM2 = useMemo(() => ringAreaSquareMeters(ring), [ring]);
   const perimeterM = useMemo(() => ringPerimeterMeters(ring), [ring]);
 
+  // Refuses at the button rather than arming a watch that cannot fire. On a
+  // plain-http LAN address — the usual way this screen looks broken — the
+  // reason is now on screen the moment it is asked for.
+  const start = useCallback(() => {
+    if (capability === "unsupported" || capability === "insecure") {
+      setStatus({ kind: capability });
+      return;
+    }
+    setSamples([]);
+    setStatus({ kind: "watching" });
+    setReading(true);
+  }, [capability]);
+
   const dropCorner = useCallback(() => {
     if (!fix) return;
     setCorners((prev) => [
@@ -204,7 +201,7 @@ export function ZoneSurvey({ huntId }: { huntId: string }) {
     // Clear the buffer so the next corner is not averaged with this one — the
     // receiver has to re-settle at the new spot, which is the whole point.
     setSamples([]);
-  }, [fix]);
+  }, [fix, setCorners]);
 
   const save = useCallback(async () => {
     if (!validation.ok) return;
@@ -237,7 +234,7 @@ export function ZoneSurvey({ huntId }: { huntId: string }) {
     } finally {
       setSaving(false);
     }
-  }, [huntId, kind, name, ring, validation.ok, refreshZones]);
+  }, [huntId, kind, name, ring, validation.ok, refreshZones, setCorners]);
 
   const setZoneActive = useCallback(
     async (zoneId: string, active: boolean) => {
@@ -287,10 +284,7 @@ export function ZoneSurvey({ huntId }: { huntId: string }) {
           <button
             type="button"
             className={btnClass}
-            onClick={() => {
-              setSamples([]);
-              setReading(true);
-            }}
+            onClick={start}
             disabled={reading}
           >
             {reading ? "Reading…" : "Start reading"}

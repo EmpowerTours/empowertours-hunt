@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { GeoFix, GeoStatus } from "@/components/hunt/types";
+import { useGeoCapability } from "@/components/hooks/useGeoCapability";
 
 /* ---------------------------------------------------------------------------
    One GPS watch for the whole screen.
@@ -41,37 +42,57 @@ const MESSAGES: Record<GeoStatus, string | null> = {
 };
 
 export function useGeolocation(enabled = true): GeoReading {
-  const [status, setStatus] = useState<GeoStatus>("idle");
+  const capability = useGeoCapability();
   const [fix, setFix] = useState<GeoFix | null>(null);
   const [attempt, setAttempt] = useState(0);
 
+  // What the CURRENT watch has reported, tagged with the watch it came from.
+  // Written only from watchPosition's own callbacks; every other part of
+  // `status` is derived during render, which is why nothing here needs an
+  // effect to set state.
+  //
+  // The tag is what makes re-arming forget. `maximumAge: 0` means there is
+  // genuinely no current fix until a new one arrives, so a retry reading
+  // "locating" again is the honest answer rather than a flicker — and a report
+  // from a watch we have already torn down can never be mistaken for a live
+  // one.
+  const [reported, setReported] = useState<{
+    watch: string;
+    status: GeoStatus;
+  } | null>(null);
+
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
+  const watch = `${enabled}:${capability}:${attempt}`;
+  const current = reported?.watch === watch ? reported.status : null;
+
+  const status: GeoStatus = !enabled
+    ? "idle"
+    : capability === "unknown"
+      ? // Server render, or the instant before hydration. We are about to
+        // look; claiming anything more definite would be a guess.
+        "locating"
+      : capability !== "ok"
+        ? "unsupported"
+        : (current ?? "locating");
+
   useEffect(() => {
-    if (!enabled) {
-      setStatus("idle");
-      return;
-    }
+    if (!enabled || capability !== "ok") return;
 
-    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
-      setStatus("unsupported");
-      return;
-    }
-
-    setStatus((prev) => (prev === "ready" ? prev : "locating"));
+    const report = (next: GeoStatus) => setReported({ watch, status: next });
 
     const id = navigator.geolocation.watchPosition(
       (position) => {
         const c = position.coords;
         // Reject-by-default: a coordinate we cannot trust is no coordinate.
         if (!Number.isFinite(c.latitude) || !Number.isFinite(c.longitude)) {
-          setStatus("unavailable");
+          report("unavailable");
           return;
         }
         if (typeof c.accuracy !== "number" || !Number.isFinite(c.accuracy)) {
           // The verifier refuses a null accuracy outright, so surfacing this as
           // a usable fix would only set the player up to be rejected.
-          setStatus("unavailable");
+          report("unavailable");
           return;
         }
 
@@ -89,17 +110,17 @@ export function useGeolocation(enabled = true): GeoReading {
               : null,
           at: position.timestamp,
         });
-        setStatus("ready");
+        report("ready");
       },
       (error) => {
         if (error.code === error.PERMISSION_DENIED) {
           setFix(null);
-          setStatus("denied");
+          report("denied");
         } else if (error.code === error.TIMEOUT) {
           // Keep the last fix on screen but stop calling it current.
-          setStatus("timeout");
+          report("timeout");
         } else {
-          setStatus("unavailable");
+          report("unavailable");
         }
       },
       {
@@ -112,7 +133,7 @@ export function useGeolocation(enabled = true): GeoReading {
     );
 
     return () => navigator.geolocation.clearWatch(id);
-  }, [enabled, attempt]);
+  }, [enabled, capability, watch]);
 
   return { status, fix, message: MESSAGES[status], retry };
 }

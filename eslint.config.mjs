@@ -50,29 +50,6 @@ const config = [
   },
 
   {
-    // GPS-driven components. `react-hooks/set-state-in-effect` is right in
-    // general and wrong here: `watchPosition` is exactly the external system an
-    // effect is supposed to subscribe to, restoring a survey draft from
-    // localStorage cannot happen during SSR, and the capability probes
-    // ("no geolocation", "insecure context") must stop the effect rather than
-    // subscribe to something absent.
-    //
-    // Left as a warning rather than off. None of this has run in a real browser
-    // yet, so the day someone walks the village with the survey tool open is
-    // the day a cascading render would actually show up. That is a real thing
-    // to check then, not a lie to silence now.
-    files: [
-      "components/hooks/useGeolocation.ts",
-      "components/hooks/useTicker.ts",
-      "app/admin/_components/SurveyField.tsx",
-      "app/admin/_components/ZoneSurvey.tsx",
-    ],
-    rules: {
-      "react-hooks/set-state-in-effect": "warn",
-    },
-  },
-
-  {
     // Tests assert on shapes the production types deliberately forbid — a
     // malformed ring, a `"1e18"` string reaching a wei parser. That is the
     // point of the test, so `any` is allowed to express it.
