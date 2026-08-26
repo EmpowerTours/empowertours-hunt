@@ -73,9 +73,10 @@ export function FindReveal({
         </div>
 
         {find.cache.photoCid ? (
-          // eslint-disable-next-line @next/next/no-img-element -- IPFS gateway
-          // is configurable at runtime, so a build-time remotePatterns entry
-          // cannot cover it.
+          // The IPFS gateway is configurable at runtime, so a build-time
+          // `remotePatterns` entry cannot cover it and `next/image` would
+          // refuse the host. A plain <img> is the correct call here.
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={ipfsUrl(find.cache.photoCid)}
             alt={find.cache.label ?? "The cache"}

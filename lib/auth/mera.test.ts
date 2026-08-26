@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   SESSION_COOKIE,
@@ -81,8 +82,6 @@ describe("session tokens", () => {
     const secret = process.env.AUTH_SESSION_SECRET!;
     // Build a correctly-MACed token by hand with a junk wallet, proving the
     // address check is a real check and not just a side effect of the MAC.
-    const { createHmac } =
-      require("node:crypto") as typeof import("node:crypto");
     const payload = Buffer.from(
       JSON.stringify({ w: "nope", iat: 1, exp: 2 ** 40 }),
     ).toString("base64url");
