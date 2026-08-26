@@ -160,7 +160,24 @@ manager.
 
 ## What is still untested
 
-Every one of the 370 tests in this repo is a **pure-function** test — validator,
-geometry, wei, the payout state machine. They prove the logic. Nothing here has
-yet run against a real database, a real browser, a real GPS receiver or a real
-transaction. Step 8 is what converts that.
+The 370 tests in `npm test` are all **pure-function** tests — validator,
+geometry, wei, the payout state machine. They prove the logic.
+
+`npm run test:integration` adds 36 tests against a real Postgres, covering what
+a pure function cannot: the migration applying, `schema.prisma` not having
+drifted from it, the Json column round-tripping, and every atomic ceiling
+holding under genuine concurrency.
+
+```bash
+docker run -d --name hunt-pg -e POSTGRES_PASSWORD=hunt -e POSTGRES_USER=hunt \
+  -e POSTGRES_DB=hunt -p 5434:5432 postgres:16-alpine
+export DATABASE_URL="postgresql://hunt:hunt@localhost:5434/hunt"
+npx prisma migrate deploy
+npm run test:integration
+```
+
+It is deliberately NOT in `.claude/verify.sh`: that gate has to run anywhere,
+and this needs a database. Run it before any change to a route that spends.
+
+Still untested by anything: a real browser, a real GPS receiver, and a real
+transaction. Steps 5 and 8 are what convert those.

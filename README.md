@@ -56,7 +56,12 @@ regression. See `AGENTS.md` for the full rules.
   `UPDATE ... WHERE current + delta <= ceiling` with a checked row count, inside
   the transaction it bounds. A read-then-write is a bug even when it looks right.
 - **Wei is `Decimal(78,0)` in Postgres and `bigint` in code.** Never a `number`.
-  Scale 0 means the database itself rejects `"0.5"`, `"1e18"` and `"0x10"`.
+  The column type is NOT the guard, and this used to say it was. Measured
+  against Postgres 16, `numeric(78,0)` silently COERCES rather than rejects:
+  `'0.5'` becomes `1`, `'1e18'` becomes a whole MON, `'0x10'` becomes `16`, and
+  `'-1'` is accepted outright. Scale 0 controls rounding, not admission, and
+  there are no CHECK constraints. `lib/wei.ts` is the entire guard —
+  `tests/integration/schema.itest.ts` pins both halves.
 - **Nothing irreversible is unbounded.** Sending MON is gated by a per-payout
   cap, a per-player rolling 24h cap, a per-hunt budget, and an approval policy.
   A flagged attempt never auto-approves.
