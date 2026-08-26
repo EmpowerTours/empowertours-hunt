@@ -95,6 +95,12 @@ export default async function HuntDetailPage({
         >
           payouts for this hunt
         </a>
+        <a
+          href={`/admin/hunts/${hunt.id}/zones`}
+          className="text-xs text-slate-400 underline hover:text-slate-200"
+        >
+          walkable ground
+        </a>
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

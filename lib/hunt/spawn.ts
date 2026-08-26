@@ -40,6 +40,7 @@
 
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { haversineMeters, type LatLng } from "@/lib/geo/distance";
+import { isWalkable, type WalkableArea } from "@/lib/geo/polygon";
 import type { HuntRules } from "@/lib/hunt/validator";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,11 @@ export const SPAWN_DENY_REASONS = [
   "spawn_cooldown",
   "spawn_already_active",
   "spawn_bounds_misconfigured",
+  // Placement could not find walkable ground within reach — the player is at
+  // the edge of the hull, or across the river from all of it. Transient by
+  // nature: walking somewhere else fixes it, so this must NOT be treated as
+  // terminal by the scan poll.
+  "no_walkable_ground",
 ] as const;
 export type SpawnDenyReason = (typeof SPAWN_DENY_REASONS)[number];
 
@@ -276,6 +282,67 @@ export function deriveSpawn(seed: string, params: SpawnDrawParams): SpawnDraw {
     bearingDeg: toDeg(bearingRad),
     distanceM,
   };
+}
+
+/**
+ * The seed for one placement attempt.
+ *
+ * Attempt 0 is the bare seed, so a hunt with no walkable area configured draws
+ * exactly what it drew before this function existed, and every existing
+ * `deriveSpawn` expectation still holds. Later attempts hash the seed with the
+ * attempt index, which keeps the ENTIRE retry sequence recomputable: given the
+ * revealed seed, anyone can replay attempts 0..n and confirm both where the
+ * accepted spawn landed and that the rejected ones really were unwalkable.
+ * Drawing fresh randomness per retry would have silently destroyed that — the
+ * seed-reveal promise is that the drop was fixed before the player moved, and
+ * an unreproducible retry makes that unverifiable.
+ */
+function attemptSeed(seed: string, attempt: number): string {
+  if (attempt === 0) return seed;
+  return createHash("sha256")
+    .update(`${seed}:placement:${attempt}`, "utf8")
+    .digest("hex");
+}
+
+export type SpawnPlacement =
+  | { ok: true; draw: SpawnDraw; attempts: number }
+  | { ok: false; attempts: number };
+
+/**
+ * Draw a spawn that lands on ground a human can walk to.
+ *
+ * `deriveSpawn` places a point at a uniform bearing and distance on an abstract
+ * disc. Left alone it will eventually put a drop in the river, inside a house,
+ * or across a highway — and then pay the player for reaching it. This redraws
+ * until the point is inside the hunt's surveyed walkable area.
+ *
+ * DECLINES RATHER THAN LOOPS. After `maxAttempts` the answer is "no spawn this
+ * round", never "place it anyway" and never "keep trying". A player whose
+ * surroundings are mostly unwalkable — stood at the edge of the hull, or across
+ * the river from everything — would otherwise spin this forever. Missing one
+ * spawn cycle is a non-event; a loop with no exit in a request path is not.
+ *
+ * An unsurveyed hunt (no include rings) rejects every attempt and therefore
+ * places nothing. That is the intended reading: see `isWalkable`.
+ */
+export function deriveSpawnInArea(
+  seed: string,
+  params: SpawnDrawParams,
+  area: WalkableArea,
+  maxAttempts = 10,
+): SpawnPlacement {
+  if (!(Number.isInteger(maxAttempts) && maxAttempts >= 1)) {
+    throw new RangeError("maxAttempts must be a positive integer");
+  }
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const draw = deriveSpawn(attemptSeed(seed, attempt), params);
+    if (isWalkable({ lat: draw.lat, lng: draw.lng }, area)) {
+      return { ok: true, draw, attempts: attempt + 1 };
+    }
+  }
+
+  return { ok: false, attempts: maxAttempts };
 }
 
 // ---------------------------------------------------------------------------

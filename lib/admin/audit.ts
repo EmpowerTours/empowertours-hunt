@@ -30,6 +30,12 @@ export type AuditAction =
   | "cache.create"
   | "cache.update"
   | "cache.deactivate"
+  // Zones decide where spawns may land, so who redrew the walkable ground is
+  // exactly the kind of question this trail exists to answer.
+  | "zone.create"
+  | "zone.activate"
+  | "zone.deactivate"
+  | "zone.delete"
   | "admin.create"
   | "admin.update"
   | "admin.login"
@@ -38,7 +44,8 @@ export type AuditAction =
 export interface AuditEntry {
   adminId: string;
   action: AuditAction;
-  targetType: "Payout" | "Player" | "Hunt" | "Cache" | "AdminUser" | "Session";
+  targetType:
+    "Payout" | "Player" | "Hunt" | "Cache" | "Zone" | "AdminUser" | "Session";
   targetId: string;
   detail?: string;
   ip?: string;

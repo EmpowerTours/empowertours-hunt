@@ -8,11 +8,13 @@ import {
   verifySeed,
   uniformBigInt,
   deriveSpawn,
+  deriveSpawnInArea,
   evaluateSpawnEligibility,
   validateSpawnCollect,
   type SpawnEligibilityContext,
   type SpawnCollectContext,
 } from "@/lib/hunt/spawn";
+import { isWalkable, type Ring } from "@/lib/geo/polygon";
 
 const ORIGIN = { lat: 19.4326, lng: -99.1332 }; // Mexico City
 const NOW = new Date("2026-08-12T12:00:00.000Z");
@@ -202,6 +204,120 @@ function eligibility(
     ...over,
   };
 }
+
+describe("deriveSpawnInArea", () => {
+  const params = {
+    origin: ORIGIN,
+    minRadiusM: 80,
+    maxRadiusM: 600,
+    minWei: 500_000_000_000_000n,
+    maxWei: 1_500_000_000_000_000n,
+  };
+
+  // Everything EAST of the origin only. Roughly half the bearings land outside,
+  // so the redraw path is genuinely exercised rather than trivially satisfied.
+  const EAST_HALF: Ring = [
+    { lat: ORIGIN.lat - 0.01, lng: ORIGIN.lng },
+    { lat: ORIGIN.lat - 0.01, lng: ORIGIN.lng + 0.01 },
+    { lat: ORIGIN.lat + 0.01, lng: ORIGIN.lng + 0.01 },
+    { lat: ORIGIN.lat + 0.01, lng: ORIGIN.lng },
+  ];
+  const area = { include: [EAST_HALF], exclude: [] as Ring[] };
+
+  it("is reproducible, so a revealed seed still proves the whole retry sequence", () => {
+    expect(deriveSpawnInArea("seed-42", params, area)).toEqual(
+      deriveSpawnInArea("seed-42", params, area),
+    );
+  });
+
+  it("never returns a draw outside the walkable area", () => {
+    for (let i = 0; i < 300; i += 1) {
+      const result = deriveSpawnInArea(`seed-${i}`, params, area);
+      if (!result.ok) continue;
+      expect(isWalkable(result.draw, area)).toBe(true);
+    }
+  });
+
+  it("still respects the annulus it was asked for", () => {
+    for (let i = 0; i < 200; i += 1) {
+      const result = deriveSpawnInArea(`annulus-${i}`, params, area);
+      if (!result.ok) continue;
+      const d = haversineMeters(ORIGIN, result.draw);
+      expect(d).toBeGreaterThanOrEqual(params.minRadiusM - 0.5);
+      expect(d).toBeLessThanOrEqual(params.maxRadiusM + 0.5);
+    }
+  });
+
+  it("takes the first draw untouched when it is already walkable", () => {
+    // Find a seed whose attempt 0 lands east, then prove no redraw happened.
+    const seed = Array.from({ length: 50 }, (_, i) => `first-${i}`).find((s) =>
+      isWalkable(deriveSpawn(s, params), area),
+    )!;
+    const result = deriveSpawnInArea(seed, params, area);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.attempts).toBe(1);
+      expect(result.draw).toEqual(deriveSpawn(seed, params));
+    }
+  });
+
+  it("reports how many attempts it needed, within the bound", () => {
+    for (let i = 0; i < 100; i += 1) {
+      const result = deriveSpawnInArea(`attempts-${i}`, params, area, 6);
+      expect(result.attempts).toBeGreaterThanOrEqual(1);
+      expect(result.attempts).toBeLessThanOrEqual(6);
+    }
+  });
+
+  // An unsurveyed hunt places nothing. This is the whole reason `isWalkable`
+  // treats an empty hull as "nowhere approved" rather than "anywhere goes".
+  it("declines when no walkable area has been surveyed", () => {
+    const result = deriveSpawnInArea("unsurveyed", params, {
+      include: [],
+      exclude: [],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.attempts).toBe(10);
+  });
+
+  // A player standing across the river from the only walkable ground. Missing a
+  // spawn cycle is correct here; spinning forever in a request path is not.
+  it("declines rather than looping when the hull is out of reach", () => {
+    const faraway: Ring = [
+      { lat: ORIGIN.lat + 1, lng: ORIGIN.lng + 1 },
+      { lat: ORIGIN.lat + 1, lng: ORIGIN.lng + 1.01 },
+      { lat: ORIGIN.lat + 1.01, lng: ORIGIN.lng + 1.01 },
+      { lat: ORIGIN.lat + 1.01, lng: ORIGIN.lng + 1 },
+    ];
+    const result = deriveSpawnInArea("unreachable", params, {
+      include: [faraway],
+      exclude: [],
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  // THE POINT: a hazard inside the hull stays unreachable.
+  it("never places a drop inside an exclusion zone", () => {
+    const river: Ring = [
+      { lat: ORIGIN.lat - 0.01, lng: ORIGIN.lng + 0.002 },
+      { lat: ORIGIN.lat - 0.01, lng: ORIGIN.lng + 0.004 },
+      { lat: ORIGIN.lat + 0.01, lng: ORIGIN.lng + 0.004 },
+      { lat: ORIGIN.lat + 0.01, lng: ORIGIN.lng + 0.002 },
+    ];
+    const withRiver = { include: [EAST_HALF], exclude: [river] };
+
+    for (let i = 0; i < 300; i += 1) {
+      const result = deriveSpawnInArea(`river-${i}`, params, withRiver);
+      if (!result.ok) continue;
+      expect(isWalkable(result.draw, withRiver)).toBe(true);
+    }
+  });
+
+  it("refuses a nonsensical attempt bound", () => {
+    expect(() => deriveSpawnInArea("s", params, area, 0)).toThrow(RangeError);
+    expect(() => deriveSpawnInArea("s", params, area, 1.5)).toThrow(RangeError);
+  });
+});
 
 describe("evaluateSpawnEligibility", () => {
   it("anchors on the last VERIFIED position, never on a claim", () => {

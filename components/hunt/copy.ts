@@ -84,6 +84,10 @@ const SPAWN_REASONS: Record<string, string> = {
   cooldown: "Too soon after your last collect.",
   implausible_speed:
     "You covered too much ground too fast. The attempt was logged for review.",
+  // Deliberately says "here", not "you". Nothing is wrong with the player —
+  // there is simply no walkable ground in range to drop onto.
+  no_walkable_ground:
+    "Nothing can drop around here. Head back toward the streets and try again.",
 };
 
 export function spawnReasonCopy(reason: string): string {

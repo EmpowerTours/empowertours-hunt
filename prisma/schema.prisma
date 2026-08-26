@@ -272,8 +272,53 @@ model Hunt {
   playerStats  PlayerHunt[]
   spawns       Spawn[]
   credits      CreditLedger[]
+  zones        Zone[]
 
   @@index([active])
+}
+
+enum ZoneKind {
+  INCLUDE
+  EXCLUDE
+}
+
+// Ground a spawn may land on.
+//
+// WHY: `deriveSpawn` places a drop at a uniform bearing and distance from the
+// player — a point on an abstract disc, with no idea what is underneath it.
+// Without these rows it will eventually put a drop in the river, inside
+// someone's house, or across a highway, and then pay the player for reaching
+// it. `lib/geo/polygon.ts` filters placement against these zones and declines
+// to spawn rather than placing one somewhere unwalkable.
+//
+// A hunt with no INCLUDE zone places NO SPAWNS AT ALL. That is deliberate:
+// "not surveyed yet" and "anywhere is fine" must never be the same state.
+// Cache finds are unaffected either way — a human stood at every cache, so they
+// are walkable by construction.
+//
+// UNLIKE `Cache.lat/lng`, THESE COORDINATES ARE NOT SECRET. A zone is the
+// public shape of the streets; it reveals nothing about where anything is
+// hidden, and the player-facing map needs it to draw the playable area.
+model Zone {
+  id     String @id @default(cuid())
+  hunt   Hunt   @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  huntId String
+
+  kind ZoneKind
+
+  /// Human label for the admin list — "plaza", "the river", "the highway".
+  name String?
+
+  /// Closed ring as `[{ "lat": Float, "lng": Float }, ...]`. The closing edge
+  /// is implicit; do not repeat the first vertex. Fewer than three vertices
+  /// encloses nothing and is ignored by `pointInRing`.
+  vertices Json
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([huntId, active])
 }
 
 model Cache {

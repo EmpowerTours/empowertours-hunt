@@ -8,8 +8,9 @@ import {
   evaluateSpawnEligibility,
   deriveSeed,
   commitSeed,
-  deriveSpawn,
+  deriveSpawnInArea,
 } from "@/lib/hunt/spawn";
+import type { Ring } from "@/lib/geo/polygon";
 
 // Ask for a spawn, and see the ones already on your radar.
 //
@@ -181,13 +182,52 @@ export async function POST(
     const seed = deriveSeed(seedSecret, spawnId);
     const seedCommit = commitSeed(seed);
 
-    const draw = deriveSpawn(seed, {
-      origin: eligibility.origin,
-      minRadiusM: hunt.spawnMinRadiusM,
-      maxRadiusM: hunt.spawnMaxRadiusM,
-      minWei: toWei(hunt.spawnMinWei),
-      maxWei: toWei(hunt.spawnMaxWei),
+    // Walkable ground. `deriveSpawn` alone places a point on an abstract disc
+    // and will happily drop one in the river or inside a house, then pay the
+    // player for reaching it. These zones are what keep placement on streets.
+    //
+    // No INCLUDE zone means an unsurveyed hunt, which places nothing at all —
+    // `isWalkable` treats an empty hull as "nowhere approved" rather than
+    // "anywhere goes", so a half-finished survey fails safe.
+    const zones = await prisma.zone.findMany({
+      where: { huntId, active: true },
+      select: { kind: true, vertices: true },
     });
+    const area = {
+      include: zones
+        .filter((z) => z.kind === "INCLUDE")
+        .map((z) => z.vertices as unknown as Ring),
+      exclude: zones
+        .filter((z) => z.kind === "EXCLUDE")
+        .map((z) => z.vertices as unknown as Ring),
+    };
+
+    const placement = deriveSpawnInArea(
+      seed,
+      {
+        origin: eligibility.origin,
+        minRadiusM: hunt.spawnMinRadiusM,
+        maxRadiusM: hunt.spawnMaxRadiusM,
+        minWei: toWei(hunt.spawnMinWei),
+        maxWei: toWei(hunt.spawnMaxWei),
+      },
+      area,
+    );
+
+    if (!placement.ok) {
+      // Transient, not terminal: the player walking a hundred metres changes
+      // the answer. The scan poll keeps running.
+      console.warn(
+        `[hunt/spawn] no walkable placement for player ${player.id} after ${placement.attempts} attempts`,
+      );
+      return NextResponse.json({
+        spawned: false,
+        reason: "no_walkable_ground",
+        spawns: active.map(view),
+      });
+    }
+
+    const draw = placement.draw;
 
     const expiresAt = new Date(now.getTime() + hunt.spawnTtlSeconds * 1000);
 
