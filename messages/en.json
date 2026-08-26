@@ -1,0 +1,51 @@
+{
+  "language": {
+    "label": "Language",
+    "es": "Español",
+    "en": "English",
+    "switchedNote": "Language set manually. It will stay this way on this device."
+  },
+  "spawnReason": {
+    "player_not_active": "This account cannot collect right now.",
+    "hunt_not_active": "This hunt is not running.",
+    "hunt_not_started": "This hunt has not opened yet.",
+    "hunt_ended": "This hunt has closed.",
+    "gps_accuracy_too_low": "Your GPS is not accurate enough yet. Wait for the fix to settle.",
+    "clock_skew": "Your device clock is off. Fix the time and try again.",
+    "cooldown": "Too soon after your last collect.",
+    "implausible_speed": "You covered too much ground too fast. The attempt was logged for review.",
+    "spawn_not_found": "That drop is not on your radar.",
+    "spawn_expired": "That drop expired.",
+    "spawn_already_collected": "That drop was already collected.",
+    "out_of_range": "You are not close enough yet.",
+    "hunt_budget_exhausted": "This hunt has paid out its budget.",
+    "player_daily_cap_reached": "You have reached your daily limit.",
+    "no_walkable_ground": "Nothing can drop around here. Head back toward the streets and try again.",
+    "contended": "We could not confirm that collect just now. The drop is still yours — tap it again.",
+    "unknown": "That collect was refused."
+  },
+  "claim": {
+    "noFindHere": "Nothing here. Keep looking.",
+    "found": "Found it.",
+    "creditEarned": "You earned {amount} in credit."
+  },
+  "gps": {
+    "idle": "Waiting for GPS.",
+    "locating": "Finding you…",
+    "ready": "GPS locked.",
+    "denied": "Location permission is off. The hunt cannot verify a claim without it — enable it in your browser's site settings, then retry.",
+    "unsupported": "This browser cannot report a location. A hunt needs GPS — try Safari or Chrome over HTTPS.",
+    "unavailable": "Your device could not get a fix. Step outside, away from buildings, and retry.",
+    "timeout": "The last fix is stale — your phone has stopped reporting a position. Keep the screen on and retry.",
+    "accuracy": "GPS accuracy",
+    "needs": "needs ±{meters} m",
+    "retry": "Retry"
+  },
+  "payout": {
+    "released": "Collected. The payout was released automatically and will settle on chain shortly.",
+    "held": "Collected. The payout is held for review ({reason}) — MON is never sent without a bound being satisfied.",
+    "failed": "The collect request failed.",
+    "signerMissing": "Collecting MON must be signed, and the passkey signer is not wired up in this build.",
+    "title": "Payout"
+  }
+}

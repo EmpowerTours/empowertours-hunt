@@ -23,11 +23,10 @@ import {
   scanSpawns,
   submitClaim,
 } from "@/components/hunt/client";
-import {
-  isTerminalSpawnReason,
-  refusalCopy,
-  spawnReasonCopy,
-} from "@/components/hunt/copy";
+import { isTerminalSpawnReason, refusalCopy } from "@/components/hunt/copy";
+import { useSpawnReason } from "@/components/hunt/useSpawnReason";
+import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
+import { useTranslations } from "next-intl";
 import {
   bearingDegrees,
   haversineMeters,
@@ -101,6 +100,9 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   const [scanStopped, setScanStopped] = useState(false);
   const [spawnError, setSpawnError] = useState<string | null>(null);
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
+  const spawnReason = useSpawnReason();
+  const tPayout = useTranslations("payout");
+  const tGps = useTranslations("gps");
   const [collectingId, setCollectingId] = useState<string | null>(null);
   const [collectNote, setCollectNote] = useState<string | null>(null);
   const [scanTick, setScanTick] = useState(0);
@@ -248,19 +250,19 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           setSelectedSpawnId(null);
           setCollectNote(
             result.payout.holdReason === null
-              ? "Collected. The payout was released automatically and will settle on chain shortly."
-              : `Collected. The payout is held for review (${result.payout.holdReason}) — MON is never sent without a bound being satisfied.`,
+              ? tPayout("released")
+              : tPayout("held", { reason: result.payout.holdReason }),
           );
         } else {
-          setSpawnError(spawnReasonCopy(result.reason));
+          setSpawnError(spawnReason(result.reason));
         }
       } catch (e: unknown) {
         setSpawnError(
           e instanceof SignerMissingError
-            ? "Collecting MON must be signed, and the passkey signer is not wired up in this build."
+            ? tPayout("signerMissing")
             : e instanceof ApiError
               ? e.message
-              : "The collect request failed.",
+              : tPayout("failed"),
         );
       } finally {
         setCollectingId(null);
@@ -332,16 +334,21 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         </Note>
       ) : null}
 
+      <LanguageSwitch className="flex justify-end" />
+
       <FixReadout
         fix={fix}
         status={geo.status}
-        message={geo.message}
+        // The hook's own MESSAGES map stays English: lib/ has non-UI callers and
+        // a status string is data. Only what reaches the screen is translated,
+        // and only when the hook had something to say at all.
+        message={geo.message === null ? null : tGps(geo.status)}
         maxAccuracyM={maxAccuracyM}
         now={now}
         onRetry={geo.retry}
       />
 
-      {collectNote ? <Note title="Payout">{collectNote}</Note> : null}
+      {collectNote ? <Note title={tPayout("title")}>{collectNote}</Note> : null}
 
       <SpawnPanel
         marks={marks}

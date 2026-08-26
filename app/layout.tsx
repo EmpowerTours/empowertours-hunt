@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale } from "next-intl/server";
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -43,13 +45,22 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Resolved in i18n/request.ts: manual choice, then edge country header, then
+  // a geo-IP lookup, then Accept-Language, then Spanish.
+  const locale = await getLocale();
+
   return (
-    <html lang="en">
+    // `lang` is not decoration. It picks the hyphenation and the voice a screen
+    // reader uses, and a Spanish page announced by an English voice is close to
+    // unusable. It was hardcoded "en" before this.
+    <html lang={locale}>
       <body className="bg-void text-ink font-sans antialiased">
-        <Providers>{children}</Providers>
+        <NextIntlClientProvider>
+          <Providers>{children}</Providers>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

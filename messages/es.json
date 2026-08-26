@@ -1,0 +1,51 @@
+{
+  "language": {
+    "label": "Idioma",
+    "es": "Español",
+    "en": "English",
+    "switchedNote": "Idioma elegido manualmente. Se queda así en este dispositivo."
+  },
+  "spawnReason": {
+    "player_not_active": "Esta cuenta no puede recoger en este momento.",
+    "hunt_not_active": "Esta búsqueda no está activa.",
+    "hunt_not_started": "Esta búsqueda todavía no abre.",
+    "hunt_ended": "Esta búsqueda ya cerró.",
+    "gps_accuracy_too_low": "Tu GPS todavía no es lo bastante preciso. Espera a que se estabilice.",
+    "clock_skew": "El reloj de tu dispositivo está desfasado. Corrige la hora e inténtalo de nuevo.",
+    "cooldown": "Muy pronto después de tu última recogida.",
+    "implausible_speed": "Avanzaste demasiado en muy poco tiempo. El intento quedó registrado para revisión.",
+    "spawn_not_found": "Ese premio no está en tu radar.",
+    "spawn_expired": "Ese premio ya venció.",
+    "spawn_already_collected": "Ese premio ya fue recogido.",
+    "out_of_range": "Todavía no estás lo bastante cerca.",
+    "hunt_budget_exhausted": "Esta búsqueda ya repartió todo su presupuesto.",
+    "player_daily_cap_reached": "Llegaste a tu límite del día.",
+    "no_walkable_ground": "Por aquí no puede caer nada. Regresa hacia las calles e inténtalo otra vez.",
+    "contended": "No pudimos confirmar esa recogida ahorita. El premio sigue siendo tuyo: vuelve a tocarlo.",
+    "unknown": "Esa recogida fue rechazada."
+  },
+  "claim": {
+    "noFindHere": "Aquí no hay nada. Sigue buscando.",
+    "found": "¡Lo encontraste!",
+    "creditEarned": "Ganaste {amount} en crédito."
+  },
+  "gps": {
+    "idle": "Esperando el GPS.",
+    "locating": "Ubicándote…",
+    "ready": "GPS listo.",
+    "denied": "El permiso de ubicación está apagado. La búsqueda no puede verificar nada sin él: actívalo en la configuración del sitio en tu navegador y vuelve a intentar.",
+    "unsupported": "Este navegador no puede reportar tu ubicación. La búsqueda necesita GPS: prueba con Safari o Chrome por HTTPS.",
+    "unavailable": "Tu dispositivo no pudo obtener una ubicación. Sal a cielo abierto, lejos de los edificios, y vuelve a intentar.",
+    "timeout": "La última ubicación ya está vieja: tu teléfono dejó de reportar. Mantén la pantalla encendida y vuelve a intentar.",
+    "accuracy": "Precisión del GPS",
+    "needs": "necesita ±{meters} m",
+    "retry": "Reintentar"
+  },
+  "payout": {
+    "released": "Recogido. El pago se liberó automáticamente y se confirmará en la cadena en unos momentos.",
+    "held": "Recogido. El pago quedó retenido para revisión ({reason}): nunca se envía MON sin que se cumpla un límite.",
+    "failed": "Falló la solicitud de recogida.",
+    "signerMissing": "Recoger MON requiere una firma, y el firmante de passkey no está conectado en esta versión.",
+    "title": "Pago"
+  }
+}

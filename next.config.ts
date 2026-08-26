@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+// Points next-intl at i18n/request.ts, which decides the locale per request.
+// There is no `[locale]` route segment: every URL stays exactly as it was.
+const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
 // Headers applied to every response. Geolocation is the one powerful feature
 // this app genuinely needs; everything else is denied outright so a future
@@ -23,4 +28,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

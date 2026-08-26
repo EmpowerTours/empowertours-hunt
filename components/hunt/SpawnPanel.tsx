@@ -2,7 +2,7 @@
 
 import { Note } from "@/components/ui/primitives";
 import { formatCountdown, formatMeters, formatMon, weiOrZero } from "./format";
-import { spawnReasonCopy } from "./copy";
+import { useSpawnReason } from "./useSpawnReason";
 import { compassPoint } from "./geo";
 import type { SpawnMark } from "@/components/radar/RadarScope";
 
@@ -45,6 +45,7 @@ export function SpawnPanel({
   error: string | null;
   signingAvailable: boolean;
 }) {
+  const spawnReason = useSpawnReason();
   const live = marks.filter(
     (m) => new Date(m.spawn.expiresAt).getTime() - now > 0,
   );
@@ -67,9 +68,9 @@ export function SpawnPanel({
         <div className="border-hull-line bg-hull rounded-2xl border p-4">
           <p className="text-ink-faint text-sm leading-snug">
             {stopped && scanReason
-              ? spawnReasonCopy(scanReason)
+              ? spawnReason(scanReason)
               : scanReason
-                ? spawnReasonCopy(scanReason)
+                ? spawnReason(scanReason)
                 : "Nothing on the scope. Drops appear near you at random and expire fast."}
           </p>
         </div>
