@@ -1,7 +1,12 @@
 import "./helpers/env";
 import { describe, it, expect, beforeEach } from "vitest";
 import { db, resetDatabase } from "./helpers/db";
-import { makeHunt, makePlayer, makePlayerHunt, makeSpawn } from "./helpers/factories";
+import {
+  makeHunt,
+  makePlayer,
+  makePlayerHunt,
+  makeSpawn,
+} from "./helpers/factories";
 import { signedRequest, routeCtx } from "./helpers/http";
 import { POST as collect } from "@/app/api/hunt/[huntId]/spawn/collect/route";
 
@@ -57,7 +62,10 @@ async function post(args: {
     ip: args.ip,
   });
   const res = await collect(req, routeCtx({ huntId: args.huntId }));
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  return {
+    status: res.status,
+    body: (await res.json()) as Record<string, unknown>,
+  };
 }
 
 /* Measured while writing these: deleting `AND "collectedAt" IS NULL` from
@@ -244,32 +252,24 @@ describe("CEILING 2 — the hunt MON budget", () => {
   });
 
   // ---------------------------------------------------------------------
-  // KNOWN GAP, recorded rather than hidden.
+  // WAS A KNOWN GAP, NOW FIXED. Kept as the regression test.
   //
-  // The commit runs at Serializable because the auto-approval daily cap is a
-  // SUM over rows the transaction is itself inserting. That choice is right —
-  // it converts an overshoot into an abort. But nothing HANDLES the abort.
+  // The commit runs Serializable because the auto-approval daily cap is a SUM
+  // over rows the transaction is itself inserting. That converts a concurrent
+  // overshoot into an abort — correct — but nothing used to HANDLE the abort.
+  // Postgres raised 40001, Prisma surfaced it as P2010 with meta.code
+  // "40001", and the route's catch knew only CollectRejected and P2002, so it
+  // rethrew: HTTP 500 "internal error" to a player standing at the spawn, and
+  // no ClaimAttempt row, so the trail a payout dispute is answered from was
+  // missing exactly the events that happened under load.
   //
-  // Postgres raises 40001 ("could not serialize access due to read/write
-  // dependencies"), Prisma surfaces it as P2010, and the route's catch knows
-  // only CollectRejected and P2002. Everything else is rethrown, so a
-  // legitimate collect that merely lost a scheduling race returns:
+  // Measured before the fix: at ten concurrent collects, SEVEN came back 500.
   //
-  //   * HTTP 500 {"error":"internal error"} to a player standing at the spawn,
-  //     with no indication that retrying would work; and
-  //   * NO ClaimAttempt row — so the audit trail README.md offers as the answer
-  //     to a payout dispute is missing exactly the events that happened under
-  //     load.
-  //
-  // Measured, not theorised: at ten concurrent collects, SEVEN came back 500
-  // and the budget ceiling never got to speak. No money is at risk — the
-  // spawns stay open and nothing is overspent — but the failure is opaque and
-  // unrecorded. The fix is a bounded retry on 40001 around the transaction,
-  // plus a ClaimAttempt row for the give-up case.
-  //
-  // This test pins the CURRENT behaviour so the fix has something to change.
+  // lib/db/retry.ts now retries the whole transaction — safe precisely because
+  // an aborted transaction committed nothing — and files "contended" when it
+  // gives up. These assertions are what stop that regressing.
   // ---------------------------------------------------------------------
-  it("KNOWN GAP: serialization failures surface as 500 with no audit row", async () => {
+  it("answers every contended collect instead of throwing a 500", async () => {
     const drop = ONE_MON / 100n;
     const hunt = await makeHunt({
       budgetMonWei: (drop * 20n).toString(),
@@ -302,21 +302,48 @@ describe("CEILING 2 — the hunt MON budget", () => {
       ),
     );
 
-    const aborted = results.filter((r) => r.status === 500);
+    // THE FIX. Not one opaque failure: every request gets an answer it can act
+    // on, whether that is a payout or "try again".
+    expect(results.filter((r) => r.status === 500)).toEqual([]);
+    expect(results.every((r) => r.status === 200)).toBe(true);
 
-    // Budget is ample, so nothing here should have been refused on a ceiling.
-    // Any 500 is a serialization abort and nothing else.
-    expect(aborted.length).toBeGreaterThan(0);
+    const collected = results.filter((r) => r.body.collected === true);
+    const contended = results.filter((r) => r.body.reason === "contended");
 
-    // The part that matters for a dispute: those attempts left no trace.
-    const attempts = await db.claimAttempt.count();
-    const accepted = results.filter((r) => r.body.collected === true).length;
-    expect(attempts).toBe(accepted);
-    expect(attempts).toBeLessThan(results.length);
+    // Budget is ample and every player has their own spawn, so nothing here
+    // can be refused on a ceiling. Every outcome is a collect or a retry-me.
+    expect(collected.length + contended.length).toBe(results.length);
 
-    // And no money moved for them — the safe direction, which is why this is a
-    // gap and not an incident.
-    expect(await db.payout.count()).toBe(accepted);
+    // Retrying should make ALL of these land at the configured six attempts —
+    // measured 10/10 across repeated runs. Asserted as a floor rather than an
+    // equality because it is a timing property of a real database, and a flaky
+    // test that has to be re-run teaches people to ignore it. If this ever
+    // falls back toward the three that landed with no retry at all, the retry
+    // has stopped working even though no 500 appears.
+    expect(collected.length).toBeGreaterThanOrEqual(8);
+
+    // EVERY attempt is now in the audit trail, contended ones included. This is
+    // the half that was silently missing: a dispute about a collect that
+    // happened under load had nothing to replay.
+    const attempts = await db.claimAttempt.findMany();
+    expect(attempts).toHaveLength(results.length);
+    expect(attempts.filter((a) => a.accepted)).toHaveLength(collected.length);
+    for (const a of attempts.filter((x) => !x.accepted)) {
+      expect(a.reason).toBe("contended");
+      expect(a.detail).toMatch(/serialization failed after \d+ attempts/);
+    }
+
+    // And a contended collect cost nothing: no payout, and the spawn is still
+    // there to be tapped again. Transient, not a loss.
+    expect(await db.payout.count()).toBe(collected.length);
+    expect(await db.spawn.count({ where: { collectedAt: null } })).toBe(
+      contended.length,
+    );
+
+    const after = await db.hunt.findUniqueOrThrow({ where: { id: hunt.id } });
+    expect(BigInt(after.spentMonWei.toFixed(0))).toBe(
+      drop * BigInt(collected.length),
+    );
   });
 
   it("pays nothing at all when the budget is unconfigured", async () => {

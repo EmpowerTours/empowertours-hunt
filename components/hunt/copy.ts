@@ -88,6 +88,11 @@ const SPAWN_REASONS: Record<string, string> = {
   // there is simply no walkable ground in range to drop onto.
   no_walkable_ground:
     "Nothing can drop around here. Head back toward the streets and try again.",
+  // Says "we", not "you". The player did nothing wrong and the spawn is still
+  // theirs — the server could not commit under load and gave up rather than
+  // holding the request open.
+  contended:
+    "We could not confirm that collect just now. The spawn is still yours — tap it again.",
 };
 
 export function spawnReasonCopy(reason: string): string {

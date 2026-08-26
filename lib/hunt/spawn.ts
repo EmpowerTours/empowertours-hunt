@@ -93,6 +93,12 @@ export const SPAWN_REJECT_REASONS = [
   // a stored ClaimAttempt.reason is always a value one of these modules knows.
   "hunt_budget_exhausted",
   "player_daily_cap_reached",
+  // Postgres refused to serialize the commit and every retry was refused too.
+  // Nothing was written and nothing was spent, so the spawn is still there —
+  // this is "the server was too busy", not "you cannot have it". Transient by
+  // construction, and the ONLY reason in this list that is about the server
+  // rather than the player.
+  "contended",
 ] as const;
 export type SpawnRejectReason = (typeof SPAWN_REJECT_REASONS)[number];
 
