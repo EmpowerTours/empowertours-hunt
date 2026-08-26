@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requirePlayer, clientIp, AuthError } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
+import { withTransactionRetry, SerializationExhausted } from "@/lib/db/retry";
 import { toWei, fromWei } from "@/lib/wei";
 import {
   validateClaim,
@@ -196,31 +197,38 @@ export async function POST(
     // hunt overspent by (K-1) rewards. There is no read-then-write left here:
     // each ceiling is a conditional UPDATE whose affected-row count decides.
     try {
-      const committed = await prisma.$transaction(async (tx) => {
-        // The counter row has to exist before a conditional UPDATE can hit it.
-        // Creating it grants nothing on its own — findCount starts at 0.
-        //
-        // ON CONFLICT DO NOTHING, not prisma.upsert: a compound-key upsert is
-        // a read-then-insert, so two first-time claims by the same player race
-        // and one takes a unique violation on the primary key. Inside a
-        // Postgres transaction that violation aborts EVERYTHING, and the
-        // route's P2002 handler would then file the attempt as
-        // "already_found" — a legitimate find refused, and an audit row that
-        // says something that never happened.
-        await tx.$executeRaw`
+      // The BACKSTOP, not the fix. Consistent lock ordering is what removes
+      // the cycle; this catches whatever contends next — a ceiling added out
+      // of order, a deadlock from a route that does not exist yet. Retrying is
+      // safe only because the unit is a transaction: an aborted one committed
+      // nothing, so running it again runs it for the first time.
+      const committed = await withTransactionRetry(
+        () =>
+          prisma.$transaction(async (tx) => {
+            // The counter row has to exist before a conditional UPDATE can hit it.
+            // Creating it grants nothing on its own — findCount starts at 0.
+            //
+            // ON CONFLICT DO NOTHING, not prisma.upsert: a compound-key upsert is
+            // a read-then-insert, so two first-time claims by the same player race
+            // and one takes a unique violation on the primary key. Inside a
+            // Postgres transaction that violation aborts EVERYTHING, and the
+            // route's P2002 handler would then file the attempt as
+            // "already_found" — a legitimate find refused, and an audit row that
+            // says something that never happened.
+            await tx.$executeRaw`
           INSERT INTO "PlayerHunt" ("huntId", "playerId")
           VALUES (${huntId}, ${player.id})
           ON CONFLICT ("huntId", "playerId") DO NOTHING`;
 
-        // CEILING 1 — per-player find cap. `maxFindsPerPlayer = 0` disables
-        // it, matching the schema default. The comparison happens in the
-        // database against the row's current value, so two concurrent claims
-        // cannot both see findCount = N.
-        //
-        // lastVerified* is set here and only here: it is the last position the
-        // VERIFIER accepted, and spawns are placed relative to it precisely so
-        // a spoofer cannot summon one by asserting a position.
-        const capped = await tx.$executeRaw`
+            // CEILING 1 — per-player find cap. `maxFindsPerPlayer = 0` disables
+            // it, matching the schema default. The comparison happens in the
+            // database against the row's current value, so two concurrent claims
+            // cannot both see findCount = N.
+            //
+            // lastVerified* is set here and only here: it is the last position the
+            // VERIFIER accepted, and spawns are placed relative to it precisely so
+            // a spoofer cannot summon one by asserting a position.
+            const capped = await tx.$executeRaw`
           UPDATE "PlayerHunt"
              SET "findCount" = "findCount" + 1,
                  "earnedCreditWei" = "earnedCreditWei" + ${rewardParam}::numeric,
@@ -233,99 +241,119 @@ export async function POST(
              AND "playerId" = ${player.id}
              AND (${hunt.maxFindsPerPlayer} = 0
                   OR "findCount" + 1 <= ${hunt.maxFindsPerPlayer})`;
-        if (capped === 0) throw new CeilingRejected("player_cap_reached");
+            if (capped === 0) throw new CeilingRejected("player_cap_reached");
 
-        // CEILING 2 — hunt credit budget. Same CAS shape. Ordered after the
-        // per-player cap so that the cheaper, more common refusal happens
-        // first; either failure rolls the whole thing back, so the order
-        // cannot leave one counter advanced without the other.
-        const funded = await tx.$executeRaw`
+            // CEILING 2 — hunt credit budget. Same CAS shape.
+            //
+            // ORDER IS LOAD-BEARING, and the reason is no longer just "cheapest
+            // refusal first". The Hunt row is the one row EVERY claim and EVERY
+            // collect in this hunt must touch; PlayerHunt rows are per-player. So
+            // Hunt is taken LAST, deliberately, to hold the global lock for the
+            // shortest possible window — and the spawn collect route was changed
+            // to match, because it used to take these two in the opposite order.
+            // Two shared rows in opposite orders is the textbook deadlock, and it
+            // was killing roughly 0.7% of claims with an HTTP 500 whenever
+            // Postgres picked the claim as the victim.
+            //
+            // Any future ceiling touching both rows takes PlayerHunt first.
+            const funded = await tx.$executeRaw`
           UPDATE "Hunt"
              SET "spentCreditWei" = "spentCreditWei" + ${rewardParam}::numeric,
                  "updatedAt" = NOW()
            WHERE "id" = ${huntId}
              AND ("budgetCreditWei" = 0
                   OR "spentCreditWei" + ${rewardParam}::numeric <= "budgetCreditWei")`;
-        if (funded === 0) throw new CeilingRejected("hunt_budget_exhausted");
+            if (funded === 0)
+              throw new CeilingRejected("hunt_budget_exhausted");
 
-        // The find itself. @@unique([cacheId, playerId]) is what makes a
-        // double-claim structurally impossible rather than merely unlikely; a
-        // racing duplicate lands here as P2002 and rolls back both ceilings.
-        const find = await tx.find.create({
-          data: {
-            huntId,
-            cacheId: result.cacheId,
-            playerId: player.id,
-            foundAt: serverNow,
-            distanceMeters: result.distanceMeters,
-            accuracyM: result.accuracyM,
-            lat: input.lat,
-            lng: input.lng,
-            speedKmhFromLast: result.speedKmh,
-            // Snapshotted so a later edit to Cache.rewardCreditWei cannot
-            // retroactively change what this find was worth.
-            rewardCreditSnapshot: rewardParam,
+            // The find itself. @@unique([cacheId, playerId]) is what makes a
+            // double-claim structurally impossible rather than merely unlikely; a
+            // racing duplicate lands here as P2002 and rolls back both ceilings.
+            const find = await tx.find.create({
+              data: {
+                huntId,
+                cacheId: result.cacheId,
+                playerId: player.id,
+                foundAt: serverNow,
+                distanceMeters: result.distanceMeters,
+                accuracyM: result.accuracyM,
+                lat: input.lat,
+                lng: input.lng,
+                speedKmhFromLast: result.speedKmh,
+                // Snapshotted so a later edit to Cache.rewardCreditWei cannot
+                // retroactively change what this find was worth.
+                rewardCreditSnapshot: rewardParam,
+              },
+            });
+
+            // TURBO credit. No Payout — a find never moves native MON; Payout is
+            // spawn-only now. The balance is incremented by the database, and the
+            // ledger row records the balance that increment produced, so ledger
+            // and balance can be reconciled against each other later.
+            let balanceAfterWei: bigint | null = null;
+            if (reward > 0n) {
+              const updatedPlayer = await tx.player.update({
+                where: { id: player.id },
+                data: { creditBalanceWei: { increment: rewardParam } },
+                select: { creditBalanceWei: true },
+              });
+              // The balance the DB actually produced, worked backwards to the
+              // before-value so the pure helper — including its refusal to issue
+              // credit on top of a negative balance — sees the real numbers.
+              const balanceAfter = toWei(updatedPlayer.creditBalanceWei);
+              const entry = creditForFind(balanceAfter - reward, reward);
+              if (!entry) {
+                throw new Error("no credit entry for a positive reward");
+              }
+              balanceAfterWei = entry.balanceAfterWei;
+
+              await tx.creditLedger.create({
+                data: {
+                  playerId: player.id,
+                  huntId,
+                  reason: entry.reason,
+                  amountWei: fromWei(entry.amountWei),
+                  balanceAfterWei: fromWei(entry.balanceAfterWei),
+                  // @unique — one credit entry per find, so a find is
+                  // structurally incapable of issuing credit twice.
+                  findId: find.id,
+                },
+              });
+            }
+
+            // The audit row, with the FINAL outcome, in the SAME transaction as
+            // the find it describes. Written before the ceilings it used to say
+            // `accepted: true` for claims that were then refused — and a human
+            // reads this row when deciding whether to honour a disputed claim by
+            // hand, so that was a path to paying out money the verifier declined.
+            await tx.claimAttempt.create({
+              data: {
+                huntId,
+                playerId: player.id,
+                clientTs,
+                lat: input.lat,
+                lng: input.lng,
+                accuracyM: result.accuracyM,
+                kind: "cache",
+                accepted: true,
+                reason: null,
+                detail: null,
+                flagged: false,
+              },
+            });
+
+            return { find, balanceAfterWei };
+          }),
+        {
+          onRetry: (attempt, delayMs) => {
+            // Contention has to be visible; a silent retry loop hides the load
+            // that caused it.
+            console.warn(
+              `[hunt/claim] transaction retry ${attempt} for player ${player.id} after ${delayMs}ms`,
+            );
           },
-        });
-
-        // TURBO credit. No Payout — a find never moves native MON; Payout is
-        // spawn-only now. The balance is incremented by the database, and the
-        // ledger row records the balance that increment produced, so ledger
-        // and balance can be reconciled against each other later.
-        let balanceAfterWei: bigint | null = null;
-        if (reward > 0n) {
-          const updatedPlayer = await tx.player.update({
-            where: { id: player.id },
-            data: { creditBalanceWei: { increment: rewardParam } },
-            select: { creditBalanceWei: true },
-          });
-          // The balance the DB actually produced, worked backwards to the
-          // before-value so the pure helper — including its refusal to issue
-          // credit on top of a negative balance — sees the real numbers.
-          const balanceAfter = toWei(updatedPlayer.creditBalanceWei);
-          const entry = creditForFind(balanceAfter - reward, reward);
-          if (!entry) {
-            throw new Error("no credit entry for a positive reward");
-          }
-          balanceAfterWei = entry.balanceAfterWei;
-
-          await tx.creditLedger.create({
-            data: {
-              playerId: player.id,
-              huntId,
-              reason: entry.reason,
-              amountWei: fromWei(entry.amountWei),
-              balanceAfterWei: fromWei(entry.balanceAfterWei),
-              // @unique — one credit entry per find, so a find is
-              // structurally incapable of issuing credit twice.
-              findId: find.id,
-            },
-          });
-        }
-
-        // The audit row, with the FINAL outcome, in the SAME transaction as
-        // the find it describes. Written before the ceilings it used to say
-        // `accepted: true` for claims that were then refused — and a human
-        // reads this row when deciding whether to honour a disputed claim by
-        // hand, so that was a path to paying out money the verifier declined.
-        await tx.claimAttempt.create({
-          data: {
-            huntId,
-            playerId: player.id,
-            clientTs,
-            lat: input.lat,
-            lng: input.lng,
-            accuracyM: result.accuracyM,
-            kind: "cache",
-            accepted: true,
-            reason: null,
-            detail: null,
-            flagged: false,
-          },
-        });
-
-        return { find, balanceAfterWei };
-      });
+        },
+      );
 
       return NextResponse.json({
         found: true,
@@ -369,6 +397,21 @@ export async function POST(
         // not issue a second credit entry.
         auditReason = "already_found";
         detail = "duplicate find lost the race";
+      } else if (e instanceof SerializationExhausted) {
+        // Every attempt was aborted. NOTHING COMMITTED — no find, no credit,
+        // no counter moved — so the cache is still there and the next claim
+        // will get it. Filed like any other refusal so it cannot vanish from
+        // the trail a disputed claim is answered from.
+        //
+        // The client still gets the OPAQUE body. A distinguishable "we were
+        // busy" would be a location oracle: contention only happens inside the
+        // transaction, which is only reached once the verifier has accepted —
+        // so saying so would confirm a cache is there.
+        auditReason = "contended";
+        detail = `transaction aborted after ${e.attempts} attempts`;
+        console.warn(
+          `[hunt/claim] gave up after ${e.attempts} aborted attempts for player ${player.id}`,
+        );
       }
 
       if (!auditReason) throw e;

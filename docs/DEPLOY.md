@@ -163,10 +163,12 @@ manager.
 The 370 tests in `npm test` are all **pure-function** tests — validator,
 geometry, wei, the payout state machine. They prove the logic.
 
-`npm run test:integration` adds 36 tests against a real Postgres, covering what
+`npm run test:integration` adds 37 tests against a real Postgres, covering what
 a pure function cannot: the migration applying, `schema.prisma` not having
-drifted from it, the Json column round-tripping, and every atomic ceiling
-holding under genuine concurrency.
+drifted from it, the Json column round-tripping, every atomic ceiling holding
+under genuine concurrency, and the two money routes taking their shared rows in
+the same lock order — the last of which is invisible to any test that exercises
+one route at a time.
 
 ```bash
 docker run -d --name hunt-pg -e POSTGRES_PASSWORD=hunt -e POSTGRES_USER=hunt \

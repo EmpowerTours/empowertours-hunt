@@ -31,6 +31,11 @@ export const REJECT_REASONS = [
   // and a dispute replay never meets a string this module does not know.
   "player_cap_reached",
   "hunt_budget_exhausted",
+  // Postgres aborted the commit and every retry was aborted too. Nothing was
+  // written and no credit was issued, so the cache is still unfound — this is
+  // "the server was too busy", not "you cannot have it". The only reason in
+  // this list that is about the server rather than the player or the hunt.
+  "contended",
 ] as const;
 
 export type RejectReason = (typeof REJECT_REASONS)[number];

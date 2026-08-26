@@ -28,12 +28,20 @@ add TOURS code without being asked.
    conditional `UPDATE ... WHERE current + delta <= ceiling` whose affected-row
    count is checked, inside the same transaction as the write it bounds. A
    read-then-write is a bug even if it looks correct.
-5. **Nothing irreversible happens without a bound.** Sending MON is gated by
+5. **Ceilings lock `PlayerHunt` before `Hunt`.** Both money routes touch the
+   per-player counter row and the hunt's single `Hunt` row; taken in opposite
+   orders they deadlock, and neither route deadlocks against ITSELF, so load
+   testing one route finds nothing. Measured: interleaved claims and collects
+   killed ~0.7% of claims with an HTTP 500. `Hunt` goes last because every
+   claim and every collect in the hunt contends on it, so the global lock is
+   held for the shortest window. `tests/integration/lock-order.itest.ts` is the
+   guard. A new ceiling touching both rows takes them in this order.
+6. **Nothing irreversible happens without a bound.** Sending MON is gated by
    per-payout cap, per-player rolling 24h cap, per-hunt budget, and auto-approval
    policy. A flagged attempt never auto-approves.
-6. **No secrets in code.** `HUNT_TREASURY_PRIVATE_KEY`, `PRIVY_APP_SECRET`,
+7. **No secrets in code.** `HUNT_TREASURY_PRIVATE_KEY`, `PRIVY_APP_SECRET`,
    `UPSTASH_*` come from env. Never log them, never echo them.
-7. **Do not weaken a control to make a test pass.** Fix the test.
+8. **Do not weaken a control to make a test pass.** Fix the test.
 
 ## File ownership — do not edit outside your lane
 

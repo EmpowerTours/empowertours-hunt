@@ -310,21 +310,31 @@ export async function POST(
                 throw new CollectRejected("spawn_already_collected");
               }
 
-              // CEILING 2 — hunt MON budget. Note `budgetMonWei > 0` is REQUIRED,
-              // not "0 disables": this is real money leaving a hot wallet, so an
-              // unconfigured hunt must pay nothing. (Credit, which is a discount
-              // rather than cash, reads 0 as disabled — deliberately different.)
-              const funded = await tx.$executeRaw`
-            UPDATE "Hunt"
-               SET "spentMonWei" = "spentMonWei" + ${amountParam}::numeric,
-                   "updatedAt" = NOW()
-             WHERE "id" = ${huntId}
-               AND "budgetMonWei" > 0
-               AND "spentMonWei" + ${amountParam}::numeric <= "budgetMonWei"`;
-              if (funded === 0)
-                throw new CollectRejected("hunt_budget_exhausted");
+              // ORDER IS LOAD-BEARING: PlayerHunt BEFORE Hunt.
+              //
+              // Not a preference — a deadlock fix, and a throughput one. The
+              // claim route locks PlayerHunt and then Hunt. This route used to
+              // take them the other way round, and two shared rows in opposite
+              // orders is the textbook cycle: interleaving claims and collects
+              // on one hunt produced deadlocks in every measured run, and
+              // roughly 0.7% of CLAIMS died as HTTP 500 whenever Postgres
+              // picked the claim as its victim. Neither route deadlocked
+              // against itself at any volume, which is exactly why this could
+              // not be found by reading either one alone.
+              //
+              // Hunt is the row EVERY claim and EVERY collect in this hunt
+              // must touch; PlayerHunt rows are per-player. Taking Hunt LAST
+              // holds the global lock for the shortest window, so this is the
+              // cheaper of the two consistent orders as well as a correct one.
+              //
+              // Any future ceiling touching both rows takes PlayerHunt first.
+              // The only visible consequence of the swap is which reason is
+              // audited when BOTH would refuse the same collect: it used to be
+              // hunt_budget_exhausted, it is now player_daily_cap_reached.
+              // Either failure rolls the whole transaction back, so no order
+              // can leave one counter advanced without the other.
 
-              // CEILING 3 — per-player rolling 24h cap, measured over the Spawn
+              // CEILING 2 — per-player rolling 24h cap, measured over the Spawn
               // rows themselves (the row collected above is already inside this
               // transaction's view, so it counts). Also the place the accepted
               // position is recorded: a collect is a verified fix, so it becomes
@@ -350,6 +360,20 @@ export async function POST(
               if (capped === 0) {
                 throw new CollectRejected("player_daily_cap_reached");
               }
+
+              // CEILING 3 — hunt MON budget. Note `budgetMonWei > 0` is REQUIRED,
+              // not "0 disables": this is real money leaving a hot wallet, so an
+              // unconfigured hunt must pay nothing. (Credit, which is a discount
+              // rather than cash, reads 0 as disabled — deliberately different.)
+              const funded = await tx.$executeRaw`
+            UPDATE "Hunt"
+               SET "spentMonWei" = "spentMonWei" + ${amountParam}::numeric,
+                   "updatedAt" = NOW()
+             WHERE "id" = ${huntId}
+               AND "budgetMonWei" > 0
+               AND "spentMonWei" + ${amountParam}::numeric <= "budgetMonWei"`;
+              if (funded === 0)
+                throw new CollectRejected("hunt_budget_exhausted");
 
               // --- Approval policy ------------------------------------------
               // A flagged attempt never auto-approves. "Flagged" is read wider than
