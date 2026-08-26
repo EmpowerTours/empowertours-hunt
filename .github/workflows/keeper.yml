@@ -14,12 +14,28 @@ name: keeper
 # The routes fail closed: an unset or short CRON_SECRET makes them refuse to run
 # rather than run unauthenticated.
 
+# THE SCHEDULE IS OFF UNTIL THE APP IS DEPLOYED.
+#
+# There is no deployment yet: hunt.empowertours.xyz does not resolve, and
+# vars.HUNT_URL / secrets.CRON_SECRET are unset in this repo. With the cron
+# enabled the guard below fired every 5 minutes — ~288 red runs and 288
+# failure emails a day, all reporting the same absent configuration.
+#
+# TO TURN THE KEEPER ON, in this order:
+#   1. Deploy, and set vars.HUNT_URL + secrets.CRON_SECRET (see docs/DEPLOY.md).
+#   2. Run this workflow via `workflow_dispatch` and confirm it is green.
+#   3. Uncomment the `schedule:` block below and push.
+#
+# The guard stays a hard failure on purpose. Once the schedule is live, an
+# unconfigured or unreachable keeper MUST be loud: the payout queue silently
+# not draining is the exact failure this workflow exists to prevent.
+
 on:
-  schedule:
-    # Sweep approved payouts every 5 minutes.
-    - cron: "*/5 * * * *"
-    # Reconcile ambiguous sends every 15.
-    - cron: "*/15 * * * *"
+  # schedule:
+  #   # Sweep approved payouts every 5 minutes.
+  #   - cron: "*/5 * * * *"
+  #   # Reconcile ambiguous sends every 15.
+  #   - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       job:
