@@ -11,7 +11,11 @@ import {
 } from "@category-labs/mera";
 import { toViemAccount } from "@category-labs/mera/viem";
 import type { LocalAccount } from "viem";
-import { HUNT_PRF_SALT, walletFromPrfOutput } from "./derive";
+import {
+  HUNT_PRF_SALT,
+  HUNT_PRF_SALT_LABEL,
+  walletFromPrfOutput,
+} from "./derive";
 
 // ---------------------------------------------------------------------------
 // The WebAuthn half of player auth. Browser only — mera is a browser library
@@ -41,14 +45,58 @@ export const RP_ID = process.env.NEXT_PUBLIC_RP_ID ?? "localhost";
  */
 const FOREIGN_RP_IDS = ["regalo.empowertours.xyz"];
 
+/**
+ * Relying-party ids that reach ACROSS EmpowerTours apps rather than naming one.
+ *
+ * WebAuthn accepts an rpId that is a registrable suffix of the origin, so
+ * `empowertours.xyz` served from hunt.empowertours.xyz yields a credential
+ * every sibling subdomain can also invoke. That is exactly what Cota needs —
+ * one passkey, one wallet, whichever door the player came through — and it is
+ * also the moment the relying-party id stops separating anything.
+ *
+ * Under a parent rpId the PRF salt is the ONLY thing standing between hunt's
+ * wallets and Regalo's. That was always the salt's job (see HUNT_PRF_SALT),
+ * but until now it was the second of two mechanisms rather than the last one.
+ * So a parent rpId is allowed and the salt is checked instead of assumed.
+ */
+const PARENT_RP_IDS = ["empowertours.xyz"];
+
 function assertOwnRelyingParty(rpId: string): void {
-  if (FOREIGN_RP_IDS.includes(rpId.toLowerCase())) {
+  const id = rpId.toLowerCase();
+
+  if (FOREIGN_RP_IDS.includes(id)) {
     throw new Error(
       `NEXT_PUBLIC_RP_ID is set to ${rpId}, which belongs to another EmpowerTours app. ` +
         "Hunt passkeys must be issued under hunt's own host or players share wallets between apps.",
     );
   }
+
+  // A parent rpId spends one of the two separations, so the remaining one has
+  // to be verified rather than trusted. A wrong salt here would hand every
+  // player another app's wallet, silently and permanently — the failure the
+  // rpId check exists to prevent, arriving through the other door.
+  if (
+    PARENT_RP_IDS.includes(id) &&
+    HUNT_PRF_SALT_LABEL !== EXPECTED_SALT_LABEL
+  ) {
+    throw new Error(
+      `NEXT_PUBLIC_RP_ID is ${rpId}, which is shared across EmpowerTours subdomains, ` +
+        `but the PRF salt label is "${HUNT_PRF_SALT_LABEL}" rather than ` +
+        `"${EXPECTED_SALT_LABEL}". Under a parent relying-party id the salt is the ` +
+        "only thing keeping hunt wallets apart from another app's.",
+    );
+  }
 }
+
+/**
+ * Pinned here, deliberately apart from derive.ts.
+ *
+ * If this read the label from the same place derive.ts defines it, editing the
+ * label would move both and the check would keep passing — a test that agrees
+ * with whatever it is handed. Two independent statements of the same constant
+ * is the point; derive.test.ts pins the bytes, this pins the name.
+ */
+const EXPECTED_SALT_LABEL = "empowertours-hunt/passkey/v1";
 
 /**
  * WebAuthn's own timeout is only a hint and some platforms ignore it, so the
