@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale } from "next-intl/server";
 import "./globals.css";
-import { Providers } from "./providers";
+import { HuntAuthProvider } from "@/lib/auth/HuntAuthProvider";
 
 export const metadata: Metadata = {
   title: {
@@ -59,7 +59,7 @@ export default async function RootLayout({
     <html lang={locale}>
       <body className="bg-void text-ink font-sans antialiased">
         <NextIntlClientProvider>
-          <Providers>{children}</Providers>
+          <HuntAuthProvider>{children}</HuntAuthProvider>
         </NextIntlClientProvider>
       </body>
     </html>

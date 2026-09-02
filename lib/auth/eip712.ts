@@ -38,63 +38,24 @@ import { getRedis } from "@/lib/ratelimit";
 //      address is not the session player's, so it fails. Drop the expected
 //      address check and cross-domain replay comes straight back.
 // ---------------------------------------------------------------------------
+import {
+  CLAIM_ATTEMPT_TYPES,
+  HUNT_DOMAIN,
+  REGISTRATION_TYPES,
+  SESSION_STATEMENT,
+  SESSION_TYPES,
+} from "./typedData";
+import { COTA_TYPES } from "@/lib/cota/typedData";
 
-/**
- * Fixed per AGENTS.md. chainId 143 is Monad mainnet; it is part of the domain
- * separator, so a signature produced for any other chain will not verify here.
- * No verifyingContract: nothing on-chain consumes these, and inventing an
- * address would only create a second thing that must be kept in sync.
- */
-export const HUNT_DOMAIN = {
-  name: "EmpowerToursHunt",
-  version: "1",
-  chainId: 143,
-} as const;
-
-export const CLAIM_ATTEMPT_TYPES = {
-  ClaimAttempt: [
-    { name: "huntId", type: "string" },
-    // lat/lng/accuracyM are strings, not fixed-point ints, so the signed bytes
-    // are exactly the characters the client sent. A float re-encoded on the way
-    // to the hasher is a signature that verifies over a value nobody signed.
-    { name: "lat", type: "string" },
-    { name: "lng", type: "string" },
-    { name: "accuracyM", type: "string" },
-    { name: "clientTs", type: "uint256" },
-    { name: "nonce", type: "string" },
-  ],
-} as const;
-
-export const REGISTRATION_TYPES = {
-  Registration: [
-    { name: "wallet", type: "address" },
-    // Both optional fields are inside the signature. turboUsername decides
-    // which cohort the credit lands in and passkeyCredentialId is UNIQUE in the
-    // schema, so an unsigned one would let a man-in-the-middle either redirect
-    // a player's credit or burn another player's credential id.
-    { name: "turboUsername", type: "string" },
-    { name: "passkeyCredentialId", type: "string" },
-    { name: "clientTs", type: "uint256" },
-    { name: "nonce", type: "string" },
-  ],
-} as const;
-
-export const SESSION_TYPES = {
-  Session: [
-    { name: "wallet", type: "address" },
-    { name: "statement", type: "string" },
-    { name: "clientTs", type: "uint256" },
-    { name: "nonce", type: "string" },
-  ],
-} as const;
-
-/**
- * Pinned string inside every login signature. It makes a login signature
- * unmistakable to a human reading a wallet prompt, and stops a signature
- * harvested by some unrelated dapp from doubling as a session here.
- */
-export const SESSION_STATEMENT =
-  "Sign in to EmpowerTours Hunt. This does not authorise a transaction.";
+// Re-exported so this module stays the one import site for anything server-side.
+export {
+  CLAIM_ATTEMPT_TYPES,
+  COTA_TYPES,
+  HUNT_DOMAIN,
+  REGISTRATION_TYPES,
+  SESSION_STATEMENT,
+  SESSION_TYPES,
+};
 
 /**
  * Accepted clock skew, seconds. Matches Hunt.maxClockSkewSeconds' default so a
@@ -440,6 +401,69 @@ export function verifySessionSignature(
     nonce: payload.nonce,
     clientTs: payload.clientTs,
     expectedAddress: payload.wallet,
+    opts,
+  });
+}
+
+// --- Cota ------------------------------------------------------------------
+//
+// A Cota is the upper bound a player signs before software may trade for them.
+// It reuses everything above unchanged: the same domain, the same single-use
+// nonce, the same clock-skew window, and the same rule that the recovered
+// address must equal the session player's wallet.
+//
+// That last check is what makes a Cota a bound rather than a suggestion. A
+// signature is a bearer credential; without binding it to the session player,
+// one player's signed ceiling would authorise trading in another's account.
+
+export interface SignedCota {
+  venue: string;
+  markets: readonly string[];
+  maxNotionalUsdE6: bigint;
+  maxLeverageX100: bigint;
+  maxDailyLossUsdE6: bigint;
+  maxTradesPerDay: number;
+  notBefore: bigint;
+  notAfter: bigint;
+  /** Unix SECONDS. */
+  clientTs: bigint;
+  nonce: string;
+  signature: Hex;
+  /** The session player's wallet. The recovered address must equal this. */
+  expectedAddress: string;
+}
+
+export function verifyCotaSignature(
+  payload: SignedCota,
+  opts?: VerifyOptions,
+): Promise<VerifyResult> {
+  return recoverAndCheck({
+    primaryType: "Cota",
+    typedData: {
+      domain: HUNT_DOMAIN,
+      types: COTA_TYPES,
+      primaryType: "Cota",
+      message: {
+        venue: payload.venue,
+        // Spread: viem must not receive a readonly array where it expects a
+        // mutable one, and the copy also stops a caller mutating the array
+        // after we have hashed it.
+        markets: [...payload.markets],
+        maxNotionalUsdE6: payload.maxNotionalUsdE6,
+        maxLeverageX100: payload.maxLeverageX100,
+        maxDailyLossUsdE6: payload.maxDailyLossUsdE6,
+        maxTradesPerDay: payload.maxTradesPerDay,
+        notBefore: payload.notBefore,
+        notAfter: payload.notAfter,
+        clientTs: payload.clientTs,
+        nonce: payload.nonce,
+      },
+      signature: payload.signature,
+    },
+    signature: payload.signature,
+    nonce: payload.nonce,
+    clientTs: payload.clientTs,
+    expectedAddress: payload.expectedAddress,
     opts,
   });
 }
