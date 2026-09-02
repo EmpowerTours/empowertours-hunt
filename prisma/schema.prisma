@@ -184,6 +184,7 @@ model Player {
   credits      CreditLedger[]
   spawns       Spawn[]
   enrollments  Enrollment[]
+  cotas        Cota[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -798,4 +799,58 @@ model AdminAction {
   @@index([adminId, createdAt])
   @@index([targetType, targetId])
   @@index([createdAt])
+}
+
+/// The upper bound a player signs before software may trade for them.
+///
+/// Stored as scaled integers, not floats: these are ceilings a fill gets
+/// compared against, and Decimal(78,0) is how this schema already carries
+/// exact on-chain quantities (see Payout.amountMonWei). A rounded ceiling is a
+/// ceiling nobody agreed to.
+model Cota {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  /// Venue the bound authorises. A Cota signed for one venue must not
+  /// authorise another — see lib/cota/typedData.ts.
+  venue String
+
+  /// Named markets. Empty means the bound authorises nothing, which is a
+  /// meaningful state: a signed Cota that permits no market is a revocation.
+  markets String[]
+
+  maxNotionalUsdE6  Decimal @db.Decimal(78, 0)
+  maxLeverageX100   Decimal @db.Decimal(78, 0)
+  maxDailyLossUsdE6 Decimal @db.Decimal(78, 0)
+  maxTradesPerDay   Int
+
+  notBefore DateTime
+  notAfter  DateTime
+
+  /// Replay protection as signed, kept so a stored Cota can be re-verified
+  /// from the row alone rather than trusted because it is in the table.
+  clientTs  DateTime
+  nonce     String
+  signature String
+
+  /// EIP-712 hash of the message above. Unique because the same bound signed
+  /// twice is the same bound; a second row would let one agreement be
+  /// revoked while its twin stayed live.
+  digest String @unique
+
+  /// Set once the digest is anchored on Monad. Null until then — anchoring is
+  /// a separate act with its own failure modes, not part of signing.
+  anchorTxHash String?   @unique
+  anchoredAt   DateTime?
+
+  /// A player may revoke before notAfter. Kept as a timestamp rather than a
+  /// boolean so the audit can answer when, not just whether.
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([playerId, createdAt])
+  @@index([venue])
 }
