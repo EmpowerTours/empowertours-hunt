@@ -114,7 +114,6 @@ a {
   transform-box: view-box;
   transform-origin: center;
   animation: scope-rotate var(--sweep-dur) linear infinite;
-  will-change: transform;
 }
 
 @keyframes scope-rotate {

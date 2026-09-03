@@ -109,20 +109,6 @@ export function RadarScope({
     return best;
   }, [spawns, now]);
 
-  // The sweep tail. Rebuilt only when the band changes the tail length, so the
-  // animation itself never re-renders React.
-  const slices = useMemo(() => {
-    const step = style.tailDegrees / SWEEP_SLICES;
-    return Array.from({ length: SWEEP_SLICES }, (_, i) => {
-      // Leading edge points north (screen -90deg); the tail trails behind it.
-      const a0 = -90 - style.tailDegrees + i * step;
-      const falloff = (i + 1) / SWEEP_SLICES;
-      return {
-        d: wedgePath(a0, a0 + step + 0.4, RIM),
-        opacity: style.sweepOpacity * falloff * falloff,
-      };
-    });
-  }, [style.tailDegrees, style.sweepOpacity]);
 
   const spokes = useMemo(
     () =>
@@ -287,24 +273,16 @@ export function RadarScope({
         )}
 
         {/* Sweep. */}
-        {/* The sweep is a LINE pinned at the hub, with a fading trail behind
-            it — not a wedge that happens to contain a line. The earlier
-            weighting had the gradient slices drawn at full strength over a
-            hairline, which detached the bright part from the centre and made
-            the whole thing read as a shape floating in the dish.
-
-            Order matters: trail first, then the line and its hub anchor on
-            top, so the eye follows a spoke rotating about a fixed point. */}
+        {/* The sweep: one spoke, pinned at the hub, tracing the rim.
+            
+            It used to be a fan of fourteen gradient wedges with a hairline
+            drawn through them. That is what read as "a line floating" — the
+            bright thing moving across the dish was the wedge, not the line,
+            and a soft shape with no fixed end has nothing to pin it to the
+            centre. The wedges are gone rather than dimmed: the honest version
+            of this instrument is a spoke rotating about a point, and every
+            part that was not the spoke was working against it. */}
         <g className="scope-sweep">
-          {slices.map((s, i) => (
-            <path
-              key={i}
-              d={s.d}
-              fill={`url(#sweep-${uid})`}
-              opacity={s.opacity * 0.45}
-            />
-          ))}
-
           <line
             x1="0"
             y1="0"
@@ -313,21 +291,13 @@ export function RadarScope({
             stroke={style.color}
             strokeWidth="1.4"
             strokeLinecap="round"
-            opacity="0.95"
+            opacity="0.9"
           />
-
-          {/* The hub. Without something solid at the centre the line looks
-              like it starts somewhere near the middle rather than at it. */}
-          <circle cx="0" cy="0" r="2.2" fill={style.color} opacity="0.95" />
-
-          {/* The head, riding the rim. */}
-          <circle
-            cx="0"
-            cy={-RIM + 2}
-            r="2"
-            fill={style.color}
-            opacity="0.95"
-          />
+          {/* The hub. Without something solid at dead centre the spoke looks
+              like it begins near the middle rather than at it. */}
+          <circle cx="0" cy="0" r="2.4" fill={style.color} opacity="0.95" />
+          {/* The head, riding the rim — the end that draws the circle. */}
+          <circle cx="0" cy={-RIM + 2} r="2" fill={style.color} opacity="0.95" />
         </g>
 
         {/* GPS uncertainty, to scale. */}
