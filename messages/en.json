@@ -47,5 +47,29 @@
     "failed": "The collect request failed.",
     "signerMissing": "Collecting MON must be signed, and the passkey signer is not wired up in this build.",
     "title": "Payout"
+  },
+  "cota": {
+    "agreement": "What you're signing",
+    "another": "Sign another",
+    "badNumber": "Check that number.",
+    "duration": "Duration (days)",
+    "error": "Error",
+    "lede": "A Cota is the limit you put on software before it trades for you. You sign the numbers; nothing can exceed them.",
+    "leverage": "Max leverage",
+    "loading": "Loading markets…",
+    "loss": "Max loss per day (USD)",
+    "market": "Market",
+    "noMarkets": "Couldn't reach the venue. Try again later.",
+    "paper": "Practice mode",
+    "paperBody": "This runs on real Perpl prices with no money. Trading for real needs AUSD, which arrives by bridge from another network.",
+    "sign": "Sign with Face ID",
+    "signIn": "Sign in to sign a Cota",
+    "signInBody": "You need your passkey (Face ID or fingerprint) to sign a Cota.",
+    "signed": "Cota signed",
+    "signedBody": "Your limit is on file. You can revoke it whenever you want.",
+    "signing": "Signing…",
+    "size": "Max size open (USD)",
+    "title": "Sign your Cota",
+    "trades": "Trades per day"
   }
 }

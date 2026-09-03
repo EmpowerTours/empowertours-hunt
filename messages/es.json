@@ -47,5 +47,29 @@
     "failed": "Falló la solicitud de recogida.",
     "signerMissing": "Recoger MON requiere una firma, y el firmante de passkey no está conectado en esta versión.",
     "title": "Pago"
+  },
+  "cota": {
+    "agreement": "Lo que estás firmando",
+    "another": "Firmar otra",
+    "badNumber": "Revisa ese número.",
+    "duration": "Duración (días)",
+    "error": "Error",
+    "lede": "Una Cota es el límite que le pones al software antes de que opere por ti. Tú firmas los números; nada puede pasarse de ellos.",
+    "leverage": "Apalancamiento máximo",
+    "loading": "Cargando mercados…",
+    "loss": "Pérdida máxima por día (USD)",
+    "market": "Mercado",
+    "noMarkets": "No se pudo contactar al mercado. Intenta más tarde.",
+    "paper": "Modo práctica",
+    "paperBody": "Esto opera con precios reales de Perpl pero sin dinero. Para operar de verdad necesitas AUSD, que llega por el puente desde otra red.",
+    "sign": "Firmar con Face ID",
+    "signIn": "Inicia sesión para firmar",
+    "signInBody": "Necesitas tu llave de acceso (Face ID o huella) para firmar una Cota.",
+    "signed": "Cota firmada",
+    "signedBody": "Tu límite quedó registrado. Puedes revocarlo cuando quieras.",
+    "signing": "Firmando…",
+    "size": "Tamaño máximo abierto (USD)",
+    "title": "Firma tu Cota",
+    "trades": "Operaciones por día"
   }
 }

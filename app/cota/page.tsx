@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
+import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { readback } from "@/lib/cota/readback";
 import { leverageX100, LossyScaleError, usdE6 } from "@/lib/cota/scale";
@@ -19,8 +21,6 @@ import type { CotaMessage } from "@/lib/cota/typedData";
 // Spanish first. The audience is Guerrero, and a financial limit read in a
 // second language is a limit somebody half-understood.
 // ---------------------------------------------------------------------------
-
-type Lang = "es" | "en";
 
 interface Market {
   market: string;
@@ -41,59 +41,6 @@ const DEFAULTS = {
   maxTradesPerDay: 5,
   days: 30,
 };
-
-const T = {
-  es: {
-    title: "Firma tu Cota",
-    lede: "Una Cota es el límite que le pones al software antes de que opere por ti. Tú firmas los números; nada puede pasarse de ellos.",
-    signIn: "Inicia sesión para firmar",
-    signInBody:
-      "Necesitas tu llave de acceso (Face ID o huella) para firmar una Cota.",
-    market: "Mercado",
-    size: "Tamaño máximo abierto (USD)",
-    leverage: "Apalancamiento máximo",
-    loss: "Pérdida máxima por día (USD)",
-    trades: "Operaciones por día",
-    duration: "Duración (días)",
-    agreement: "Lo que estás firmando",
-    sign: "Firmar con Face ID",
-    signing: "Firmando…",
-    signed: "Cota firmada",
-    signedBody: "Tu límite quedó registrado. Puedes revocarlo cuando quieras.",
-    another: "Firmar otra",
-    paper: "Modo práctica",
-    paperBody:
-      "Esto opera con precios reales de Perpl pero sin dinero. Para operar de verdad necesitas AUSD, que llega por el puente desde otra red.",
-    noMarkets: "No se pudo contactar al mercado. Intenta más tarde.",
-    loading: "Cargando mercados…",
-    badNumber: "Revisa ese número.",
-  },
-  en: {
-    title: "Sign your Cota",
-    lede: "A Cota is the limit you put on software before it trades for you. You sign the numbers; nothing can exceed them.",
-    signIn: "Sign in to sign a Cota",
-    signInBody:
-      "You need your passkey (Face ID or fingerprint) to sign a Cota.",
-    market: "Market",
-    size: "Max size open (USD)",
-    leverage: "Max leverage",
-    loss: "Max loss per day (USD)",
-    trades: "Trades per day",
-    duration: "Duration (days)",
-    agreement: "What you're signing",
-    sign: "Sign with Face ID",
-    signing: "Signing…",
-    signed: "Cota signed",
-    signedBody: "Your limit is on file. You can revoke it whenever you want.",
-    another: "Sign another",
-    paper: "Practice mode",
-    paperBody:
-      "This runs on real Perpl prices with no money. Trading for real needs AUSD, which arrives by bridge from another network.",
-    noMarkets: "Couldn't reach the venue. Try again later.",
-    loading: "Loading markets…",
-    badNumber: "Check that number.",
-  },
-} as const;
 
 function Field({
   label,
@@ -137,8 +84,9 @@ function Field({
 
 export default function CotaPage() {
   const auth = useAuthSlot();
-  const [lang, setLang] = useState<Lang>("es");
-  const t = T[lang];
+  const t = useTranslations("cota");
+  // The read-back carries both languages per line; the active locale picks one.
+  const lang = useLocale() === "es" ? "es" : "en";
 
   const [markets, setMarkets] = useState<Market[] | null>(null);
   const [marketsFailed, setMarketsFailed] = useState(false);
@@ -266,39 +214,32 @@ export default function CotaPage() {
     <main className="mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-ink text-2xl font-semibold">{t.title}</h1>
-          <p className="text-ink-dim mt-1 text-sm leading-snug">{t.lede}</p>
+          <h1 className="text-ink text-2xl font-semibold">{t("title")}</h1>
+          <p className="text-ink-dim mt-1 text-sm leading-snug">{t("lede")}</p>
         </div>
-        <button
-          onClick={() => {
-            setLang((l) => (l === "es" ? "en" : "es"));
-          }}
-          className="border-hull-line text-ink-dim shrink-0 rounded-full border px-3 py-1 font-mono text-xs"
-        >
-          {lang === "es" ? "EN" : "ES"}
-        </button>
+        <LanguageSwitch className="shrink-0" />
       </header>
 
-      <Note tone="info" title={t.paper}>
-        {t.paperBody}
+      <Note tone="info" title={t("paper")}>
+        {t("paperBody")}
       </Note>
 
       {auth.status !== "signed-in" ? (
         <Panel className="space-y-3">
-          <p className="text-ink text-sm">{t.signInBody}</p>
+          <p className="text-ink text-sm">{t("signInBody")}</p>
           <Button
             onClick={() => {
               void auth.signIn();
             }}
             disabled={!auth.canSignIn}
           >
-            {t.signIn}
+            {t("signIn")}
           </Button>
         </Panel>
       ) : signedDigest !== null ? (
         <Panel className="space-y-3">
-          <Pill color="#4ade80">{t.signed}</Pill>
-          <p className="text-ink text-sm">{t.signedBody}</p>
+          <Pill color="#4ade80">{t("signed")}</Pill>
+          <p className="text-ink text-sm">{t("signedBody")}</p>
           <p className="text-ink-faint font-mono text-[11px] break-all">
             {signedDigest}
           </p>
@@ -308,7 +249,7 @@ export default function CotaPage() {
               setSignedDigest(null);
             }}
           >
-            {t.another}
+            {t("another")}
           </Button>
         </Panel>
       ) : (
@@ -316,12 +257,12 @@ export default function CotaPage() {
           <Panel className="space-y-4">
             <div>
               <span className="text-ink-dim font-mono text-xs tracking-[0.14em] uppercase">
-                {t.market}
+                {t("market")}
               </span>
               {marketsFailed ? (
-                <p className="text-alert mt-2 text-sm">{t.noMarkets}</p>
+                <p className="text-alert mt-2 text-sm">{t("noMarkets")}</p>
               ) : markets === null ? (
-                <p className="text-ink-faint mt-2 text-sm">{t.loading}</p>
+                <p className="text-ink-faint mt-2 text-sm">{t("loading")}</p>
               ) : (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {markets.map((m) => (
@@ -344,14 +285,14 @@ export default function CotaPage() {
             </div>
 
             <Field
-              label={t.size}
+              label={t("size")}
               value={maxNotional}
               onChange={setMaxNotional}
               step={10}
               suffix="$"
             />
             <Field
-              label={t.leverage}
+              label={t("leverage")}
               value={maxLeverage}
               onChange={setMaxLeverage}
               step={0.5}
@@ -359,20 +300,20 @@ export default function CotaPage() {
               suffix="x"
             />
             <Field
-              label={t.loss}
+              label={t("loss")}
               value={maxDailyLoss}
               onChange={setMaxDailyLoss}
               step={5}
               suffix="$"
             />
             <Field
-              label={t.trades}
+              label={t("trades")}
               value={maxTrades}
               onChange={setMaxTrades}
               step={1}
             />
             <Field
-              label={t.duration}
+              label={t("duration")}
               value={days}
               onChange={setDays}
               step={1}
@@ -382,10 +323,10 @@ export default function CotaPage() {
 
           <Panel className="space-y-3">
             <h2 className="text-ink-dim font-mono text-xs tracking-[0.14em] uppercase">
-              {t.agreement}
+              {t("agreement")}
             </h2>
             {ceilings === null ? (
-              <p className="text-alert text-sm">{t.badNumber}</p>
+              <p className="text-alert text-sm">{t("badNumber")}</p>
             ) : (
               <ul className="space-y-2.5">
                 {/* Protective clauses first: what bounds the loss is what the
@@ -410,7 +351,7 @@ export default function CotaPage() {
           </Panel>
 
           {error !== null ? (
-            <Note tone="stop" title="Error">
+            <Note tone="stop" title={t("error")}>
               {error}
             </Note>
           ) : null}
@@ -419,7 +360,7 @@ export default function CotaPage() {
             onClick={() => void onSign()}
             disabled={busy || ceilings === null}
           >
-            {busy ? t.signing : t.sign}
+            {busy ? t("signing") : t("sign")}
           </Button>
         </>
       )}

@@ -57,17 +57,33 @@ Toma una, dinos en el Telegram cuál tomaste para que nadie la repita, y súbela
 
 Take one, say in Telegram which one you took so nobody duplicates it, and commit it.
 
-### 1. Traducir la app al español / Translate the app to Spanish
+### 1. Traducir la app / Translate the app
 
-La app está en inglés en varios lugares. Los mensajes que ve un jugador cuando
-algo falla son los más importantes — alguien los va a leer parado en la calle,
-sin nadie a quién preguntarle.
+**Archivo: [`messages/es.json`](messages/es.json)** (el inglés está en
+`messages/en.json`, para comparar).
 
-Several parts of the app are still in English. The messages a player sees when
-something goes wrong matter most — somebody reads those standing outdoors with
-nobody to ask.
+Es un archivo de texto con pares `"clave": "frase"`. Cambias la frase en español,
+nunca la clave. Los mensajes de error son los más importantes — alguien los lee
+parado en la calle, sin nadie a quién preguntarle.
+
+Hay una prueba automática que verifica que los dos archivos tengan exactamente
+las mismas claves y que ninguna frase quede vacía, así que si te equivocas, te
+avisa antes de que llegue a nadie.
+
+**File: [`messages/es.json`](messages/es.json)** (English is in
+`messages/en.json` to compare against).
+
+It's a text file of `"key": "sentence"` pairs. You change the Spanish sentence,
+never the key. Error messages matter most — somebody reads those standing
+outdoors with nobody to ask.
+
+An automated test checks that both files have exactly the same keys and that no
+sentence is left empty, so a mistake gets caught before it reaches anyone.
 
 ### 2. Probar en tu teléfono y reportar / Test on your phone and report
+
+**Archivo: [`docs/device-reports.md`](docs/device-reports.md)** — añade una fila.
+**File: [`docs/device-reports.md`](docs/device-reports.md)** — add a row.
 
 Abre la app, intenta usarla, y escribe qué pasó: qué teléfono, qué navegador,
 qué botón tocaste, qué esperabas y qué viste. Un reporte de algo que **no**
@@ -78,6 +94,9 @@ browser, which button, what you expected, what you got. A report that something
 **worked** is also useful — we need to know which phones are fine.
 
 ### 3. Proponer lugares para el hunt / Suggest hunt locations
+
+**Archivo: [`docs/locations.md`](docs/locations.md)** — añade una fila.
+**File: [`docs/locations.md`](docs/locations.md)** — add a row.
 
 ¿Conoces un lugar en Tierra Colorada donde tenga sentido esconder algo? Un
 parque, una tienda, una cancha. Necesitamos el nombre del lugar y por qué es
