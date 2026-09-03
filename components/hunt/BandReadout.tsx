@@ -17,6 +17,7 @@ import type { HintStatus } from "@/components/hooks/useHint";
 export function BandReadout({
   band,
   complete,
+  cacheless = false,
   remaining,
   status,
   error,
@@ -25,15 +26,24 @@ export function BandReadout({
   complete: boolean;
   remaining: number;
   status: HintStatus;
+  cacheless?: boolean;
   error: string | null;
 }) {
   const style = bandStyle(complete ? null : band);
-  const label = complete
-    ? "ALL FOUND"
-    : band === null
+  const label = cacheless
+    ? "SPAWNS ONLY"
+    : complete
+      ? "ALL FOUND"
+      : band === null
       ? "NO READING"
       : style.label;
-  const gloss = complete
+  // "Nothing here to find" is not "you found everything". Saying the second
+  // to somebody on a spawn-only hunt tells them they finished something they
+  // never started, and that there is nothing left — on a hunt that is working
+  // exactly as intended.
+  const gloss = cacheless
+    ? "No hidden caches on this hunt. Walk and rewards drop near you."
+    : complete
     ? "Every cache in this hunt is yours. Spawns still drop."
     : status === "throttled"
       ? "Reading paused — too many samples. It will resume on its own."

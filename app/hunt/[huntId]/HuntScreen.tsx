@@ -133,31 +133,56 @@ export function HuntScreen({ huntId }: { huntId: string }) {
    * Check in before scanning.
    *
    * Spawns anchor to a verified position, and until this ran the scan returned
-   * `no_verified_position` forever — the player walked and nothing ever
-   * appeared. Throttled to the hunt's own cooldown so it does not spend the
-   * claim rate limit; the server enforces the same interval regardless.
+   * `no_verified_position` forever — the player walked and nothing appeared.
+   *
+   * ## Why `fix` is a ref and not a dependency
+   *
+   * It was a dependency, and that broke the feature outdoors. `fix` changes on
+   * every GPS update; on a moving phone reporting ±2m that is roughly every
+   * second. Each change re-ran the effect, whose cleanup aborted the in-flight
+   * check-in — so on exactly the device this is built for, walking, the
+   * request never survived long enough to land.
+   *
+   * The cooldown made it worse rather than papering over it: it was stamped
+   * when the request STARTED, so each aborted attempt still burned the full
+   * sixty seconds before another was allowed. Reported from the street as
+   * "walked a few blocks, nothing spawned", with GPS at ±2m.
+   *
+   * Now the latest fix is read from a ref at send time, the effect is driven
+   * by the tick alone, and only a COMPLETED attempt spends the cooldown.
    */
+  const fixRef = useRef(fix);
+  useEffect(() => {
+    fixRef.current = fix;
+  }, [fix]);
+
   const lastCheckInRef = useRef(0);
 
   useEffect(() => {
-    if (!scanEnabled || fix === null) return;
-    const elapsed = Date.now() - lastCheckInRef.current;
-    if (elapsed < cooldownSeconds * 1000) return;
+    if (!scanEnabled) return;
+    const current = fixRef.current;
+    if (current === null) return;
+    if (Date.now() - lastCheckInRef.current < cooldownSeconds * 1000) return;
 
-    const controller = new AbortController();
-    lastCheckInRef.current = Date.now();
-    checkIn(huntId, fix, controller.signal)
+    // Deliberately NOT aborted on cleanup. This is a small POST whose whole
+    // job is to land; cancelling it because the GPS moved is what broke it.
+    // A late reply is simply ignored.
+    let ignore = false;
+    checkIn(huntId, current)
       .then((r) => {
+        if (ignore) return;
+        lastCheckInRef.current = Date.now();
         // A refused check-in is worth showing: it is almost always GPS
         // accuracy, which the player can fix by stepping outside.
         if (!r.ok && r.reason) setScanReason(r.reason);
       })
       .catch(() => {
-        // The next tick retries. A failed check-in is not worth an error
-        // banner over a scan that is about to run anyway.
+        // Leave the cooldown unspent so the next tick retries promptly.
       });
-    return () => controller.abort();
-  }, [scanEnabled, fix, huntId, cooldownSeconds, scanTick]);
+    return () => {
+      ignore = true;
+    };
+  }, [scanEnabled, huntId, cooldownSeconds, scanTick]);
 
   useEffect(() => {
     if (!scanEnabled) return;
@@ -233,6 +258,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     phase,
     cooldownSecondsLeft,
     complete: hint.complete,
+    cacheless: hint.cacheless,
     huntActive,
   });
 
@@ -396,6 +422,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
       <BandReadout
         band={hint.band}
         complete={hint.complete}
+        cacheless={hint.cacheless}
         remaining={hint.remaining}
         status={hint.status}
         error={hint.error}

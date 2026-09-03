@@ -19,7 +19,7 @@ import type {
 
    Routes that exist and are consumed against their real handlers:
 
-     POST   /api/hunt/[huntId]/hint           -> { complete, band, remaining }
+     POST   /api/hunt/[huntId]/hint           -> { complete, cacheless, band, remaining }
      POST   /api/hunt/[huntId]/claim          -> { found, ... }   unsigned today
      POST   /api/hunt/[huntId]/spawn          -> { spawned, reason, spawns }
      POST   /api/hunt/[huntId]/spawn/collect  -> { collected, ... }  SIGNED
@@ -179,6 +179,7 @@ export async function fetchHint(
   if (!isRecord(body)) throw new ApiError("malformed hint", 502);
   return {
     complete: body.complete === true,
+    cacheless: body.cacheless === true,
     band: asBand(body.band),
     remaining: num(body.remaining) ?? 0,
   };

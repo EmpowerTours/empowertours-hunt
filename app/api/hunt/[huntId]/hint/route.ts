@@ -123,7 +123,21 @@ export async function POST(
     });
 
     if (!hint) {
-      return NextResponse.json({ complete: true, remaining: 0, band: null });
+      // "You found everything" and "there is nothing here" are different
+      // facts, and conflating them told a player on a spawn-only hunt that
+      // every cache was theirs and there was nothing left to claim — on a
+      // hunt that has never had a cache in it. Reported from the street.
+      //
+      // `complete` stays FALSE when the hunt holds no caches: completing
+      // nothing is not an achievement, and the claim button should not read
+      // as finished.
+      const cacheless = hunt.caches.length === 0;
+      return NextResponse.json({
+        complete: !cacheless,
+        cacheless,
+        remaining: 0,
+        band: null,
+      });
     }
 
     // Band and count only. No coordinates, no distance, no cache id — a cache
@@ -131,6 +145,7 @@ export async function POST(
     // trilaterate them one at a time.
     return NextResponse.json({
       complete: false,
+      cacheless: false,
       band: hint.band,
       remaining: hint.remaining,
     });

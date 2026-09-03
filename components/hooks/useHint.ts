@@ -31,6 +31,7 @@ export interface HintReading {
   band: HintBand | null;
   remaining: number;
   complete: boolean;
+  cacheless: boolean;
   status: HintStatus;
   error: string | null;
   /** epoch ms of the reading currently on screen, or null. */
@@ -46,6 +47,7 @@ export function useHint(
   const [band, setBand] = useState<HintBand | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [complete, setComplete] = useState(false);
+  const [cacheless, setCacheless] = useState(false);
   const [status, setStatus] = useState<HintStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
@@ -95,6 +97,7 @@ export function useHint(
         setBand(hint.band);
         setRemaining(hint.remaining);
         setComplete(hint.complete);
+        setCacheless(hint.cacheless === true);
         setReadAt(Date.now());
         setStatus("ok");
         setError(null);
@@ -123,5 +126,5 @@ export function useHint(
     // trigger. Both are intentional dependencies.
   }, [enabled, fix, huntId, complete, tick]);
 
-  return { band, remaining, complete, status, error, readAt, refresh };
+  return { band, remaining, complete, cacheless, status, error, readAt, refresh };
 }

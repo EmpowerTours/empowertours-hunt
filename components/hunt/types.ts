@@ -62,6 +62,14 @@ export type GeoStatus =
 /** `POST /api/hunt/[huntId]/hint` — band and count. Nothing else. */
 export interface HintResponse {
   complete: boolean;
+  /**
+   * True when this hunt holds no caches at all — a spawn-only hunt.
+   *
+   * Distinct from `complete`, which means the player found every cache there
+   * was. Reporting "all found" for a hunt with nothing in it tells somebody
+   * they have finished something they never started.
+   */
+  cacheless?: boolean;
   band: HintBand | null;
   remaining: number;
 }

@@ -27,6 +27,7 @@ export function claimGate({
   phase,
   cooldownSecondsLeft,
   complete,
+  cacheless = false,
   huntActive,
 }: {
   fix: GeoFix | null;
@@ -34,6 +35,8 @@ export function claimGate({
   phase: ClaimPhase;
   cooldownSecondsLeft: number;
   complete: boolean;
+  /** This hunt holds no caches at all — see PublicHint.cacheless. */
+  cacheless?: boolean;
   huntActive: boolean;
 }): ClaimGate {
   if (phase === "signing") {
@@ -44,6 +47,16 @@ export function claimGate({
   }
   if (!huntActive) {
     return { ready: false, label: "HUNT CLOSED", hint: null };
+  }
+  // Before `complete`, because a hunt with nothing in it is not a hunt
+  // somebody finished. Telling a player "nothing left to claim" on a
+  // spawn-only hunt reads as an ending when it is the normal state.
+  if (cacheless) {
+    return {
+      ready: false,
+      label: "SPAWNS ONLY",
+      hint: "No caches to claim here — walk and rewards drop near you.",
+    };
   }
   if (complete) {
     return {
