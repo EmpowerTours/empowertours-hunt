@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import { LOCALES, DEFAULT_LOCALE, localeForCountry, isLocale } from "./config";
+import { SPAWN_DENY_REASONS } from "@/lib/hunt/spawn";
 
 /* ---------------------------------------------------------------------------
    Catalogue parity.
@@ -95,5 +96,27 @@ describe("locale config", () => {
     expect(isLocale("")).toBe(false);
     expect(isLocale(undefined)).toBe(false);
     expect(isLocale("es; rm -rf")).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   Every refusal the player can hit must be sayable.
+
+   Six spawn reasons — including `no_verified_position` — shipped with no
+   message at all. The app knew exactly why nothing was happening and could not
+   tell anyone: the player walked, saw a blank radar, and concluded it was
+   broken. next-intl renders the key path rather than throwing, so nothing in
+   CI noticed.
+
+   This is the check that would have caught it. A rule nobody can run is not a
+   control.
+--------------------------------------------------------------------------- */
+
+describe("spawn refusals", () => {
+  it("every deny reason has a message in both languages", () => {
+    for (const reason of SPAWN_DENY_REASONS) {
+      expect(flatEn.has(`spawnReason.${reason}`), `en: ${reason}`).toBe(true);
+      expect(flatEs.has(`spawnReason.${reason}`), `es: ${reason}`).toBe(true);
+    }
   });
 });

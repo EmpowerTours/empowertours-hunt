@@ -20,6 +20,7 @@ import {
   SignerMissingError,
   collectSpawn,
   fetchHunt,
+  checkIn,
   scanSpawns,
   submitClaim,
 } from "@/components/hunt/client";
@@ -121,6 +122,36 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     );
     return () => window.clearInterval(id);
   }, [scanEnabled]);
+
+  /**
+   * Check in before scanning.
+   *
+   * Spawns anchor to a verified position, and until this ran the scan returned
+   * `no_verified_position` forever — the player walked and nothing ever
+   * appeared. Throttled to the hunt's own cooldown so it does not spend the
+   * claim rate limit; the server enforces the same interval regardless.
+   */
+  const lastCheckInRef = useRef(0);
+
+  useEffect(() => {
+    if (!scanEnabled || fix === null) return;
+    const elapsed = Date.now() - lastCheckInRef.current;
+    if (elapsed < cooldownSeconds * 1000) return;
+
+    const controller = new AbortController();
+    lastCheckInRef.current = Date.now();
+    checkIn(huntId, fix, controller.signal)
+      .then((r) => {
+        // A refused check-in is worth showing: it is almost always GPS
+        // accuracy, which the player can fix by stepping outside.
+        if (!r.ok && r.reason) setScanReason(r.reason);
+      })
+      .catch(() => {
+        // The next tick retries. A failed check-in is not worth an error
+        // banner over a scan that is about to run anyway.
+      });
+    return () => controller.abort();
+  }, [scanEnabled, fix, huntId, cooldownSeconds, scanTick]);
 
   useEffect(() => {
     if (!scanEnabled) return;

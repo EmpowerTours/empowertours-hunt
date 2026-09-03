@@ -133,10 +133,15 @@ export async function POST(
       // deliberately opaque so a prober cannot binary-search a cache position.
       // Nothing about a check-in is secret — there is no cache involved — and a
       // player standing outdoors needs to know it was their GPS accuracy.
-      return NextResponse.json(
-        { ok: false, reason: result.reason, detail: result.detail },
-        { status: 409 },
-      );
+      // 200, not 409. A refusal here is an ordinary outcome — the same shape
+      // submitClaim already uses for a claim that found nothing. An HTTP error
+      // would make the client throw, and the reason a player most needs ("your
+      // GPS is not accurate enough yet") is the one that would be lost.
+      return NextResponse.json({
+        ok: false,
+        reason: result.reason,
+        detail: result.detail,
+      });
     }
 
     await prisma.playerHunt.upsert({

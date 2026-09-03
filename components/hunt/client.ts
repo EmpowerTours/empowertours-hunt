@@ -468,3 +468,48 @@ export async function fetchProgress(
     turboUsername: str(v.turboUsername),
   };
 }
+
+/**
+ * Establish a verified position without finding anything.
+ *
+ * Spawns anchor to `PlayerHunt.lastVerified*`, which used to be written only by
+ * a cache find or a spawn collect. That made the first one impossible anywhere
+ * nobody had planted a cache: the player walks, the scan returns
+ * `no_verified_position` forever, and nothing ever appears. This is the
+ * bootstrap — it pays nothing and exists purely so the scan has an anchor.
+ *
+ * A refusal is returned rather than thrown. "Your GPS is not accurate enough
+ * yet" is an ordinary state for somebody standing outdoors, not an exception.
+ */
+export async function checkIn(
+  huntId: string,
+  fix: GeoFix,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; reason: string | null }> {
+  try {
+    const body = await request(
+      `/api/hunt/${encodeURIComponent(huntId)}/checkin`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          lat: fix.lat,
+          lng: fix.lng,
+          accuracyM: fix.accuracyM,
+          clientTs: Date.now(),
+        }),
+        signal,
+      },
+    );
+    return {
+      ok: isRecord(body) && body.ok === true,
+      reason: isRecord(body) ? str(body.reason) : null,
+    };
+  } catch (e) {
+    // Being rate-limited is not worth surfacing: the next scan tick retries,
+    // and the player has done nothing wrong.
+    if (e instanceof ApiError && e.status === 429) {
+      return { ok: false, reason: null };
+    }
+    throw e;
+  }
+}
