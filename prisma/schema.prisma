@@ -185,6 +185,7 @@ model Player {
   spawns       Spawn[]
   enrollments  Enrollment[]
   cotas        Cota[]
+  redemptions  Redemption[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -853,4 +854,69 @@ model Cota {
 
   @@index([playerId, createdAt])
   @@index([venue])
+}
+
+/// A player spending TURBO credit on months of a TurboCohort subscription.
+///
+/// Mirrors Payout in shape and for the same reason: this is the second place
+/// value leaves the system, so it gets the same reviewed lifecycle rather than
+/// a boolean. It differs in one way that is forced by the chain — the deployed
+/// TurboCohort exposes only `payMonthly(uint8)`, which pays for `msg.sender`,
+/// so there is no pay-on-behalf entry point and settlement CANNOT be automated
+/// the way a MON payout can. A person grants the months and marks the row.
+model Redemption {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  status RedemptionStatus @default(PENDING)
+
+  /// Whole months bought. Partial months are not offered: they are not
+  /// settleable without a person doing arithmetic by hand.
+  months Int
+
+  /// What the credit was spent on, in WMON-wei. Equals tierPriceWei * months.
+  costCreditWei Decimal @db.Decimal(78, 0)
+
+  /// `TurboCohort.tierPrice(tier)` as read at redemption time.
+  ///
+  /// Snapshotted for the same reason Find.rewardCreditSnapshot is: the cohort
+  /// can change its price on chain, and a later change must not retroactively
+  /// alter what this redemption cost.
+  tierPriceWei Decimal @db.Decimal(78, 0)
+
+  /// Tier name as presented to the player, e.g. "EXPLORER".
+  tier String
+
+  /// The ledger row that debited the credit. Unique, so one redemption can
+  /// never be backed by two debits — or, worse, by none.
+  ledgerEntryId String @unique
+
+  /// The ledger row that returned the credit, once voided. Null until then.
+  refundEntryId String? @unique
+
+  settledBy      String?
+  settledAt      DateTime?
+  /// How the months were actually granted — a tx hash, a cohort record, a note.
+  settlementNote String?
+
+  voidedBy   String?
+  voidedAt   DateTime?
+  voidReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([playerId, createdAt])
+}
+
+enum RedemptionStatus {
+  /// Credit is already debited and the months are owed to the player.
+  PENDING
+  /// The months were granted on the cohort.
+  SETTLED
+  /// Cancelled; the credit was returned by a compensating ledger row.
+  VOIDED
 }
