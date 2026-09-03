@@ -110,11 +110,12 @@ a {
   contain: paint;
 }
 
-.scope-sweep {
-  transform-box: view-box;
-  transform-origin: center;
-  animation: scope-rotate var(--sweep-dur) linear infinite;
-}
+/* The sweep rotates via SVG's own transform attribute now — `rotate(a 0 0)`
+   with an explicit centre, stated in the markup. The CSS version needed
+   `transform-box: view-box` plus `transform-origin: center`, which Safari has
+   handled inconsistently: get the origin wrong and the spoke orbits instead of
+   pivoting. An explicit centre cannot be resolved differently by a different
+   engine, so there is nothing left here to get wrong. */
 
 @keyframes scope-rotate {
   from {
@@ -268,7 +269,8 @@ a {
 -------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .scope-sweep,
+  /* .scope-sweep is SMIL now and takes its duration from the component,
+     which damps it to 24s under reduced motion for the same reason. */
   .spin-slow {
     animation-duration: 24s;
   }

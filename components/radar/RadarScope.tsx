@@ -10,6 +10,7 @@ import {
 } from "@/components/hunt/format";
 import { compassPoint, projectToScope } from "@/components/hunt/geo";
 import { screenAngle } from "@/lib/hunt/heading";
+import { usePrefersReducedMotion } from "@/components/hooks/usePrefersReducedMotion";
 import type { GeoFix, HintBand, PublicSpawn } from "@/components/hunt/types";
 
 /* ---------------------------------------------------------------------------
@@ -96,6 +97,10 @@ export function RadarScope({
 }: RadarScopeProps) {
   const uid = useId().replace(/:/g, "");
   const style = bandStyle(complete ? null : band);
+  const reducedMotion = usePrefersReducedMotion();
+  // Damped, never stopped. The CSS comment on .scope-sweep says why: a parked
+  // scope reads as a crashed app.
+  const sweepSeconds = reducedMotion ? 24 : style.sweepSeconds;
 
   // Nearest live spawn, for the bearing pointer. Expired ones are excluded
   // here rather than in the pointer so it cannot aim at something the blip
@@ -282,7 +287,29 @@ export function RadarScope({
             centre. The wedges are gone rather than dimmed: the honest version
             of this instrument is a spoke rotating about a point, and every
             part that was not the spoke was working against it. */}
-        <g className="scope-sweep">
+        {/* Rotated by SVG's own transform, NOT a CSS class.
+        
+            `rotate(a cx cy)` takes an explicit centre, and (0,0) here IS the
+            dish centre, so the pivot is stated in the markup and cannot be
+            resolved differently by a different engine.
+
+            The CSS version relied on `transform-box: view-box` plus
+            `transform-origin: center`, which Safari has handled
+            inconsistently. Get that wrong and the spoke ORBITS instead of
+            pivoting — both ends travel, which is precisely "a line floating in
+            the radar" — while in Chromium it swings outside the dish clip and
+            mostly disappears. One bug, two very different symptoms, which is
+            why looking at it in one browser was misleading. */}
+        <g>
+          <animateTransform
+            attributeName="transform"
+            attributeType="XML"
+            type="rotate"
+            from="0 0 0"
+            to="360 0 0"
+            dur={`${sweepSeconds}s`}
+            repeatCount="indefinite"
+          />
           <line
             x1="0"
             y1="0"
