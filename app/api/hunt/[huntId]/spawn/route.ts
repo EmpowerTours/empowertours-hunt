@@ -202,16 +202,32 @@ export async function POST(
         .map((z) => z.vertices as unknown as Ring),
     };
 
+    // An unsurveyed hunt places nothing unless it has opted in, and when it
+    // has, it places CLOSE. The evidence is only ever "the player is standing
+    // somewhere a human can stand", and that says much less about a point 600m
+    // away than one 150m away — across a river, on a highway shoulder, inside
+    // somebody's yard are all within 600m of a pavement. Shrinking the radius
+    // is what keeps the weaker guarantee honest rather than merely weaker.
+    const unsurveyed = area.include.length === 0 && area.exclude.length === 0;
+    const allowUnsurveyed =
+      unsurveyed && hunt.unsurveyedSpawnRadiusM > 0;
+    const maxRadiusM = allowUnsurveyed
+      ? Math.min(hunt.spawnMaxRadiusM, hunt.unsurveyedSpawnRadiusM)
+      : hunt.spawnMaxRadiusM;
+    const minRadiusM = Math.min(hunt.spawnMinRadiusM, maxRadiusM);
+
     const placement = deriveSpawnInArea(
       seed,
       {
         origin: eligibility.origin,
-        minRadiusM: hunt.spawnMinRadiusM,
-        maxRadiusM: hunt.spawnMaxRadiusM,
+        minRadiusM,
+        maxRadiusM,
         minWei: toWei(hunt.spawnMinWei),
         maxWei: toWei(hunt.spawnMaxWei),
       },
       area,
+      10,
+      allowUnsurveyed,
     );
 
     if (!placement.ok) {

@@ -249,6 +249,24 @@ model Hunt {
   spawnMinRadiusM Int @default(80)
   spawnMaxRadiusM Int @default(600)
 
+  /// Spawn radius to use when this hunt has NO surveyed walkable area.
+  ///
+  /// 0 — the default and the safe one — means an unsurveyed hunt places
+  /// nothing at all. That is deliberate: without a survey, placement would
+  /// eventually drop MON in a river or across a highway and then pay somebody
+  /// for reaching it.
+  ///
+  /// Above 0, an unsurveyed hunt may place spawns within this many metres of
+  /// the player's VERIFIED position, on the only evidence available — they are
+  /// demonstrably standing somewhere a human can stand. That inference decays
+  /// with distance, which is why this is a separate, smaller radius rather
+  /// than a flag that reuses spawnMaxRadiusM: at 600m the drop can be across
+  /// the river from a player who is standing on a pavement.
+  ///
+  /// It is a WEAKER guarantee, and it exists so a hunt can run in a town
+  /// nobody has surveyed yet. Survey the area and set this back to 0.
+  unsurveyedSpawnRadiusM Int @default(0)
+
   // Short-lived on purpose: a spoofer needs a plausible track to reach one in
   // time, and an expired spawn cannot be banked for a later burst.
   spawnTtlSeconds Int @default(900)

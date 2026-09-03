@@ -556,3 +556,67 @@ describe("validateSpawnCollect", () => {
     if (res.ok) expect(res.speedKmh).toBeLessThan(10);
   });
 });
+
+describe("unsurveyed hunts: the opt-in that trades a guarantee for reach", () => {
+  const params = {
+    origin: ORIGIN,
+    minRadiusM: 80,
+    maxRadiusM: 150,
+    minWei: 500_000_000_000_000n,
+    maxWei: 1_500_000_000_000_000n,
+  };
+  const EMPTY = { include: [] as Ring[], exclude: [] as Ring[] };
+
+  it("still places nothing by default", () => {
+    // The safe default has to survive the existence of an override. Without
+    // a survey, placement would otherwise drop MON in a river and then pay
+    // somebody for reaching it.
+    expect(deriveSpawnInArea("seed", params, EMPTY, 10).ok).toBe(false);
+    expect(deriveSpawnInArea("seed", params, EMPTY, 10, false).ok).toBe(false);
+  });
+
+  it("places when the hunt has opted in", () => {
+    const p = deriveSpawnInArea("seed", params, EMPTY, 10, true);
+    expect(p.ok).toBe(true);
+  });
+
+  it("draws exactly what an unrestricted draw would", () => {
+    // The seed-reveal promise is that the drop was fixed before the player
+    // moved. An unsurveyed placement must therefore be attempt 0 of the same
+    // sequence, not fresh randomness nobody can replay.
+    const placed = deriveSpawnInArea("seed", params, EMPTY, 10, true);
+    const bare = deriveSpawn("seed", params);
+    expect(placed.ok).toBe(true);
+    if (placed.ok) {
+      expect(placed.draw.lat).toBe(bare.lat);
+      expect(placed.draw.lng).toBe(bare.lng);
+      expect(placed.draw.amountWei).toBe(bare.amountWei);
+    }
+  });
+
+  it("REFUSES to override a hunt that has exclude rings", () => {
+    // The case that matters most. An exclude ring is somebody stating that a
+    // place is unsafe. A hunt with excludes and no includes is a survey in
+    // progress, not an unsurveyed hunt — and overriding it would place drops
+    // in the one area a person went to the trouble of marking off.
+    const river: Ring = [
+      { lat: ORIGIN.lat - 0.01, lng: ORIGIN.lng - 0.01 },
+      { lat: ORIGIN.lat + 0.01, lng: ORIGIN.lng - 0.01 },
+      { lat: ORIGIN.lat + 0.01, lng: ORIGIN.lng + 0.01 },
+      { lat: ORIGIN.lat - 0.01, lng: ORIGIN.lng + 0.01 },
+    ];
+    const area = { include: [] as Ring[], exclude: [river] };
+    expect(deriveSpawnInArea("seed", params, area, 10, true).ok).toBe(false);
+  });
+
+  it("does not override a surveyed hunt either", () => {
+    // With a survey present the rings are authoritative, opt-in or not.
+    const tiny: Ring = [
+      { lat: ORIGIN.lat + 0.5, lng: ORIGIN.lng + 0.5 },
+      { lat: ORIGIN.lat + 0.5001, lng: ORIGIN.lng + 0.5 },
+      { lat: ORIGIN.lat + 0.5001, lng: ORIGIN.lng + 0.5001 },
+    ];
+    const area = { include: [tiny], exclude: [] as Ring[] };
+    expect(deriveSpawnInArea("seed", params, area, 10, true).ok).toBe(false);
+  });
+});

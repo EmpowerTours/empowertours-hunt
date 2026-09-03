@@ -330,15 +330,34 @@ export type SpawnPlacement =
  *
  * An unsurveyed hunt (no include rings) rejects every attempt and therefore
  * places nothing. That is the intended reading: see `isWalkable`.
+ *
+ * `allowUnsurveyed` is the one deliberate exception. When a hunt has no
+ * include rings at all AND has opted in, every draw is accepted — the caller
+ * having already shrunk the radius so that "the player is standing somewhere
+ * walkable" is defensible evidence about where the drop lands. It applies ONLY
+ * to a hunt with no survey: a hunt that HAS been surveyed is never overridden,
+ * because there the exclude rings are somebody's explicit statement that a
+ * place is unsafe, and ignoring those would be worse than having none.
  */
 export function deriveSpawnInArea(
   seed: string,
   params: SpawnDrawParams,
   area: WalkableArea,
   maxAttempts = 10,
+  allowUnsurveyed = false,
 ): SpawnPlacement {
   if (!(Number.isInteger(maxAttempts) && maxAttempts >= 1)) {
     throw new RangeError("maxAttempts must be a positive integer");
+  }
+
+  // Only when there is NO survey. An `exclude` ring is somebody saying "not
+  // there", and a hunt with excludes but no includes is a survey in progress,
+  // not an unsurveyed hunt — overriding it would place drops in the one place
+  // a person went to the trouble of marking unsafe.
+  const unsurveyed =
+    area.include.length === 0 && area.exclude.length === 0 && allowUnsurveyed;
+  if (unsurveyed) {
+    return { ok: true, draw: deriveSpawn(attemptSeed(seed, 0), params), attempts: 1 };
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
