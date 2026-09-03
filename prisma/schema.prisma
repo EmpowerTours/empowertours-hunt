@@ -873,6 +873,8 @@ model Cota {
   anchorTxHash String?   @unique
   anchoredAt   DateTime?
 
+  checks CotaCheck[]
+
   /// A player may revoke before notAfter. Kept as a timestamp rather than a
   /// boolean so the audit can answer when, not just whether.
   revokedAt DateTime?
@@ -989,4 +991,50 @@ model PlantWarranty {
 
   @@index([playerId, createdAt])
   @@index([nftContract, tokenId])
+}
+
+/// Every decision the enforcement layer handed an agent.
+///
+/// This is what the product actually sells. An operator running software on
+/// somebody else's money cannot today prove it stayed inside a mandate — they
+/// have an API key and an assurance. A row here says: at this instant, the
+/// agent reported this state, asked to do this, and was told yes or no against
+/// a bound the user signed.
+///
+/// It does NOT prove the agent obeyed. Nothing server-side can: an agent that
+/// ignores a denial, or never calls at all, is defeated only by settlement
+/// limits on chain. What this proves is what was asked and what was answered —
+/// which is exactly the record a dispute turns on.
+///
+/// Not every check is stored. A `mustClose` poll returning allow is the steady
+/// state and would grow without bound; denials and order attempts are the
+/// events anybody ever reads back.
+model CotaCheck {
+  id String @id @default(cuid())
+
+  cota   Cota   @relation(fields: [cotaId], references: [id], onDelete: Cascade)
+  cotaId String
+
+  /// "open" for an order attempt, "close" for a flatten check.
+  kind String
+
+  allowed Boolean
+  /// The DenyReason from lib/cota/enforce.ts, null when allowed.
+  reason  String?
+
+  /// What the agent said its own position was. Reported, not verified — see
+  /// the note above about what this record does and does not establish.
+  tradesToday       Int
+  lossTodayUsdE6    Decimal @db.Decimal(78, 0)
+  openNotionalUsdE6 Decimal @db.Decimal(78, 0)
+
+  /// The proposed order, when there was one.
+  market        String?
+  notionalUsdE6 Decimal? @db.Decimal(78, 0)
+  leverageX100  Decimal? @db.Decimal(78, 0)
+
+  createdAt DateTime @default(now())
+
+  @@index([cotaId, createdAt])
+  @@index([allowed, createdAt])
 }
