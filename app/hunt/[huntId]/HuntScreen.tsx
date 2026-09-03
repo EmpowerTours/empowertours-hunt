@@ -343,6 +343,35 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         now={now}
       />
 
+      {/* Directly under the scope, and above everything else, because these two
+          are what explain a dish that looks dead. Buried below the fold — which
+          is where they were — a player waiting on a GPS lock sees a black
+          circle and concludes the app is broken. Reported from the street. */}
+      <FixReadout
+        fix={fix}
+        status={geo.status}
+        // The hook's own MESSAGES map stays English: lib/ has non-UI callers and
+        // a status string is data. Only what reaches the screen is translated,
+        // and only when the hook had something to say at all.
+        message={geo.message === null ? null : tGps(geo.status)}
+        maxAccuracyM={maxAccuracyM}
+        now={now}
+        onRetry={geo.retry}
+      />
+
+      <SpawnPanel
+        marks={marks}
+        now={now}
+        selectedId={selectedSpawnId}
+        onSelect={setSelectedSpawnId}
+        onCollect={(id) => void onCollect(id)}
+        collectingId={collectingId}
+        scanReason={scanReason}
+        stopped={scanStopped}
+        error={spawnError}
+        signingAvailable={signer !== null}
+      />
+
       <BandReadout
         band={hint.band}
         complete={hint.complete}
@@ -367,32 +396,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
 
       <LanguageSwitch className="flex justify-end" />
 
-      <FixReadout
-        fix={fix}
-        status={geo.status}
-        // The hook's own MESSAGES map stays English: lib/ has non-UI callers and
-        // a status string is data. Only what reaches the screen is translated,
-        // and only when the hook had something to say at all.
-        message={geo.message === null ? null : tGps(geo.status)}
-        maxAccuracyM={maxAccuracyM}
-        now={now}
-        onRetry={geo.retry}
-      />
-
       {collectNote ? <Note title={tPayout("title")}>{collectNote}</Note> : null}
-
-      <SpawnPanel
-        marks={marks}
-        now={now}
-        selectedId={selectedSpawnId}
-        onSelect={setSelectedSpawnId}
-        onCollect={(id) => void onCollect(id)}
-        collectingId={collectingId}
-        scanReason={scanReason}
-        stopped={scanStopped}
-        error={spawnError}
-        signingAvailable={signer !== null}
-      />
 
       {huntMissing ? (
         <Note title="Hunt details unavailable">
