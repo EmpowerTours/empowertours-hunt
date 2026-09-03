@@ -30,8 +30,16 @@ const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * /api/cron/* is called server-to-server by a scheduler that sends no Origin
  * header. It is not unprotected: it carries CRON_SECRET as a bearer, which is
  * a stronger control than an origin check and one a browser cannot replay.
+ *
+ * /api/cota/check is the same shape and exempt for the same reason: a trading
+ * agent asks it whether an order is inside a bound the user signed, from a
+ * server, with no browser anywhere in the path. It carries COTA_AGENT_TOKEN as
+ * a bearer and REFUSES EVERYTHING without it — an unset token, a wrong token
+ * and an unknown digest all answer `allow: false`. Exempting a route that
+ * failed open would be trading one control for none; this one fails closed,
+ * which is why the trade is sound.
  */
-const EXEMPT_PREFIXES = ["/api/cron/"];
+const EXEMPT_PREFIXES = ["/api/cron/", "/api/cota/check"];
 
 function originOf(value: string): string | null {
   try {
