@@ -191,21 +191,32 @@ export function mayOpen(
 }
 
 /**
- * Must an open position be closed right now, regardless of what it is doing?
+ * Must trading stop right now, regardless of what anybody is proposing?
  *
- * ## Without this, the daily-loss ceiling is a checkbox
+ * ## This does NOT mean flatten
  *
- * A bound enforced only when an order is placed stops NEW trades and lets an
- * existing position keep bleeding straight through the number the player set.
- * The loss ceiling is the one limit that has to be evaluated continuously,
- * because the thing it protects against does not require anybody to act.
+ * It was called `mustClose` and told the runner to close the book. That was
+ * the wrong instruction: `position_loop` in the trading agent is built around
+ * the opposite rule — it cannot close at a loss — and forcing a close is
+ * exactly how a daily-loss ceiling turns into a realised loss the player never
+ * asked to take.
  *
- * The runner is expected to poll this between orders and to flatten when it
- * returns a reason. Expiry and revocation land here too: a bound that ran out
- * while a position was open must not leave that position running under an
- * agreement that no longer exists.
+ * So a halt stops NEW risk. No opening, no increasing. Reducing and closing
+ * stay permitted always, because software that could not reduce risk once a
+ * limit was breached would be the opposite of a safety mechanism.
+ *
+ * ## Which means the ceiling bounds new risk, not total loss
+ *
+ * Worth being blunt about, because it is the honest reading and the read-back
+ * says so: a position left open can keep moving against the player after the
+ * halt. What the number guarantees is that nothing NEW is put at risk once it
+ * is reached — not that losses stop accruing.
+ *
+ * Still has to be polled. A position can cross the ceiling with nobody placing
+ * an order at all, and a bound consulted only at order time would not notice
+ * until the next one.
  */
-export function mustClose(
+export function mustHalt(
   bound: EnforcedBound,
   state: DayState,
   nowSeconds: bigint,

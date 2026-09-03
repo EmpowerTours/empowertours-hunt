@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
 import { validatePosition } from "@/lib/hunt/validator";
+import { isClientAbort } from "@/lib/aborted";
 
 // ---------------------------------------------------------------------------
 // POST /api/hunt/[huntId]/checkin — establish a verified position, earn nothing.
@@ -169,6 +170,9 @@ export async function POST(
     if (err instanceof AuthError) {
       return NextResponse.json({ error: "sign in first" }, { status: 401 });
     }
+    // The player navigated away mid-request. Not a fault, and logging it
+    // as one buries the failures that are.
+    if (isClientAbort(err)) return new Response(null, { status: 499 });
     console.error("[checkin] POST failed", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });
   }

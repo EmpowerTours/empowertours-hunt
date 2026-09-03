@@ -99,13 +99,31 @@ describe("the limits are marked as protective", () => {
   });
 });
 
-describe("the loss clause says the part people get wrong", () => {
-  it("states that unclosed losses count", () => {
-    // Players assume a limit only bites once a trade is closed. It does not,
-    // and the sentence has to say so or the read-back is misleading.
+describe("the loss clause says both parts people get wrong", () => {
+  it("states that unclosed losses count toward the number", () => {
+    // Players assume a limit only bites once a trade is closed. It does not.
     const m = message();
-    expect(byId(m, "loss").en).toContain("whether or not");
-    expect(byId(m, "loss").es).toContain("cuente o no");
+    expect(byId(m, "loss").en).toContain("whether or not the loss has been closed");
+    expect(byId(m, "loss").es).toContain("esté cerrada la pérdida o no");
+  });
+
+  it("states that reaching it does NOT close anything", () => {
+    // The dishonest version of this sentence reads as a stop-loss. Reaching
+    // the number halts opening; an open position keeps moving, and somebody
+    // signing this has to know that before they sign it.
+    const m = message();
+    expect(byId(m, "loss").en).toContain("nothing is closed at a loss");
+    expect(byId(m, "loss").es).toContain("nada se cierra con pérdida");
+  });
+});
+
+describe("revoking does not close positions either", () => {
+  it("says what to do with an open position stays the player's call", () => {
+    const m = message();
+    const revoke = readbackOf(m).find((l) => l.id === "revoke");
+    expect(revoke?.en).toContain("stays your call");
+    expect(revoke?.en).not.toContain("closes any open position");
+    expect(revoke?.es).toContain("tú decides");
   });
 });
 
@@ -149,7 +167,7 @@ describe("before a signature exists, the expiry is a duration", () => {
     const lines = readback(message(), { kind: "afterSigning", days: 30 });
     const expiry = lines.find((l) => l.id === "expiry");
     expect(expiry?.en).toBe(
-      "Expires 30 days after you sign it. After that it authorises nothing.",
+      "Expires 30 days after you sign it. After that, nothing new is opened.",
     );
     expect(expiry?.es).toContain("30 días después de firmarla");
   });

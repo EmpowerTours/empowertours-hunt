@@ -14,7 +14,7 @@
 
 import {
   mayOpen,
-  mustClose,
+  mustHalt,
   utcDayKey,
   type DayState,
   type Decision,
@@ -216,7 +216,13 @@ export function close(
   };
 }
 
-/** Flatten everything — what the runner does when {@link mustClose} fires. */
+/**
+ * Flatten everything.
+ *
+ * NOT what a halt does — see {@link checkHalted}. This is the player choosing
+ * to close, or a runner winding down. A halt stops new risk and leaves open
+ * positions alone.
+ */
 export function closeAll(
   account: PaperAccount,
   marks: ReadonlyMap<string, bigint>,
@@ -230,19 +236,23 @@ export function closeAll(
 }
 
 /**
- * Does the bound require this book to be flattened right now?
+ * Must this book stop taking on new risk?
  *
- * Delegates outright. The paper runner and the live runner ask the same
- * question of the same function, so a limit that stops one stops the other.
+ * `ok: false` means halted: no opening, no increasing. It does NOT mean close
+ * — the agent that will one day run this for real cannot close at a loss, and
+ * a ceiling that forced one would realise exactly the loss the player was
+ * trying to bound.
+ *
+ * Delegates outright, so a limit that halts the paper book halts the live one.
  */
-export function checkMustClose(
+export function checkHalted(
   account: PaperAccount,
   bound: EnforcedBound,
   marks: ReadonlyMap<string, bigint>,
   at: Date,
 ): Decision {
   const rolled = rollDay(account, at);
-  return mustClose(
+  return mustHalt(
     bound,
     toDayState(rolled, marks),
     BigInt(Math.floor(at.getTime() / 1000)),

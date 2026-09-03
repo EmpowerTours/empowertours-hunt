@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { mayOpen, mustClose, type EnforcedBound } from "@/lib/cota/enforce";
+import { mayOpen, mustHalt, type EnforcedBound } from "@/lib/cota/enforce";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/check — the seam between a signed bound and an agent.
@@ -139,7 +139,7 @@ export async function POST(req: Request) {
           },
           nowSeconds,
         )
-      : mustClose(bound, state, nowSeconds);
+      : mustHalt(bound, state, nowSeconds);
 
     // Denials and order attempts are recorded; a `close` poll that returns
     // allow is the steady state and would grow without bound. What gets read
@@ -149,7 +149,7 @@ export async function POST(req: Request) {
       await prisma.cotaCheck.create({
         data: {
           cotaId: row.id,
-          kind: input.order ? "open" : "close",
+          kind: input.order ? "open" : "halt",
           allowed: decision.ok,
           reason: decision.ok ? null : decision.reason,
           tradesToday: input.state.tradesToday,

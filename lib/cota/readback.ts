@@ -154,8 +154,8 @@ export function readback(draft: CotaDraft, expiry: Expiry): ReadbackLine[] {
 
   lines.push({
     id: "loss",
-    es: `Si pierdes $${fromUsdE6(message.maxDailyLossUsdE6)} en un día, todo se detiene hasta el día siguiente — cuente o no cuente como pérdida cerrada.`,
-    en: `If you are down $${fromUsdE6(message.maxDailyLossUsdE6)} on the day, everything stops until tomorrow — whether or not the loss has been closed.`,
+    es: `Si vas $${fromUsdE6(message.maxDailyLossUsdE6)} abajo en el día — esté cerrada la pérdida o no — se deja de abrir posiciones hasta mañana. Las que ya están abiertas se dejan recuperar: nada se cierra con pérdida.`,
+    en: `If you are $${fromUsdE6(message.maxDailyLossUsdE6)} down on the day — whether or not the loss has been closed — no new positions open until tomorrow. Anything already open is left to recover: nothing is closed at a loss.`,
     protective: true,
   });
 
@@ -170,22 +170,22 @@ export function readback(draft: CotaDraft, expiry: Expiry): ReadbackLine[] {
     expiry.kind === "at"
       ? {
           id: "expiry",
-          es: `Vence el ${formatDate(expiry.unixSeconds, MONTHS_ES)}. Después de esa fecha no autoriza nada.`,
-          en: `Expires ${formatDate(expiry.unixSeconds, MONTHS_EN)}. After that it authorises nothing.`,
+          es: `Vence el ${formatDate(expiry.unixSeconds, MONTHS_ES)}. Después de esa fecha no se abre nada nuevo.`,
+          en: `Expires ${formatDate(expiry.unixSeconds, MONTHS_EN)}. After that, nothing new is opened.`,
           protective: true,
         }
       : {
           id: "expiry",
-          es: `Vence ${expiry.days} ${expiry.days === 1 ? "día" : "días"} después de firmarla. Después no autoriza nada.`,
-          en: `Expires ${expiry.days} ${expiry.days === 1 ? "day" : "days"} after you sign it. After that it authorises nothing.`,
+          es: `Vence ${expiry.days} ${expiry.days === 1 ? "día" : "días"} después de firmarla. Después no se abre nada nuevo.`,
+          en: `Expires ${expiry.days} ${expiry.days === 1 ? "day" : "days"} after you sign it. After that, nothing new is opened.`,
           protective: true,
         },
   );
 
   lines.push({
     id: "revoke",
-    es: "Puedes revocarla cuando quieras. Al revocarla, cualquier posición abierta se cierra.",
-    en: "You can revoke it at any time. Revoking closes any open position.",
+    es: "Puedes revocarla cuando quieras. Al revocarla no se abre nada nuevo; tú decides qué hacer con lo que ya esté abierto.",
+    en: "You can revoke it at any time. Revoking stops anything new from opening; what to do with an open position stays your call.",
     protective: true,
   });
 

@@ -1015,7 +1015,8 @@ model CotaCheck {
   cota   Cota   @relation(fields: [cotaId], references: [id], onDelete: Cascade)
   cotaId String
 
-  /// "open" for an order attempt, "close" for a flatten check.
+  /// "open" for an order attempt, "halt" for a may-I-still-take-risk poll.
+  /// A halt stops new risk; it is never an instruction to close a position.
   kind String
 
   allowed Boolean

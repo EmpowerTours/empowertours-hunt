@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isClientAbort } from "@/lib/aborted";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requirePlayer, clientIp, AuthError } from "@/lib/auth";
@@ -140,6 +141,8 @@ export async function POST(
     if (e instanceof z.ZodError) {
       return NextResponse.json({ error: "invalid payload" }, { status: 400 });
     }
+    // A cancelled fetch is the hint hook doing its job, not a fault.
+    if (isClientAbort(e)) return new Response(null, { status: 499 });
     console.error("[hunt/hint]", e);
     return NextResponse.json({ error: "internal error" }, { status: 500 });
   }

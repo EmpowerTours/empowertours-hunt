@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mayOpen,
-  mustClose,
+  mustHalt,
   utcDayKey,
   type DayState,
   type EnforcedBound,
@@ -203,40 +203,41 @@ describe("the daily loss ceiling", () => {
   });
 });
 
-describe("mustClose is what makes the loss ceiling real", () => {
-  it("demands a close once the loss ceiling is reached", () => {
+describe("mustHalt is what makes the loss ceiling bite between orders", () => {
+  it("halts once the loss ceiling is reached, with no order placed", () => {
     // Nobody placed an order here. The position drifted into the number on
     // its own, which is exactly the case mayOpen alone cannot catch.
     const b = bound({ maxDailyLossUsdE6: usdE6(50) });
-    expect(mustClose(b, day({ lossTodayUsdE6: usdE6(50) }), NOW)).toEqual({
+    expect(mustHalt(b, day({ lossTodayUsdE6: usdE6(50) }), NOW)).toEqual({
       ok: false,
       reason: "daily_loss_reached",
     });
   });
 
   it("leaves a healthy position alone", () => {
-    expect(mustClose(bound(), day({ lossTodayUsdE6: usdE6(10) }), NOW)).toEqual(
+    expect(mustHalt(bound(), day({ lossTodayUsdE6: usdE6(10) }), NOW)).toEqual(
       {
         ok: true,
       },
     );
   });
 
-  it("demands a close when the bound expires under an open position", () => {
-    // A position must not outlive the agreement that authorised it.
+  it("halts when the bound expires under an open position", () => {
+    // New risk must not outlive the agreement that authorised it. The
+    // position itself is left alone — halting is not closing.
     const b = bound({ notAfter: NOW - 1n });
-    expect(mustClose(b, day(), NOW)).toEqual({ ok: false, reason: "expired" });
+    expect(mustHalt(b, day(), NOW)).toEqual({ ok: false, reason: "expired" });
   });
 
-  it("demands a close on revocation", () => {
+  it("halts on revocation", () => {
     const b = bound({ revokedAt: new Date() });
-    expect(mustClose(b, day(), NOW)).toEqual({ ok: false, reason: "revoked" });
+    expect(mustHalt(b, day(), NOW)).toEqual({ ok: false, reason: "revoked" });
   });
 });
 
 describe("the two entry points cannot disagree about liveness", () => {
   it("gives the same reason for every dead bound", () => {
-    // If mayOpen thought a bound was live while mustClose thought it dead
+    // If mayOpen thought a bound was live while mustHalt thought it dead
     // (or the reverse), an agent would oscillate between opening a position
     // and being told to flatten it.
     const dead: EnforcedBound[] = [
@@ -247,7 +248,7 @@ describe("the two entry points cannot disagree about liveness", () => {
 
     for (const b of dead) {
       const open = mayOpen(b, day(), order(), NOW);
-      const close = mustClose(b, day(), NOW);
+      const close = mustHalt(b, day(), NOW);
       expect(open.ok).toBe(false);
       expect(close.ok).toBe(false);
       if (!open.ok && !close.ok) expect(open.reason).toBe(close.reason);

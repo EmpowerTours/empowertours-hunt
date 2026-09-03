@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  checkMustClose,
+  checkHalted,
   close,
   closeAll,
   emptyAccount,
@@ -169,7 +169,7 @@ describe("closing is never refused", () => {
     };
     const b = bound({ maxDailyLossUsdE6: usdE6(10) });
 
-    expect(checkMustClose(account, b, marks(50), AT).ok).toBe(false);
+    expect(checkHalted(account, b, marks(50), AT).ok).toBe(false);
 
     const flat = closeAll(account, marks(50), AT);
     expect(flat.positions).toHaveLength(0);
@@ -187,7 +187,7 @@ describe("closing is never refused", () => {
   });
 });
 
-describe("mustClose fires without anybody placing an order", () => {
+describe("mustHalt fires without anybody placing an order", () => {
   it("demands a flatten when the market moves through the ceiling", () => {
     const account: PaperAccount = {
       ...emptyAccount(AT),
@@ -195,9 +195,9 @@ describe("mustClose fires without anybody placing an order", () => {
     };
     const b = bound({ maxDailyLossUsdE6: usdE6(20) });
 
-    expect(checkMustClose(account, b, marks(95), AT).ok).toBe(true);
+    expect(checkHalted(account, b, marks(95), AT).ok).toBe(true);
 
-    const decision = checkMustClose(account, b, marks(75), AT);
+    const decision = checkHalted(account, b, marks(75), AT);
     expect(decision.ok).toBe(false);
     if (!decision.ok) expect(decision.reason).toBe("daily_loss_reached");
   });
