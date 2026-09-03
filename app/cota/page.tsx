@@ -174,41 +174,63 @@ export default function CotaPage() {
   }, []);
 
   /**
-   * The message, built from the scaled integers.
+   * The ceilings, and nothing that depends on a clock.
    *
    * Returns null when any field cannot be represented exactly — scale.ts throws
    * rather than rounding, and a ceiling that was quietly rounded is a ceiling
    * nobody agreed to. The sign button stays disabled instead.
    */
-  const message = useMemo<CotaMessage | null>(() => {
+  const ceilings = useMemo(() => {
     if (market === null) return null;
     try {
-      const now = BigInt(Math.floor(Date.now() / 1000));
       return {
-        venue: "perpl",
+        venue: "perpl" as const,
         markets: [market],
         maxNotionalUsdE6: usdE6(maxNotional, "maxNotional"),
         maxLeverageX100: leverageX100(maxLeverage, "maxLeverage"),
         maxDailyLossUsdE6: usdE6(maxDailyLoss, "maxDailyLoss"),
         maxTradesPerDay: Math.floor(maxTrades),
-        notBefore: now,
-        notAfter: now + BigInt(Math.max(1, Math.floor(days))) * 86_400n,
-        clientTs: now,
-        nonce: newBrowserNonce(),
       };
     } catch (err) {
       if (err instanceof LossyScaleError) return null;
       throw err;
     }
-  }, [market, maxNotional, maxLeverage, maxDailyLoss, maxTrades, days]);
+  }, [market, maxNotional, maxLeverage, maxDailyLoss, maxTrades]);
 
-  const lines = useMemo(() => (message ? readback(message) : []), [message]);
+  const durationDays = Math.max(1, Math.floor(days));
+  const durationSeconds = BigInt(durationDays) * 86_400n;
+
+  /**
+   * The expiry reads as a duration, not a date.
+   *
+   * Before a signature exists there is no absolute date to show: the window
+   * starts when the player signs. A date computed at page load would print a
+   * promise slightly different from the one actually signed.
+   */
+  const lines = useMemo(
+    () =>
+      ceilings
+        ? readback(ceilings, { kind: "afterSigning", days: durationDays })
+        : [],
+    [ceilings, durationDays],
+  );
 
   const onSign = useCallback(async () => {
-    if (message === null) return;
+    if (ceilings === null) return;
     setBusy(true);
     setError(null);
     try {
+      // Clock and nonce read HERE, not during render: clientTs must be inside
+      // the skew window when the signature is made, and the nonce is
+      // single-use per signature.
+      const now = BigInt(Math.floor(Date.now() / 1000));
+      const message: CotaMessage = {
+        ...ceilings,
+        notBefore: now,
+        notAfter: now + durationSeconds,
+        clientTs: now,
+        nonce: newBrowserNonce(),
+      };
       const signature = await signCota(message);
       const res = await fetch("/api/cota", {
         method: "POST",
@@ -238,7 +260,7 @@ export default function CotaPage() {
     } finally {
       setBusy(false);
     }
-  }, [message]);
+  }, [ceilings, durationSeconds]);
 
   return (
     <main className="mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
@@ -362,7 +384,7 @@ export default function CotaPage() {
             <h2 className="text-ink-dim font-mono text-xs tracking-[0.14em] uppercase">
               {t.agreement}
             </h2>
-            {message === null ? (
+            {ceilings === null ? (
               <p className="text-alert text-sm">{t.badNumber}</p>
             ) : (
               <ul className="space-y-2.5">
@@ -395,7 +417,7 @@ export default function CotaPage() {
 
           <Button
             onClick={() => void onSign()}
-            disabled={busy || message === null}
+            disabled={busy || ceilings === null}
           >
             {busy ? t.signing : t.sign}
           </Button>

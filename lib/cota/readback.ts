@@ -23,6 +23,30 @@
 import { fromLeverageX100, fromUsdE6 } from "./scale";
 import type { CotaMessage } from "./typedData";
 
+/** The ceilings alone — everything a bound promises that has no clock in it. */
+export type CotaDraft = Pick<
+  CotaMessage,
+  | "venue"
+  | "markets"
+  | "maxNotionalUsdE6"
+  | "maxLeverageX100"
+  | "maxDailyLossUsdE6"
+  | "maxTradesPerDay"
+>;
+
+/**
+ * When the bound stops.
+ *
+ * Two forms, because before a signature exists there is no absolute date to
+ * show: the window starts when the player signs, not when the page loaded.
+ * Rendering a date computed at page load would print a promise a minute or an
+ * hour off from the one actually signed, and would also drag a clock read into
+ * render, where it makes the message change on every re-render.
+ */
+export type Expiry =
+  | { kind: "at"; unixSeconds: bigint }
+  | { kind: "afterSigning"; days: number };
+
 /** One clause of the agreement, in both languages. */
 export interface ReadbackLine {
   /** Stable key, for React and for tests that should not depend on wording. */
@@ -90,7 +114,8 @@ function marketList(markets: readonly string[]): string {
  * who reads only the first two lines should still have seen the permission;
  * a player who reads to the end has seen every limit.
  */
-export function readback(message: CotaMessage): ReadbackLine[] {
+export function readback(draft: CotaDraft, expiry: Expiry): ReadbackLine[] {
+  const message = draft;
   const lines: ReadbackLine[] = [];
 
   // An empty market list is a real, signable state: a Cota naming no market
@@ -141,12 +166,21 @@ export function readback(message: CotaMessage): ReadbackLine[] {
     protective: true,
   });
 
-  lines.push({
-    id: "expiry",
-    es: `Vence el ${formatDate(message.notAfter, MONTHS_ES)}. Después de esa fecha no autoriza nada.`,
-    en: `Expires ${formatDate(message.notAfter, MONTHS_EN)}. After that it authorises nothing.`,
-    protective: true,
-  });
+  lines.push(
+    expiry.kind === "at"
+      ? {
+          id: "expiry",
+          es: `Vence el ${formatDate(expiry.unixSeconds, MONTHS_ES)}. Después de esa fecha no autoriza nada.`,
+          en: `Expires ${formatDate(expiry.unixSeconds, MONTHS_EN)}. After that it authorises nothing.`,
+          protective: true,
+        }
+      : {
+          id: "expiry",
+          es: `Vence ${expiry.days} ${expiry.days === 1 ? "día" : "días"} después de firmarla. Después no autoriza nada.`,
+          en: `Expires ${expiry.days} ${expiry.days === 1 ? "day" : "days"} after you sign it. After that it authorises nothing.`,
+          protective: true,
+        },
+  );
 
   lines.push({
     id: "revoke",
@@ -158,6 +192,11 @@ export function readback(message: CotaMessage): ReadbackLine[] {
   return lines;
 }
 
+/** A signed message read back against its own absolute expiry. */
+export function readbackOf(message: CotaMessage): ReadbackLine[] {
+  return readback(message, { kind: "at", unixSeconds: message.notAfter });
+}
+
 /**
  * The one-line summary, for a confirmation button or a list row.
  *
@@ -165,7 +204,7 @@ export function readback(message: CotaMessage): ReadbackLine[] {
  * number from this screen it should be the one that bounds what they can lose.
  */
 export function readbackSummary(
-  message: CotaMessage,
+  message: CotaDraft,
   lang: "es" | "en",
 ): string {
   if (message.markets.length === 0) {
