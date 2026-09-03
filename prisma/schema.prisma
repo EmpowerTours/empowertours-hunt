@@ -187,6 +187,7 @@ model Player {
   cotas        Cota[]
   redemptions  Redemption[]
   warranties   PlantWarranty[]
+  createdHunts Hunt[]          @relation("HuntCreator")
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -201,6 +202,15 @@ model Hunt {
   endsAt      DateTime?
 
   // --- Verifier rules (fed straight into validateClaim) ---
+  /// The Sembrador who planted this hunt, when a player made it.
+  ///
+  /// Null for hunts an admin created — including every hunt that existed
+  /// before creation was opened up. Nullable rather than backfilled to the
+  /// deployer, because "the platform made this" and "a person made this" are
+  /// different facts and the second one is what a report path needs.
+  createdBy         Player? @relation("HuntCreator", fields: [createdByPlayerId], references: [id], onDelete: SetNull)
+  createdByPlayerId String?
+
   maxAccuracyM        Int @default(30)
   maxSpeedKmh         Int @default(60)
   cooldownSeconds     Int @default(60)
@@ -278,6 +288,7 @@ model Hunt {
   zones        Zone[]
   warranties   PlantWarranty[]
 
+  @@index([createdByPlayerId])
   @@index([active])
 }
 
