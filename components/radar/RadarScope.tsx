@@ -287,30 +287,46 @@ export function RadarScope({
         )}
 
         {/* Sweep. */}
+        {/* The sweep is a LINE pinned at the hub, with a fading trail behind
+            it — not a wedge that happens to contain a line. The earlier
+            weighting had the gradient slices drawn at full strength over a
+            hairline, which detached the bright part from the centre and made
+            the whole thing read as a shape floating in the dish.
+
+            Order matters: trail first, then the line and its hub anchor on
+            top, so the eye follows a spoke rotating about a fixed point. */}
         <g className="scope-sweep">
           {slices.map((s, i) => (
             <path
               key={i}
               d={s.d}
               fill={`url(#sweep-${uid})`}
-              opacity={s.opacity}
+              opacity={s.opacity * 0.45}
             />
           ))}
+
           <line
             x1="0"
             y1="0"
             x2="0"
             y2={-RIM}
             stroke={style.color}
-            strokeWidth="0.9"
-            opacity="0.9"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            opacity="0.95"
           />
+
+          {/* The hub. Without something solid at the centre the line looks
+              like it starts somewhere near the middle rather than at it. */}
+          <circle cx="0" cy="0" r="2.2" fill={style.color} opacity="0.95" />
+
+          {/* The head, riding the rim. */}
           <circle
             cx="0"
             cy={-RIM + 2}
-            r="1.6"
+            r="2"
             fill={style.color}
-            opacity="0.9"
+            opacity="0.95"
           />
         </g>
 
