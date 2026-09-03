@@ -14,6 +14,7 @@
 // this could possibly break.
 // ---------------------------------------------------------------------------
 
+import { hashTypedData } from "viem";
 import { HUNT_DOMAIN } from "@/lib/auth/typedData";
 
 export { HUNT_DOMAIN };
@@ -77,4 +78,36 @@ export interface CotaMessage {
   /** Unix SECONDS. */
   clientTs: bigint;
   nonce: string;
+}
+
+/**
+ * The EIP-712 digest of a Cota — the value stored in `Cota.digest`.
+ *
+ * A pure function of the message, computed the same way on the signing side
+ * and the storing side. It exists as its own export rather than being returned
+ * by the verifier because the two answer different questions: the verifier says
+ * WHO signed, this says WHICH agreement. Conflating them would mean a row could
+ * only ever be keyed by a digest some other function happened to hand back.
+ *
+ * The uniqueness of this value is what stops one agreement existing twice —
+ * where one copy could be revoked while its twin stayed live.
+ */
+export function cotaDigest(message: CotaMessage): `0x${string}` {
+  return hashTypedData({
+    domain: HUNT_DOMAIN,
+    types: COTA_TYPES,
+    primaryType: "Cota",
+    message: {
+      venue: message.venue,
+      markets: [...message.markets],
+      maxNotionalUsdE6: message.maxNotionalUsdE6,
+      maxLeverageX100: message.maxLeverageX100,
+      maxDailyLossUsdE6: message.maxDailyLossUsdE6,
+      maxTradesPerDay: message.maxTradesPerDay,
+      notBefore: message.notBefore,
+      notAfter: message.notAfter,
+      clientTs: message.clientTs,
+      nonce: message.nonce,
+    },
+  });
 }

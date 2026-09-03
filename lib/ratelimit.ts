@@ -28,7 +28,13 @@ import { Ratelimit, type Duration } from "@upstash/ratelimit";
 //   * the map is capped and evicts, so distinct keys cannot grow it forever.
 // ---------------------------------------------------------------------------
 
-export type LimitName = "claim" | "hint" | "spawn" | "register" | "admin";
+export type LimitName =
+  | "claim"
+  | "hint"
+  | "spawn"
+  | "register"
+  | "cota"
+  | "admin";
 
 export interface LimitResult {
   ok: boolean;
@@ -97,6 +103,15 @@ const LIMITS: Record<LimitName, LimitSpec> = {
   register: {
     perPlayer: null,
     perIp: { tokens: 20, windowSeconds: 900 },
+    failClosed: true,
+  },
+  // Signing a Cota moves no money, but it writes an authorisation row and
+  // costs a signature recovery. Fails closed for the same reason `claim` does:
+  // an unbounded path that records what software may later do on a player's
+  // behalf is not one to leave open when the limiter cannot answer.
+  cota: {
+    perPlayer: { tokens: 10, windowSeconds: 300 },
+    perIp: { tokens: 30, windowSeconds: 300 },
     failClosed: true,
   },
   admin: {
