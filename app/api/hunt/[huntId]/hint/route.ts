@@ -63,7 +63,10 @@ export async function POST(
       where: { id: huntId },
       include: {
         caches: {
-          where: { active: true },
+          // suspendedAt too: a hint for a suspended cache would walk somebody
+          // toward a reward that has been taken down, which is the takedown
+          // failing in the most public way available.
+          where: { active: true, suspendedAt: null },
           // Only what the hint needs. Selecting the full row here is how
           // coordinates end up in a response by accident later.
           select: { id: true, lat: true, lng: true },

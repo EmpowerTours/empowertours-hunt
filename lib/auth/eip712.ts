@@ -45,6 +45,7 @@ import {
   SESSION_STATEMENT,
   SESSION_TYPES,
 } from "./typedData";
+import { WARRANTY_TYPES } from "@/lib/hunt/warranty";
 import { COTA_TYPES } from "@/lib/cota/typedData";
 
 // Re-exported so this module stays the one import site for anything server-side.
@@ -471,4 +472,53 @@ export function verifyCotaSignature(
 /** Test seam. Never called from application code. */
 export function __resetMemoryNonceStore(): void {
   memoryNonceStore.clear();
+}
+
+
+/* --------------------------------------------------------------------------
+   Plant warranty — a Sembrador affirming they may give away what they plant.
+
+   See lib/hunt/warranty.ts for why the statement text is a signed field rather
+   than a reference to terms held elsewhere.
+-------------------------------------------------------------------------- */
+
+export interface SignedPlantWarranty {
+  huntId: string;
+  nftContract: `0x${string}`;
+  tokenId: bigint;
+  statement: string;
+  /** Unix SECONDS. */
+  clientTs: bigint;
+  nonce: string;
+  signature: Hex;
+  /** The session player's wallet. The recovered address must equal this. */
+  expectedAddress: string;
+}
+
+export function verifyPlantWarrantySignature(
+  payload: SignedPlantWarranty,
+  opts?: VerifyOptions,
+): Promise<VerifyResult> {
+  return recoverAndCheck({
+    primaryType: "PlantWarranty",
+    typedData: {
+      domain: HUNT_DOMAIN,
+      types: WARRANTY_TYPES,
+      primaryType: "PlantWarranty",
+      message: {
+        huntId: payload.huntId,
+        nftContract: payload.nftContract,
+        tokenId: payload.tokenId,
+        statement: payload.statement,
+        clientTs: payload.clientTs,
+        nonce: payload.nonce,
+      },
+      signature: payload.signature,
+    },
+    signature: payload.signature,
+    nonce: payload.nonce,
+    clientTs: payload.clientTs,
+    expectedAddress: payload.expectedAddress,
+    opts,
+  });
 }

@@ -186,6 +186,7 @@ model Player {
   enrollments  Enrollment[]
   cotas        Cota[]
   redemptions  Redemption[]
+  warranties   PlantWarranty[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -275,6 +276,7 @@ model Hunt {
   spawns       Spawn[]
   credits      CreditLedger[]
   zones        Zone[]
+  warranties   PlantWarranty[]
 
   @@index([active])
 }
@@ -342,13 +344,27 @@ model Cache {
   blurb    String?
   photoCid String?
 
-  active    Boolean  @default(true)
+  /// Ordinary enable/disable, set by whoever runs the hunt.
+  active Boolean @default(true)
+
+  /// Set when a cache is pulled over a RIGHTS complaint.
+  ///
+  /// Kept distinct from `active` for the same reason Player.suspendedAt is
+  /// kept distinct from Player.active: a takedown and a routine disable look
+  /// identical in a boolean, and the audit needs to answer WHY and WHEN, not
+  /// merely whether. The claim path filters on both.
+  suspendedAt   DateTime?
+  suspendReason String?
+  suspendedBy   String?
+
   createdAt DateTime @default(now())
 
   finds      Find[]
   trackSteps TrackStep[]
+  warranty   PlantWarranty?
 
   @@index([huntId, active])
+  @@index([suspendedAt])
 }
 
 // Per-(hunt, player) counters. Exists purely so the per-player find cap is an
@@ -919,4 +935,47 @@ enum RedemptionStatus {
   SETTLED
   /// Cancelled; the credit was returned by a compensating ledger row.
   VOIDED
+}
+
+/// What a Sembrador signed before planting a reward they claim to own.
+///
+/// The statement text is stored alongside the signature deliberately: it is a
+/// signed FIELD, not a reference to terms held elsewhere, so what was signed is
+/// what was read and neither can be edited afterwards. See lib/hunt/warranty.ts.
+///
+/// This proves an affirmation, not a right. Nothing here establishes that the
+/// planter actually holds what they say — that is unknowable from a chain — and
+/// pretending otherwise would be worse than having no warranty at all. What it
+/// does is make the claim specific, dated, attributable, and producible later.
+model PlantWarranty {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  hunt   Hunt   @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  huntId String
+
+  /// Set once the cache exists. A warranty is signed BEFORE the plant, so it
+  /// is briefly unattached — and an unattached warranty is a planter who
+  /// changed their mind, which is a legitimate end state.
+  cache   Cache?  @relation(fields: [cacheId], references: [id], onDelete: SetNull)
+  cacheId String? @unique
+
+  nftContract String
+  tokenId     Decimal @db.Decimal(78, 0)
+
+  /// The exact sentence signed, and which canonical text it matched.
+  statement     String
+  statementLang String
+
+  clientTs  DateTime
+  nonce     String
+  signature String
+  digest    String   @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([playerId, createdAt])
+  @@index([nftContract, tokenId])
 }

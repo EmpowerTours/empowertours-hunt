@@ -96,7 +96,10 @@ export async function POST(
 
     const hunt = await prisma.hunt.findUnique({
       where: { id: huntId },
-      include: { caches: { where: { active: true } } },
+      // Both flags, not just `active`. A rights takedown sets suspendedAt and
+      // deliberately leaves `active` alone, so filtering on `active` only would
+      // leave a suspended cache findable — a kill switch that kills nothing.
+      include: { caches: { where: { active: true, suspendedAt: null } } },
     });
     if (!hunt) {
       return NextResponse.json({ error: "hunt not found" }, { status: 404 });
