@@ -174,7 +174,38 @@ function reject(
   return { ok: false, reason, detail, flagged };
 }
 
-export function validateClaim(ctx: ClaimContext): ClaimResult {
+/**
+ * Everything a position must satisfy before anybody asks what it is near.
+ *
+ * Extracted so a check-in and a claim cannot drift apart. These are the rules
+ * that decide whether a reported fix is believable at all — eligibility, signal
+ * quality, clock sanity, movement plausibility — and none of them mention a
+ * cache. Two copies of this logic would eventually disagree, and the copy that
+ * gets it wrong is the one guarding the money path.
+ */
+export interface PositionContext {
+  attempt: ClaimAttempt;
+  serverNow: Date;
+  playerActive: boolean;
+  huntActive: boolean;
+  huntStartsAt: Date | null;
+  huntEndsAt: Date | null;
+  /**
+   * The last position the verifier ACCEPTED for this player, anywhere.
+   *
+   * Not "last find": a spawn collect and a check-in both establish a fix, and
+   * the anti-teleport check has to see whichever happened most recently or a
+   * player could alternate between mechanics to reset it.
+   */
+  lastFix: PriorFind | null;
+  rules: HuntRules;
+}
+
+export type PositionResult =
+  | { ok: true; accuracyM: number; speedKmh: number | null }
+  | ClaimRejected;
+
+export function validatePosition(ctx: PositionContext): PositionResult {
   const { attempt, serverNow, rules } = ctx;
 
   // --- Eligibility -------------------------------------------------------
@@ -232,13 +263,10 @@ export function validateClaim(ctx: ClaimContext): ClaimResult {
   // Measured against the SERVER clock. Using clientTs here would let a player
   // widen the elapsed window by lying about their own clock, which is exactly
   // what makes a teleport look like a walk.
-  //
-  // `lastFind` is the player's last find anywhere, not in this hunt — see the
-  // note on ClaimContext.lastFind.
   let speedKmh: number | null = null;
-  if (ctx.lastFind) {
+  if (ctx.lastFix) {
     const elapsedSeconds =
-      (serverNow.getTime() - ctx.lastFind.foundAt.getTime()) / 1000;
+      (serverNow.getTime() - ctx.lastFix.foundAt.getTime()) / 1000;
 
     if (!(elapsedSeconds >= rules.cooldownSeconds)) {
       return reject(
@@ -248,7 +276,7 @@ export function validateClaim(ctx: ClaimContext): ClaimResult {
     }
 
     if (elapsedSeconds > 0) {
-      const meters = haversineMeters(ctx.lastFind, attempt);
+      const meters = haversineMeters(ctx.lastFix, attempt);
       speedKmh = (meters / elapsedSeconds) * 3.6;
       if (!(speedKmh <= rules.maxSpeedKmh)) {
         return reject(
@@ -259,6 +287,30 @@ export function validateClaim(ctx: ClaimContext): ClaimResult {
       }
     }
   }
+
+  return { ok: true, accuracyM: attempt.accuracyM, speedKmh };
+}
+
+export function validateClaim(ctx: ClaimContext): ClaimResult {
+  const { attempt, serverNow, rules } = ctx;
+
+  // Every cache-independent rule, shared with the check-in path.
+  const position = validatePosition({
+    attempt,
+    serverNow,
+    playerActive: ctx.playerActive,
+    huntActive: ctx.huntActive,
+    huntStartsAt: ctx.huntStartsAt,
+    huntEndsAt: ctx.huntEndsAt,
+    // `lastFind` is the player's last find anywhere — see the note on
+    // ClaimContext.lastFind.
+    lastFix: ctx.lastFind,
+    rules,
+  });
+  if (!position.ok) return position;
+  // accuracyM comes back from validatePosition rather than off `attempt`: the
+  // null check lives in there now, so this is the one that is proven non-null.
+  const { speedKmh, accuracyM } = position;
 
   // --- Geofence ----------------------------------------------------------
   // Nearest match wins, so overlapping caches resolve deterministically
@@ -298,7 +350,7 @@ export function validateClaim(ctx: ClaimContext): ClaimResult {
     ok: true,
     cacheId: best.cache.id,
     distanceMeters: best.distance,
-    accuracyM: attempt.accuracyM,
+    accuracyM,
     rewardCreditWei: best.cache.rewardCreditWei,
     speedKmh,
   };
