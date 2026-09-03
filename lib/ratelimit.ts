@@ -34,6 +34,7 @@ export type LimitName =
   | "spawn"
   | "register"
   | "cota"
+  | "browse"
   | "admin";
 
 export interface LimitResult {
@@ -113,6 +114,18 @@ const LIMITS: Record<LimitName, LimitSpec> = {
     perPlayer: { tokens: 10, windowSeconds: 300 },
     perIp: { tokens: 30, windowSeconds: 300 },
     failClosed: true,
+  },
+  // Reading the hunt list. IP-only, because browsing is the one public path
+  // that must work BEFORE anybody has an identity — it is what a person sees
+  // when they arrive from a link.
+  //
+  // failClosed is false here, unlike every money path above. A Redis blip must
+  // not turn the front page into an error: nothing is spent by listing hunts,
+  // and the worst case of letting it through unlimited is served cache.
+  browse: {
+    perPlayer: null,
+    perIp: { tokens: 60, windowSeconds: 60 },
+    failClosed: false,
   },
   admin: {
     perPlayer: { tokens: 60, windowSeconds: 60 },
