@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClaimSigner } from "@/app/providers";
 import { useGeolocation } from "@/components/hooks/useGeolocation";
+import { useHeading } from "@/components/hooks/useHeading";
 import { useHint } from "@/components/hooks/useHint";
 import { useTicker } from "@/components/hooks/useTicker";
 import { BandReadout } from "@/components/hunt/BandReadout";
@@ -71,6 +72,11 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   const signer = useClaimSigner();
   const geo = useGeolocation(true);
   const fix = geo.fix;
+
+  // The compass. Null heading means north-up, and the header says so — a scope
+  // that silently claims to be heading-up while pointing at an arbitrary
+  // direction is worse than one the player knows to read against north.
+  const compass = useHeading(true);
 
   /* --- Hunt metadata ---------------------------------------------------- */
   const [hunt, setHunt] = useState<PublicHunt | null>(null);
@@ -321,7 +327,8 @@ export function HuntScreen({ huntId }: { huntId: string }) {
             {hunt?.name ?? "Hunt"}
           </h1>
           <p className="text-ink-faint font-mono text-[11px] tracking-[0.16em] uppercase">
-            {huntActive ? "Live" : "Closed"} · North-up scope
+            {huntActive ? "Live" : "Closed"} ·{" "}
+            {compass.heading === null ? "North-up" : "Heading-up"}
           </p>
         </div>
         <Link
@@ -333,6 +340,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
       </header>
 
       <RadarScope
+        headingDeg={compass.heading}
         band={hint.band}
         complete={hint.complete}
         rangeMeters={rangeMeters}
@@ -342,6 +350,19 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         onSelectSpawn={setSelectedSpawnId}
         now={now}
       />
+
+      {/* Offered whenever there is no heading and the player has not refused.
+          Safe on every platform: on iOS it opens the permission prompt, and
+          elsewhere it re-subscribes, which is what some Androids need before
+          the absolute event starts arriving at all. */}
+      {compass.heading === null && !compass.denied ? (
+        <button
+          onClick={compass.request}
+          className="border-hull-line text-ink bg-hull min-h-12 w-full rounded-2xl border-2 px-4 text-sm font-semibold"
+        >
+          {tGps("compass")}
+        </button>
+      ) : null}
 
       {/* Directly under the scope, and above everything else, because these two
           are what explain a dish that looks dead. Buried below the fold — which

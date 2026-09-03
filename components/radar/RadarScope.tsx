@@ -9,6 +9,7 @@ import {
   weiOrZero,
 } from "@/components/hunt/format";
 import { compassPoint, projectToScope } from "@/components/hunt/geo";
+import { screenAngle } from "@/lib/hunt/heading";
 import type { GeoFix, HintBand, PublicSpawn } from "@/components/hunt/types";
 
 /* ---------------------------------------------------------------------------
@@ -60,6 +61,13 @@ export interface RadarScopeProps {
   fix: GeoFix | null;
   spawns: readonly SpawnMark[];
   selectedSpawnId?: string | null;
+  /**
+   * Degrees clockwise from north the device is facing, or null.
+   *
+   * Null means north-up: the scope cannot honestly claim to know which way the
+   * player is pointing, so it does not rotate and the caller says so.
+   */
+  headingDeg?: number | null;
   onSelectSpawn?: (spawnId: string) => void;
   /** Ticking clock, passed in so one timer drives every countdown on screen. */
   now: number;
@@ -82,11 +90,24 @@ export function RadarScope({
   fix,
   spawns,
   selectedSpawnId = null,
+  headingDeg = null,
   onSelectSpawn,
   now,
 }: RadarScopeProps) {
   const uid = useId().replace(/:/g, "");
   const style = bandStyle(complete ? null : band);
+
+  // Nearest live spawn, for the bearing pointer. Expired ones are excluded
+  // here rather than in the pointer so it cannot aim at something the blip
+  // layer has already stopped drawing.
+  const nearest = useMemo(() => {
+    let best: SpawnMark | null = null;
+    for (const mark of spawns) {
+      if (new Date(mark.spawn.expiresAt).getTime() - now <= 0) continue;
+      if (best === null || mark.distanceMeters < best.distanceMeters) best = mark;
+    }
+    return best;
+  }, [spawns, now]);
 
   // The sweep tail. Rebuilt only when the band changes the tail length, so the
   // animation itself never re-renders React.
@@ -308,12 +329,16 @@ export function RadarScope({
           />
         )}
 
-        {/* --- Spawns: real bearings, real distances. ------------------- */}
+        {/* --- Spawns: real bearings, real distances. -------------------
+            In heading-up mode the whole layer counter-rotates, so a spawn the
+            player is facing sits at the top of the dish. The blips keep their
+            TRUE bearings; only the frame of reference moves. */}
         {fix &&
           spawns.map((mark) => (
             <SpawnBlip
               key={mark.spawn.id}
               mark={mark}
+              screenAngleDeg={screenAngle(mark.bearingDeg, headingDeg)}
               rangeMeters={rangeMeters}
               selected={selectedSpawnId === mark.spawn.id}
               onSelect={onSelectSpawn}
@@ -340,6 +365,47 @@ export function RadarScope({
           opacity={fix ? 1 : 0.28}
         />
       </g>
+
+      {/* --- North marker: the compass affordance. ------------------------
+          In heading-up mode this is the only thing on the dish that tells the
+          player which way north actually is, and it is what makes the rotation
+          legible as a compass rather than as drift. Hidden in north-up mode,
+          where "up" already means north and a second indicator saying the same
+          thing is noise. */}
+      {headingDeg !== null && (
+        <g transform={`rotate(${-headingDeg})`} opacity="0.75">
+          <path
+            d={`M0 ${-(RIM - 1)} L2.6 ${-(RIM - 6)} L-2.6 ${-(RIM - 6)} Z`}
+            fill="#8fb7ff"
+          />
+          <text
+            x="0"
+            y={-(RIM - 10)}
+            textAnchor="middle"
+            fontSize="6"
+            fontFamily="ui-monospace, monospace"
+            fill="#8fb7ff"
+          >
+            N
+          </text>
+        </g>
+      )}
+
+      {/* --- Bearing pointer: which way to walk. --------------------------
+          The nearest live spawn gets a arrow on the rim, sized to be read at
+          arm's length in sunlight. The blips are truthful but small; this is
+          the one mark on the instrument that answers the only question a
+          player standing on a street actually has. */}
+      {fix && nearest !== null && (
+        <g transform={`rotate(${screenAngle(nearest.bearingDeg, headingDeg)})`}>
+          <path
+            d={`M0 ${-(RIM - 12)} L7 ${-(RIM - 25)} L0 ${-(RIM - 21)} L-7 ${-(RIM - 25)} Z`}
+            fill="#ffd12e"
+            opacity="0.95"
+            className="scope-breathe"
+          />
+        </g>
+      )}
 
       {/* --- Chrome ------------------------------------------------------ */}
       <circle
@@ -412,6 +478,7 @@ export function RadarScope({
 
 function SpawnBlip({
   mark,
+  screenAngleDeg,
   rangeMeters,
   selected,
   onSelect,
@@ -419,14 +486,18 @@ function SpawnBlip({
   gradientId,
 }: {
   mark: SpawnMark;
+  screenAngleDeg: number;
   rangeMeters: number;
   selected: boolean;
   onSelect?: (id: string) => void;
   now: number;
   gradientId: string;
 }) {
+  // The SCREEN angle, not the bearing: in heading-up mode these differ by the
+  // device heading, and drawing at the raw bearing would put the blip in the
+  // right compass direction on a dish that is no longer north-up.
   const { x, y, offScope } = projectToScope(
-    mark.bearingDeg,
+    screenAngleDeg,
     mark.distanceMeters,
     rangeMeters,
     RIM - 4,
@@ -464,7 +535,7 @@ function SpawnBlip({
         <path
           d="M0 -5 L4 3 L-4 3 Z"
           fill="#ffd12e"
-          transform={`rotate(${mark.bearingDeg})`}
+          transform={`rotate(${screenAngleDeg})`}
           opacity="0.9"
         />
       ) : (

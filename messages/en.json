@@ -36,16 +36,17 @@
     "creditEarned": "You earned {amount} in credit."
   },
   "gps": {
+    "accuracy": "GPS accuracy",
+    "compass": "Turn on the compass",
+    "denied": "Location permission is off. The hunt cannot verify a claim without it — enable it in your browser's site settings, then retry.",
     "idle": "Waiting for GPS.",
     "locating": "Finding you…",
-    "ready": "GPS locked.",
-    "denied": "Location permission is off. The hunt cannot verify a claim without it — enable it in your browser's site settings, then retry.",
-    "unsupported": "This browser cannot report a location. A hunt needs GPS — try Safari or Chrome over HTTPS.",
-    "unavailable": "Your device could not get a fix. Step outside, away from buildings, and retry.",
-    "timeout": "The last fix is stale — your phone has stopped reporting a position. Keep the screen on and retry.",
-    "accuracy": "GPS accuracy",
     "needs": "needs ±{meters} m",
-    "retry": "Retry"
+    "ready": "GPS locked.",
+    "retry": "Retry",
+    "timeout": "The last fix is stale — your phone has stopped reporting a position. Keep the screen on and retry.",
+    "unavailable": "Your device could not get a fix. Step outside, away from buildings, and retry.",
+    "unsupported": "This browser cannot report a location. A hunt needs GPS — try Safari or Chrome over HTTPS."
   },
   "payout": {
     "released": "Collected. The payout was released automatically and will settle on chain shortly.",

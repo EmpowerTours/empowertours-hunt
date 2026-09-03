@@ -36,16 +36,17 @@
     "creditEarned": "Ganaste {amount} en crédito."
   },
   "gps": {
+    "accuracy": "Precisión del GPS",
+    "compass": "Activar la brújula",
+    "denied": "El permiso de ubicación está apagado. La búsqueda no puede verificar nada sin él: actívalo en la configuración del sitio en tu navegador y vuelve a intentar.",
     "idle": "Esperando el GPS.",
     "locating": "Ubicándote…",
-    "ready": "GPS listo.",
-    "denied": "El permiso de ubicación está apagado. La búsqueda no puede verificar nada sin él: actívalo en la configuración del sitio en tu navegador y vuelve a intentar.",
-    "unsupported": "Este navegador no puede reportar tu ubicación. La búsqueda necesita GPS: prueba con Safari o Chrome por HTTPS.",
-    "unavailable": "Tu dispositivo no pudo obtener una ubicación. Sal a cielo abierto, lejos de los edificios, y vuelve a intentar.",
-    "timeout": "La última ubicación ya está vieja: tu teléfono dejó de reportar. Mantén la pantalla encendida y vuelve a intentar.",
-    "accuracy": "Precisión del GPS",
     "needs": "necesita ±{meters} m",
-    "retry": "Reintentar"
+    "ready": "GPS listo.",
+    "retry": "Reintentar",
+    "timeout": "La última ubicación ya está vieja: tu teléfono dejó de reportar. Mantén la pantalla encendida y vuelve a intentar.",
+    "unavailable": "Tu dispositivo no pudo obtener una ubicación. Sal a cielo abierto, lejos de los edificios, y vuelve a intentar.",
+    "unsupported": "Este navegador no puede reportar tu ubicación. La búsqueda necesita GPS: prueba con Safari o Chrome por HTTPS."
   },
   "payout": {
     "released": "Recogido. El pago se liberó automáticamente y se confirmará en la cadena en unos momentos.",
