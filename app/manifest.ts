@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "EmpowerTours Hunt",
     short_name: "Hunt",
     description:
-      "Walk to hidden caches, earn TURBO credit, sweep spawns for MON.",
+      "Walk your city and get paid in real MON for the rewards you reach.",
     start_url: "/",
     scope: "/",
     display: "standalone",

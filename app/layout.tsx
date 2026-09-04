@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s · EmpowerTours Hunt",
   },
   description:
-    "A GPS treasure hunt. Walk to hidden caches, earn TURBO credit, sweep spawns for MON. No wallet, no seed phrase.",
+    "A GPS game. Walk your city, find rewards, get paid in real MON. No app to install, no seed phrase.",
   applicationName: "Hunt",
   appleWebApp: {
     capable: true,

@@ -31,13 +31,13 @@ export default function LandingPage() {
 
         <ul className="text-ink-dim w-full space-y-2 text-sm">
           <Bullet>
-            Walk to a cache and claim it. Finds pay{" "}
-            <span className="text-phosphor">TURBO credit</span> — a discount on
-            the cohort subscription, not withdrawable cash.
+            <span className="text-spawn">Rewards</span> drop near you at random,
+            pay real MON, and expire fast. Walk to one before it goes, and it is
+            yours.
           </Bullet>
           <Bullet>
-            <span className="text-spawn">Spawns</span> drop near you at random,
-            pay real MON, and expire fast. Those you can see on the scope.
+            No app to install and no seed phrase. Your phone unlocks a wallet;
+            the MON lands in it, and you can check every payout on the explorer.
           </Bullet>
           <Bullet>
             Every claim is checked against GPS accuracy, your clock and how fast
