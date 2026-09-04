@@ -73,7 +73,14 @@ out geom;
 console.log(`querying Overpass around ${lat},${lng} within ${radiusM}m…`);
 const res = await fetch(OVERPASS, {
   method: "POST",
-  headers: { "content-type": "application/x-www-form-urlencoded" },
+  headers: {
+    "content-type": "application/x-www-form-urlencoded",
+    // Required. Overpass answers 406 Not Acceptable to Node's default
+    // User-Agent — the same request from curl succeeds, which makes this look
+    // like a query problem for as long as you test it with curl. Naming the
+    // client and a contact address is also what their usage policy asks for.
+    "user-agent": "empowertours-hunt/1.0 (admin@empowertours.xyz)",
+  },
   body: `data=${encodeURIComponent(QUERY)}`,
 });
 if (!res.ok) {
