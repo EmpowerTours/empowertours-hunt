@@ -40,7 +40,7 @@ export function claimGate({
   huntActive: boolean;
 }): ClaimGate {
   if (phase === "signing") {
-    return { ready: false, label: "SIGNING…", hint: "Confirm with Face ID." };
+    return { ready: false, label: "SIGNING…", hint: "Confirm with your passkey." };
   }
   if (phase === "submitting") {
     return { ready: false, label: "CHECKING…", hint: null };

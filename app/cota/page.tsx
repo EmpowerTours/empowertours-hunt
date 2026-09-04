@@ -15,7 +15,7 @@ import type { CotaMessage } from "@/lib/cota/typedData";
 //
 // The screen is built around the read-back, not the form. A player agreeing to
 // what software may do on their behalf needs to see the agreement in sentences
-// before the Face ID prompt — the inputs are just how the sentences get their
+// before the passkey prompt — the inputs are just how the sentences get their
 // numbers, and they are the less important half of this page.
 //
 // Spanish first. The audience is Guerrero, and a financial limit read in a

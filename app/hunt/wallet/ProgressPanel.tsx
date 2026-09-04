@@ -117,7 +117,15 @@ export function ProgressPanel() {
 
   return (
     <div className="space-y-4">
-      {/* --- TURBO credit ------------------------------------------------- */}
+      {/* --- TURBO credit -------------------------------------------------
+          Shown only once there is some.
+
+          Credit is earned by finding CACHES, and a spawn-only hunt has none —
+          so on the hunt most players are on, this panel read "0 WMON · 0% of
+          an Explorer month" to somebody who had no way to earn either and no
+          idea what an Explorer month was. Nothing is removed: place a cache
+          with a reward and the panel returns by itself. */}
+      {credit > 0n ? (
       <Panel className="border-phosphor/40">
         <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
           TURBO credit
@@ -150,6 +158,7 @@ export function ProgressPanel() {
           withdrawable and cannot be sent anywhere.
         </p>
       </Panel>
+      ) : null}
 
       {/* --- Real MON ----------------------------------------------------- */}
       <Panel className="border-spawn/40">
