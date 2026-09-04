@@ -5,6 +5,7 @@ import {
   sendApprovedPayout,
   findUnresolvedPayout,
   type SendResult,
+  sweepApprovedPayouts,
 } from "@/lib/hunt/payout";
 
 // The keeper. Sweeps APPROVED payouts and broadcasts them, one nonce at a time.
@@ -89,18 +90,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // Hard stop. A row whose transaction may or may not exist has to be resolved
-  // against the chain (/api/cron/reconcile, or a human with the explorer open)
-  // before anything else may be broadcast from this treasury.
-  const unresolved = await findUnresolvedPayout();
-  if (unresolved) {
+  const result = await sweepApprovedPayouts(MAX_BATCH);
+
+  // Same 409 as before: an unresolved broadcast blocks the whole treasury, and
+  // the caller needs a status it can alert on rather than a 200 saying nothing
+  // was swept.
+  if (result.blockedBy) {
     return NextResponse.json(
       {
         swept: 0,
-        halted: "unresolved payout",
-        payoutId: unresolved.id,
-        status: unresolved.status,
-        nonce: unresolved.nonce,
+        halted: result.halted,
+        payoutId: result.blockedBy.payoutId,
+        status: result.blockedBy.status,
+        nonce: result.blockedBy.nonce,
         detail:
           "a previous broadcast has an unknown outcome; resolve it against the chain before sending anything else",
       },
@@ -108,48 +110,5 @@ export async function POST(req: Request) {
     );
   }
 
-  const queue = await prisma.payout.findMany({
-    where: { status: "APPROVED" },
-    orderBy: { createdAt: "asc" },
-    take: MAX_BATCH,
-    select: { id: true },
-  });
-
-  const results: SweepRow[] = [];
-  let halted: string | null = null;
-
-  for (const row of queue) {
-    // Serial by construction: awaited one at a time, and `sendApprovedPayout`
-    // additionally funnels every treasury operation through one queue.
-    const res: SendResult = await sendApprovedPayout(row.id);
-    results.push({
-      payoutId: row.id,
-      ok: res.ok,
-      status: res.status,
-      txHash: res.txHash,
-      error: res.error,
-    });
-
-    if (res.needsReconciliation) {
-      // Escalate to a human and stop. Continuing would pin the next nonce
-      // behind a transaction we cannot account for.
-      halted = "payout needs reconciliation";
-      break;
-    }
-    if (!res.ok && res.status === "APPROVED") {
-      // The row was left untouched, which means the refusal was systemic — an
-      // underfunded treasury, an RPC that cannot quote a fee. Every other row
-      // in this batch would hit the same wall, so stop rather than loop.
-      halted = res.error ?? "send refused";
-      break;
-    }
-  }
-
-  return NextResponse.json({
-    swept: results.length,
-    queued: queue.length,
-    sent: results.filter((r) => r.ok).length,
-    halted,
-    results,
-  });
+  return NextResponse.json(result);
 }

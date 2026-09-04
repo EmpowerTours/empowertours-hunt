@@ -755,3 +755,131 @@ async function reconcileRow(
     detail,
   };
 }
+
+
+/* --------------------------------------------------------------------------
+   Sweeping the approved queue.
+
+   Extracted so the scheduled keeper and the collect path run the SAME code.
+   Two implementations of "send everything approved" would eventually differ,
+   and the one that differs wrong is broadcasting from the treasury.
+-------------------------------------------------------------------------- */
+
+export interface SweepRow {
+  payoutId: string;
+  ok: boolean;
+  // Mirrors SendResult exactly. Narrowing these to non-optional would force a
+  // `?? null` at the call site, which quietly turns "the sender said nothing"
+  // into "the sender said no" in an audit row somebody reads during a dispute.
+  status?: string;
+  txHash?: string | null;
+  error?: string | null;
+}
+
+export interface SweepResult {
+  swept: number;
+  queued: number;
+  sent: number;
+  /** Non-null when the sweep stopped early, and why. */
+  halted: string | null;
+  /** Set when an unresolved broadcast blocks the whole treasury. */
+  blockedBy?: { payoutId: string; status: string; nonce: number | null };
+  results: SweepRow[];
+}
+
+/**
+ * Send every APPROVED payout, oldest first.
+ *
+ * Serial by construction twice over: awaited one at a time here, and
+ * `sendApprovedPayout` additionally funnels every treasury operation through
+ * `enqueueTreasuryOp`. That second one is what makes it safe to call this from
+ * a request path and a scheduler at the same time — the sends interleave into
+ * one queue rather than racing for a nonce.
+ *
+ * NOTE for the day this runs on more than one instance: the queue is
+ * per-process. Two Railway replicas would each hold their own, and the nonce
+ * safety would be gone. A distributed lock belongs here before that happens.
+ */
+export async function sweepApprovedPayouts(
+  maxBatch: number,
+): Promise<SweepResult> {
+  // Hard stop. A row whose transaction may or may not exist has to be resolved
+  // against the chain before anything else may be broadcast from this
+  // treasury — otherwise every subsequent nonce is a guess.
+  const unresolved = await findUnresolvedPayout();
+  if (unresolved) {
+    return {
+      swept: 0,
+      queued: 0,
+      sent: 0,
+      halted: "unresolved payout",
+      blockedBy: {
+        payoutId: unresolved.id,
+        status: unresolved.status,
+        nonce: unresolved.nonce,
+      },
+      results: [],
+    };
+  }
+
+  const queue = await prisma.payout.findMany({
+    where: { status: "APPROVED" },
+    orderBy: { createdAt: "asc" },
+    take: maxBatch,
+    select: { id: true },
+  });
+
+  const results: SweepRow[] = [];
+  let halted: string | null = null;
+
+  for (const row of queue) {
+    const res = await sendApprovedPayout(row.id);
+    results.push({
+      payoutId: row.id,
+      ok: res.ok,
+      status: res.status,
+      txHash: res.txHash,
+      error: res.error,
+    });
+
+    if (res.needsReconciliation) {
+      // Escalate to a human and stop. Continuing would pin the next nonce
+      // behind a transaction nobody can account for.
+      halted = "payout needs reconciliation";
+      break;
+    }
+    if (!res.ok && res.status === "APPROVED") {
+      // The row was left untouched, so the refusal was systemic — an
+      // underfunded treasury, an RPC that cannot quote a fee. Every other row
+      // would hit the same wall, so stop rather than loop.
+      halted = res.error ?? "send refused";
+      break;
+    }
+  }
+
+  return {
+    swept: results.length,
+    queued: queue.length,
+    sent: results.filter((r) => r.ok).length,
+    halted,
+    results,
+  };
+}
+
+/**
+ * Ask for a sweep without waiting for it.
+ *
+ * Called from the collect path so a payout goes out seconds after it is
+ * earned rather than on the next five-minute tick. Deliberately not awaited:
+ * the player is holding the phone waiting for their collect response, and a
+ * chain broadcast has no business inside that request.
+ *
+ * Every failure is swallowed. The scheduled keeper is the safety net, so the
+ * worst case of this doing nothing is the latency it existed to remove — never
+ * a lost payout.
+ */
+export function nudgeSweep(maxBatch: number): void {
+  void sweepApprovedPayouts(maxBatch).catch((err: unknown) => {
+    console.warn("[payout] nudge sweep failed; the keeper will retry", err);
+  });
+}

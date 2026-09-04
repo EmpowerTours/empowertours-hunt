@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { nudgeSweep } from "@/lib/hunt/payout";
 import { z } from "zod";
 import type { Hex } from "viem";
 import { prisma } from "@/lib/db/prisma";
@@ -79,6 +80,16 @@ class CollectRejected extends Error {
     this.name = "CollectRejected";
   }
 }
+
+/**
+ * How many payouts one nudge may send.
+ *
+ * Small on purpose. This fires from a request path, and a nudge that tried to
+ * drain a long backlog would hold the treasury queue while somebody's collect
+ * response waited behind it. The keeper clears backlogs; this clears the one
+ * just earned.
+ */
+const MAX_NUDGE_BATCH = 3;
 
 export async function POST(
   req: Request,
@@ -453,7 +464,20 @@ export async function POST(
         },
       );
 
-      return NextResponse.json({
+            // Ask for a sweep, do not wait for one. An auto-approved payout is
+      // APPROVED the moment the transaction above commits, so the send can
+      // start now rather than on the next five-minute keeper tick — seconds
+      // instead of minutes, which is the difference between a game and a form.
+      //
+      // Not awaited on purpose: the player is holding a phone waiting for this
+      // response, and a chain broadcast has no business inside their request.
+      // If it fails, the scheduled keeper is the safety net, so the worst case
+      // is the latency this exists to remove — never a lost payout.
+      if (committed.decision.autoApprove) {
+        nudgeSweep(MAX_NUDGE_BATCH);
+      }
+
+return NextResponse.json({
         collected: true,
         spawnId: spawn.id,
         amountMonWei: amountParam,
