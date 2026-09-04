@@ -20,8 +20,22 @@ const COHORT_ABI = parseAbi([
   "function tierPrice(uint8 tier) view returns (uint256)",
 ]);
 
-/** Tier ids as the cohort contract numbers them. */
-export const TIERS = { EXPLORER: 0, BUILDER: 1, FOUNDER: 2 } as const;
+/**
+ * Tier ids as the cohort contract numbers them.
+ *
+ * ONE-BASED, with 0 meaning None. This was written 0-based and every value was
+ * wrong by one: Explorer read tier 0, which prices at 0 WMON, and Builder and
+ * Founder each read the tier below their own — so a redemption would have been
+ * charged Explorer's price for Builder's month.
+ *
+ * Explorer never became "free months" only because readTierPriceWei refuses a
+ * non-positive price. That guard was written for a failed RPC read and caught
+ * an indexing mistake instead, which is the argument for having it.
+ *
+ * Verified on chain 2026-09-04 against 0xEae0…1Ab5:
+ *   tier 1 = 139 WMON, tier 2 = 556 WMON.
+ */
+export const TIERS = { EXPLORER: 1, BUILDER: 2, FOUNDER: 3 } as const;
 export type TierName = keyof typeof TIERS;
 
 export function isTierName(v: string): v is TierName {
