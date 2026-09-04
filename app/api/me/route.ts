@@ -43,7 +43,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "slow down" }, { status: 429 });
     }
 
-    const [row, sent, pending, findCount, spawnCount] = await Promise.all([
+    const [row, sent, pending, findCount, spawnCount, payouts] = await Promise.all([
       prisma.player.findUniqueOrThrow({
         where: { id: player.id },
         select: {
@@ -63,6 +63,22 @@ export async function GET(req: Request) {
       prisma.find.count({ where: { playerId: player.id } }),
       prisma.spawn.count({
         where: { playerId: player.id, collectedAt: { not: null } },
+      }),
+      // The receipts. A screen that says "3 MON settled" and offers no way to
+      // check it asks the player to take the app's word for it — the wrong
+      // posture for something whose whole claim is that it can be verified.
+      prisma.payout.findMany({
+        where: { playerId: player.id },
+        orderBy: { createdAt: "desc" },
+        take: 25,
+        select: {
+          id: true,
+          status: true,
+          amountMonWei: true,
+          txHash: true,
+          sentAt: true,
+          createdAt: true,
+        },
       }),
     ]);
 
@@ -94,6 +110,15 @@ export async function GET(req: Request) {
       findCount,
       spawnCount,
       turboUsername: row.turboUsername,
+      payouts: payouts.map((p) => ({
+        id: p.id,
+        status: p.status,
+        amountMonWei: p.amountMonWei.toFixed(0),
+        // Null until the keeper broadcasts. The UI says "on its way" rather
+        // than showing an empty link, because a dead link reads as a failure.
+        txHash: p.txHash,
+        at: (p.sentAt ?? p.createdAt).toISOString(),
+      })),
     });
   } catch (err) {
     if (err instanceof AuthError) {

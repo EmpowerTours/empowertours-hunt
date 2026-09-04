@@ -218,7 +218,19 @@ export interface SessionPlayerView {
 
 /* --- Progress ------------------------------------------------------------- */
 
+/** One payout, as the player sees it — with the receipt when there is one. */
+export interface PlayerPayout {
+  id: string;
+  status: string;
+  amountMonWei: string;
+  /** Null until it has been broadcast. */
+  txHash: string | null;
+  /** ISO 8601. */
+  at: string;
+}
+
 export interface PlayerProgress {
+  payouts?: PlayerPayout[];
   /** The player's own address, as the server knows it. */
   walletAddress?: string | null;
   /**

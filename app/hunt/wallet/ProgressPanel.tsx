@@ -208,6 +208,59 @@ export function ProgressPanel() {
         ) : null}
       </Panel>
 
+      {/* --- Receipts ------------------------------------------------------
+          The point of the screen. "3 MON settled" with nothing to check it
+          against asks the player to trust the app, which is the wrong posture
+          for a thing whose whole claim is that it can be verified. Every sent
+          payout links to the transaction; one still moving says so plainly
+          rather than showing a dead link. */}
+      {progress.payouts && progress.payouts.length > 0 ? (
+        <Panel>
+          <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
+            Payouts
+          </div>
+          <ul className="mt-3 space-y-2">
+            {progress.payouts.map((p) => {
+              const sent = p.txHash !== null && p.txHash.length > 0;
+              return (
+                <li
+                  key={p.id}
+                  className="border-hull-line flex items-center justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
+                >
+                  <div>
+                    <div className="text-ink font-mono text-sm">
+                      {formatMon(weiOrZero(p.amountMonWei))} MON
+                    </div>
+                    <div className="text-ink-faint font-mono text-[11px]">
+                      {new Date(p.at).toLocaleString()}
+                    </div>
+                  </div>
+                  {sent ? (
+                    <a
+                      href={`https://monadscan.com/tx/${p.txHash}`}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-spawn shrink-0 font-mono text-xs underline"
+                    >
+                      receipt ↗
+                    </a>
+                  ) : (
+                    <span className="text-ink-faint shrink-0 font-mono text-xs">
+                      on its way
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-ink-faint mt-3 text-xs leading-snug">
+            Every settled payout is a transaction on Monad. Tap a receipt to
+            see it on the explorer — you do not have to take this screen&apos;s
+            word for it.
+          </p>
+        </Panel>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-3">
         <Stat label="Caches found" value={String(progress.findCount)} />
         <Stat

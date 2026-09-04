@@ -460,7 +460,22 @@ export async function fetchProgress(
 ): Promise<PlayerProgress> {
   const body = await request("/api/me", { signal }, { optional: true });
   const v = isRecord(body) ? body : {};
+  const rawPayouts = Array.isArray(v.payouts) ? v.payouts : [];
   return {
+    payouts: rawPayouts.flatMap((p) => {
+      if (!isRecord(p)) return [];
+      const id = str(p.id);
+      const amountMonWei = str(p.amountMonWei);
+      const at = str(p.at);
+      if (id === null || amountMonWei === null || at === null) return [];
+      return [{
+        id,
+        status: str(p.status) ?? "UNKNOWN",
+        amountMonWei,
+        txHash: str(p.txHash),
+        at,
+      }];
+    }),
     walletAddress: str(v.walletAddress),
     // Deliberately NOT defaulted to "0" — see PlayerProgress.
     walletBalanceWei: str(v.walletBalanceWei),
