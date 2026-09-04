@@ -69,6 +69,7 @@
     "noMarkets": "No se pudo contactar al mercado. Intenta más tarde.",
     "paper": "Modo práctica",
     "paperBody": "Esto opera con precios reales de Perpl pero sin dinero. Para operar de verdad necesitas AUSD, que llega por el puente desde otra red.",
+    "practice": "Practicar con este límite",
     "sign": "Firmar con tu llave de acceso",
     "signIn": "Inicia sesión para firmar",
     "signInBody": "Necesitas tu llave de acceso para firmar una Cota — Face ID, huella, o lo que desbloquee tu teléfono.",

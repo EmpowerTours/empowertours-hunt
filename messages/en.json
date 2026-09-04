@@ -69,6 +69,7 @@
     "noMarkets": "Couldn't reach the venue. Try again later.",
     "paper": "Practice mode",
     "paperBody": "This runs on real Perpl prices with no money. Trading for real needs AUSD, which arrives by bridge from another network.",
+    "practice": "Practice with this bound",
     "sign": "Sign with your passkey",
     "signIn": "Sign in to sign a Cota",
     "signInBody": "You need your passkey to sign a Cota — Face ID, fingerprint, or whatever unlocks your phone.",

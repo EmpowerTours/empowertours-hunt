@@ -251,6 +251,12 @@ export default function CotaPage() {
           >
             {t("another")}
           </Button>
+          <a
+            href="/cota/practice"
+            className="bg-phosphor text-void flex min-h-14 w-full items-center justify-center rounded-2xl px-5 text-lg font-semibold"
+          >
+            {t("practice")}
+          </a>
         </Panel>
       ) : (
         <>
