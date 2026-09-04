@@ -206,6 +206,26 @@ convention — they record why a decision was made, not just what changed.
   than gas used (`lib/hunt/payout.ts`), and EIP-7702 delegated accounts reserve
   10 MON that cannot be spent.
 
+### Ownership and licence
+
+Copyright © 2026 **EmpowerTours**. Every commit in this repository is authored
+by EmpowerTours, and authorship and copyright stay with EmpowerTours.
+
+The code is released under the **MIT Licence** (see `LICENSE`). That is not a
+transfer of ownership — MIT keeps the copyright with the holder and grants
+others permission to use, copy and modify the work, on the condition that the
+copyright notice travels with it. Anyone reusing this code must carry the
+EmpowerTours notice.
+
+An OSI licence is not optional here: Metropolis §7.2 requires submissions to be
+open source under MIT, Apache 2.0, GPL or BSD, and to stay publicly accessible
+during and after the Hackathon. So the choice was which permissive licence to
+use, not whether to publish. MIT keeps the attribution requirement while asking
+the least of anyone building on it.
+
+The **EmpowerTours** name and marks are not licensed by MIT and remain
+EmpowerTours' own.
+
 ### External code
 
 Next.js, React, Prisma, viem, next-intl, zod, Upstash Redis, Vitest — all under
