@@ -25,6 +25,7 @@ export const APPROVAL_HOLD_REASONS = [
   "attempt_flagged",
   "player_suspended",
   "player_not_active",
+  "account_too_new",
 ] as const;
 export type ApprovalHoldReason = (typeof APPROVAL_HOLD_REASONS)[number];
 
@@ -42,6 +43,21 @@ export interface AutoApprovalContext {
   attemptFlagged: boolean;
   playerSuspended: boolean;
   playerActive: boolean;
+  /**
+   * Seconds since the player's wallet first registered, at the moment of
+   * collection. A throwaway wallet minted to spoof one payout is worthless if
+   * it cannot cash out immediately, and time is the one cost a scripted
+   * attacker cannot skip. A real player registered, walked, and time passed —
+   * so this gate costs them nothing.
+   */
+  accountAgeSeconds: number;
+  /**
+   * Minimum wallet age before a payout auto-approves. 0 disables the gate
+   * (the schema default, so an unconfigured hunt behaves as before). Below
+   * this, the payout HOLDS for a human rather than being refused — the player
+   * earned it, they just cash out after review until the account matures.
+   */
+  minAccountAgeSeconds: number;
 }
 
 export interface AutoApproved {
@@ -75,6 +91,20 @@ export function decideAutoApproval(ctx: AutoApprovalContext): ApprovalDecision {
   }
   if (!ctx.playerActive) {
     return hold("player_not_active", "player is not active");
+  }
+
+  // Account age. A fresh wallet's first payout waits for a human; the cost of
+  // a throwaway is that it cannot cash out on sight, which is exactly the
+  // attacker's cheapest move. 0 disables the gate. Note this HOLDS rather than
+  // refuses: the payout is earned, it just settles after review.
+  if (
+    ctx.minAccountAgeSeconds > 0 &&
+    ctx.accountAgeSeconds < ctx.minAccountAgeSeconds
+  ) {
+    return hold(
+      "account_too_new",
+      `account is ${ctx.accountAgeSeconds}s old, minimum ${ctx.minAccountAgeSeconds}s for auto-approval`,
+    );
   }
 
   if (!(ctx.amountWei > 0n)) {

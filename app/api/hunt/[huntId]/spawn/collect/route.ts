@@ -399,6 +399,19 @@ export async function POST(
                 },
               });
 
+              // Wallet age at the moment of collection. SessionPlayer does not
+              // carry createdAt, so it is read here — inside the transaction,
+              // so the age is measured against the same `now` everything else
+              // in this collect uses.
+              const playerRow = await tx.player.findUniqueOrThrow({
+                where: { id: player.id },
+                select: { createdAt: true },
+              });
+              const accountAgeSeconds = Math.max(
+                0,
+                Math.floor((now.getTime() - playerRow.createdAt.getTime()) / 1000),
+              );
+
               const decision = decideAutoApproval({
                 amountWei: amount,
                 autoApproveMaxWei: toWei(hunt.autoApproveMaxWei),
@@ -411,6 +424,8 @@ export async function POST(
                 attemptFlagged: recentFlagged > 0,
                 playerSuspended: player.suspendedAt !== null,
                 playerActive: player.active,
+                accountAgeSeconds,
+                minAccountAgeSeconds: hunt.minAccountAgeSeconds,
               });
 
               // One payout per spawn — @unique on spawnId is what makes paying the

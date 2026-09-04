@@ -26,6 +26,8 @@ function ctx(over: Partial<AutoApprovalContext> = {}): AutoApprovalContext {
     attemptFlagged: false,
     playerSuspended: false,
     playerActive: true,
+    accountAgeSeconds: 3600,
+    minAccountAgeSeconds: 0,
     ...over,
   };
 }
@@ -159,5 +161,58 @@ describe("sumAutoApprovedLast24hWei", () => {
     expect(await sumAutoApprovedLast24hWei("hunt_1", new Date())).toBe(
       10n ** 21n,
     );
+  });
+});
+
+describe("the account-age gate", () => {
+  function aged(over: Partial<AutoApprovalContext> = {}): AutoApprovalContext {
+    return {
+      amountWei: 1n,
+      autoApproveMaxWei: 10n,
+      autoApproveDailyCapWei: 100n,
+      autoApprovedLast24hWei: 0n,
+      attemptFlagged: false,
+      playerSuspended: false,
+      playerActive: true,
+      accountAgeSeconds: 3600,
+      minAccountAgeSeconds: 0,
+      ...over,
+    };
+  }
+
+  it("holds a fresh wallet's payout for review", () => {
+    // The attacker's cheapest move is a throwaway wallet that collects on
+    // sight. Time is the one cost they cannot script, so a too-new account
+    // holds — it is not refused, the payout is earned.
+    const d = decideAutoApproval(
+      aged({ accountAgeSeconds: 30, minAccountAgeSeconds: 3600 }),
+    );
+    expect(d.autoApprove).toBe(false);
+    if (!d.autoApprove) expect(d.reason).toBe("account_too_new");
+  });
+
+  it("auto-approves once the wallet is old enough", () => {
+    expect(
+      decideAutoApproval(
+        aged({ accountAgeSeconds: 3600, minAccountAgeSeconds: 3600 }),
+      ).autoApprove,
+    ).toBe(true);
+  });
+
+  it("is disabled at 0, so an unconfigured hunt behaves as before", () => {
+    expect(
+      decideAutoApproval(
+        aged({ accountAgeSeconds: 0, minAccountAgeSeconds: 0 }),
+      ).autoApprove,
+    ).toBe(true);
+  });
+
+  it("ranks a flagged attempt above account age", () => {
+    // A flagged spoof is the more serious signal and the one worth recording.
+    const d = decideAutoApproval(
+      aged({ accountAgeSeconds: 1, minAccountAgeSeconds: 3600, attemptFlagged: true }),
+    );
+    expect(d.autoApprove).toBe(false);
+    if (!d.autoApprove) expect(d.reason).toBe("attempt_flagged");
   });
 });

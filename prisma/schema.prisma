@@ -294,6 +294,14 @@ model Hunt {
   // scale. A payout whose attempt was flagged never auto-approves regardless.
   autoApproveDailyCapWei Decimal @default(0) @db.Decimal(78, 0)
 
+  /// Minimum wallet age, in seconds, before a payout auto-approves.
+  ///
+  /// A throwaway wallet minted to spoof one payout is worthless if it cannot
+  /// cash out on sight, and time is the one cost a scripted attacker cannot
+  /// skip. Below this the payout HOLDS for a human — it is earned, it just
+  /// settles after review. 0 disables the gate.
+  minAccountAgeSeconds Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
