@@ -461,6 +461,9 @@ export async function fetchProgress(
   const body = await request("/api/me", { signal }, { optional: true });
   const v = isRecord(body) ? body : {};
   return {
+    walletAddress: str(v.walletAddress),
+    // Deliberately NOT defaulted to "0" — see PlayerProgress.
+    walletBalanceWei: str(v.walletBalanceWei),
     creditBalanceWei: str(v.creditBalanceWei) ?? "0",
     collectedMonWei: str(v.collectedMonWei) ?? "0",
     pendingMonWei: str(v.pendingMonWei) ?? "0",

@@ -160,7 +160,38 @@ export function ProgressPanel() {
       </Panel>
       ) : null}
 
-      {/* --- Real MON ----------------------------------------------------- */}
+      {/* --- What is actually in the wallet --------------------------------
+          The chain, not the game's bookkeeping. A player who has just been
+          paid wants to see the number their wallet would show, and the two
+          differ for the minutes between approval and the sweep. */}
+      <Panel className="border-spawn/40">
+        <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
+          Wallet balance
+        </div>
+        {progress.walletBalanceWei === null ||
+        progress.walletBalanceWei === undefined ? (
+          // Not "0". Rendering an unread balance as empty tells somebody who
+          // was just paid that they were not.
+          <div className="text-ink-faint mt-1 font-mono text-2xl">—</div>
+        ) : (
+          <div className="text-spawn mt-1 font-mono text-4xl leading-none font-bold">
+            {formatMon(weiOrZero(progress.walletBalanceWei))}
+          </div>
+        )}
+        <div className="text-ink-dim mt-1 font-mono text-sm">
+          {progress.walletBalanceWei === null ||
+          progress.walletBalanceWei === undefined
+            ? "MON · could not read the chain just now"
+            : "MON · on chain"}
+        </div>
+        {progress.walletAddress ? (
+          <p className="text-ink-faint mt-3 font-mono text-[11px] break-all">
+            {progress.walletAddress}
+          </p>
+        ) : null}
+      </Panel>
+
+      {/* --- Earned through this hunt ------------------------------------- */}
       <Panel className="border-spawn/40">
         <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
           MON from spawns
@@ -171,8 +202,8 @@ export function ProgressPanel() {
         <div className="text-ink-dim mt-1 font-mono text-sm">MON · settled</div>
         {weiOrZero(progress.pendingMonWei) > 0n ? (
           <p className="text-ink-dim mt-3 text-sm">
-            {formatMon(weiOrZero(progress.pendingMonWei))} MON is earned but not
-            yet sent. Payouts are released deliberately, not instantly.
+            {formatMon(weiOrZero(progress.pendingMonWei))} MON is earned and on
+            its way. It lands in your wallet within a few minutes.
           </p>
         ) : null}
       </Panel>

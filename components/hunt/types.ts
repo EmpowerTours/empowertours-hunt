@@ -219,6 +219,16 @@ export interface SessionPlayerView {
 /* --- Progress ------------------------------------------------------------- */
 
 export interface PlayerProgress {
+  /** The player's own address, as the server knows it. */
+  walletAddress?: string | null;
+  /**
+   * On-chain balance in wei, or null when the chain could not be read.
+   *
+   * Null is not zero. "We could not ask" and "you have nothing" render the
+   * same as a number and could not be more different to somebody who just
+   * walked to a spawn.
+   */
+  walletBalanceWei?: string | null;
   /** TURBO credit balance, WMON-wei decimal string. Not withdrawable. */
   creditBalanceWei: string;
   /** Native MON collected from spawns, wei decimal string. */
