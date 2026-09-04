@@ -16,26 +16,28 @@ name: keeper
 
 # THE SCHEDULE IS OFF UNTIL THE APP IS DEPLOYED.
 #
-# There is no deployment yet: hunt.empowertours.xyz does not resolve, and
-# vars.HUNT_URL / secrets.CRON_SECRET are unset in this repo. With the cron
-# enabled the guard below fired every 5 minutes — ~288 red runs and 288
-# failure emails a day, all reporting the same absent configuration.
+# LIVE as of 2026-09-04. All three preconditions were met first, in order:
+#   1. deployed at hunt.empowertours.xyz, with vars.HUNT_URL and
+#      secrets.CRON_SECRET set (2026-08-26);
+#   2. a workflow_dispatch run went green and broadcast a real 1 MON payout
+#      (run 33824190723) — the first money this system has moved;
+#   3. only then was the schedule uncommented.
 #
-# TO TURN THE KEEPER ON, in this order:
-#   1. Deploy, and set vars.HUNT_URL + secrets.CRON_SECRET (see docs/DEPLOY.md).
-#   2. Run this workflow via `workflow_dispatch` and confirm it is green.
-#   3. Uncomment the `schedule:` block below and push.
+# The August failures were the guard working: HUNT_URL and CRON_SECRET were
+# empty then, so the cron produced ~288 red runs a day all reporting the same
+# absent configuration, and the schedule was disabled rather than the guard
+# weakened. That was the right call and the reason it can be trusted now.
 #
 # The guard stays a hard failure on purpose. Once the schedule is live, an
 # unconfigured or unreachable keeper MUST be loud: the payout queue silently
 # not draining is the exact failure this workflow exists to prevent.
 
 on:
-  # schedule:
-  #   # Sweep approved payouts every 5 minutes.
-  #   - cron: "*/5 * * * *"
-  #   # Reconcile ambiguous sends every 15.
-  #   - cron: "*/15 * * * *"
+  schedule:
+    # Sweep approved payouts every 5 minutes.
+    - cron: "*/5 * * * *"
+    # Reconcile ambiguous sends every 15.
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       job:
