@@ -176,18 +176,19 @@ model Player {
 
   createdAt DateTime @default(now())
 
-  finds        Find[]
-  attempts     ClaimAttempt[]
-  payouts      Payout[]
-  hintRequests HintRequest[]
-  huntStats    PlayerHunt[]
-  credits      CreditLedger[]
-  spawns       Spawn[]
-  enrollments  Enrollment[]
-  cotas        Cota[]
-  redemptions  Redemption[]
-  warranties   PlantWarranty[]
-  createdHunts Hunt[]          @relation("HuntCreator")
+  finds         Find[]
+  attempts      ClaimAttempt[]
+  payouts       Payout[]
+  hintRequests  HintRequest[]
+  huntStats     PlayerHunt[]
+  credits       CreditLedger[]
+  spawns        Spawn[]
+  enrollments   Enrollment[]
+  cotas         Cota[]
+  redemptions   Redemption[]
+  warranties    PlantWarranty[]
+  createdHunts  Hunt[]          @relation("HuntCreator")
+  surveyedZones Zone[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -347,11 +348,27 @@ model Zone {
   /// encloses nothing and is ignored by `pointInRing`.
   vertices Json
 
+  /// Where this ring came from.
+  ///
+  /// The distinction is load-bearing, not bookkeeping. An OSM ring is two
+  /// coordinates and a radius typed into a script — no effort, no local
+  /// knowledge, and rewarding it would reward typing. A WALKED ring is
+  /// somebody's GPS track around ground they judged safe, which is the one
+  /// thing a remote import cannot produce. Keeping them apart is what makes it
+  /// possible to recognise the second without accidentally paying for the
+  /// first.
+  source ZoneSource @default(ADMIN)
+
+  /// Who walked it. Null for imports and admin-drawn rings.
+  surveyedBy         Player? @relation(fields: [surveyedByPlayerId], references: [id], onDelete: SetNull)
+  surveyedByPlayerId String?
+
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([huntId, active])
+  @@index([surveyedByPlayerId])
 }
 
 model Cache {
@@ -1056,4 +1073,14 @@ model CotaCheck {
 
   @@index([cotaId, createdAt])
   @@index([allowed, createdAt])
+}
+
+enum ZoneSource {
+  /// Drawn by an operator.
+  ADMIN
+  /// Imported from OpenStreetMap. No effort, no local knowledge — see
+  /// Zone.source.
+  OSM
+  /// Walked by a player, with their GPS track as the boundary.
+  WALKED
 }

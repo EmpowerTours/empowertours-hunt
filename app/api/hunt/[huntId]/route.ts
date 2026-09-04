@@ -4,6 +4,7 @@ import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
 import {
   PUBLIC_HUNT_SELECT,
+  creditSurveyors,
   isListable,
   remainingFinds,
   toPublicHunt,
@@ -62,7 +63,18 @@ export async function GET(
       remaining = remainingFinds(row.maxFindsPerPlayer, stat?.findCount ?? 0);
     }
 
-    return NextResponse.json({ hunt: toPublicHunt(row, remaining) });
+    // Only WALKED zones, and only the surveyor's name — never coordinates.
+    // The rings themselves stay server-side: publishing them would hand a
+    // player the exact boundary a spawn must land inside, which narrows the
+    // search for anybody minded to sit and wait rather than walk.
+    const zones = await prisma.zone.findMany({
+      where: { huntId, active: true, source: "WALKED" },
+      select: { source: true, surveyedBy: { select: { displayName: true } } },
+    });
+
+    return NextResponse.json({
+      hunt: toPublicHunt(row, remaining, creditSurveyors(zones)),
+    });
   } catch (err) {
     console.error("[hunt] GET failed", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });

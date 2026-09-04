@@ -429,6 +429,15 @@ function asHunt(v: unknown): PublicHunt | null {
     spawnEnabled: v.spawnEnabled === true,
     spawnMaxRadiusM: num(v.spawnMaxRadiusM) ?? 600,
     remaining: num(v.remaining) ?? undefined,
+    surveyors: Array.isArray(v.surveyors)
+      ? v.surveyors.flatMap((x) => {
+          if (!isRecord(x)) return [];
+          const displayName = str(x.displayName);
+          const zones = num(x.zones);
+          if (displayName === null || zones === null) return [];
+          return [{ displayName, zones }];
+        })
+      : undefined,
   };
 }
 

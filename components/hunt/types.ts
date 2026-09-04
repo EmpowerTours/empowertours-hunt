@@ -138,7 +138,15 @@ export type ClaimResponse = ClaimFound | ClaimRefused;
  * Deliberately excludes every budget, spend total and auto-approval bound: how
  * much treasury is left is an attacker's timing signal, not a player feature.
  */
+/** A player credited for walking part of this hunt's ground. */
+export interface HuntSurveyor {
+  displayName: string;
+  zones: number;
+}
+
 export interface PublicHunt {
+  /** Absent when nobody walked it — an OSM import credits nobody. */
+  surveyors?: HuntSurveyor[];
   id: string;
   name: string;
   description: string | null;

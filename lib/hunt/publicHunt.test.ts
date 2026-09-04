@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PUBLIC_HUNT_SELECT,
+  creditSurveyors,
   isListable,
   remainingFinds,
   toPublicHunt,
@@ -120,5 +121,60 @@ describe("serialisation", () => {
     );
     expect(json.startsAt).toBe("2026-09-05T00:00:00.000Z");
     expect(json.endsAt).toBeNull();
+  });
+});
+
+describe("crediting surveyors", () => {
+  const walked = (displayName: string | null) => ({
+    source: "WALKED",
+    surveyedBy: displayName === null ? null : { displayName },
+  });
+
+  it("credits a walked survey", () => {
+    expect(creditSurveyors([walked("Ana"), walked("Ana"), walked("Beto")])).toEqual([
+      { displayName: "Ana", zones: 2 },
+      { displayName: "Beto", zones: 1 },
+    ]);
+  });
+
+  it("credits NOBODY for an OSM import", () => {
+    // The distinction the whole feature rests on. An OSM ring is two
+    // coordinates typed into a script — crediting it would make the credit
+    // meaningless the first time anyone noticed, and paying for it would be
+    // worse than meaningless.
+    const imported = [
+      { source: "OSM", surveyedBy: { displayName: "Ana" } },
+      { source: "OSM", surveyedBy: null },
+    ];
+    expect(creditSurveyors(imported)).toEqual([]);
+  });
+
+  it("does not credit an admin-drawn ring", () => {
+    expect(
+      creditSurveyors([{ source: "ADMIN", surveyedBy: { displayName: "Ana" } }]),
+    ).toEqual([]);
+  });
+
+  it("drops a surveyor who set no display name", () => {
+    // Never an address. Publishing "this wallet surveyed this street",
+    // permanently and to anybody, is not something somebody agreed to by
+    // walking a boundary. A displayName is a deliberate act; an address is
+    // just how they logged in.
+    expect(creditSurveyors([walked(null), walked("")])).toEqual([]);
+  });
+
+  it("orders by contribution, most first", () => {
+    const zones = [walked("Ana"), walked("Beto"), walked("Beto"), walked("Beto")];
+    expect(creditSurveyors(zones).map((s) => s.displayName)).toEqual([
+      "Beto",
+      "Ana",
+    ]);
+  });
+
+  it("is omitted from the payload entirely when nobody is credited", () => {
+    // Not an empty array: the client treats a missing field as "no surveyors"
+    // and would otherwise render an empty "Surveyed by" heading.
+    const json = toPublicHunt(row(), undefined, []);
+    expect("surveyors" in json).toBe(false);
   });
 });

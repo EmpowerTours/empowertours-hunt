@@ -137,6 +137,9 @@ try {
     data: rings.map((vertices, i) => ({
       huntId,
       kind: "INCLUDE",
+      // Marked so it can never be mistaken for a walked survey — see
+      // Zone.source. An import credits nobody and must not be creditable.
+      source: "OSM",
       name: `osm-${i}`,
       vertices,
       active: true,

@@ -446,6 +446,16 @@ export function HuntScreen({ huntId }: { huntId: string }) {
 
       {collectNote ? <Note title={tPayout("title")}>{collectNote}</Note> : null}
 
+      {/* Credit, not payment. Somebody walked this ground and judged it safe
+          to send strangers down, which is local knowledge no import produces.
+          Naming them costs nothing and cannot be farmed — unlike a reward per
+          area surveyed, which would pay people to mark the highway walkable. */}
+      {hunt?.surveyors && hunt.surveyors.length > 0 ? (
+        <Note title="Surveyed by">
+          {hunt.surveyors.map((s) => s.displayName).join(", ")}
+        </Note>
+      ) : null}
+
       {huntMissing ? (
         <Note title="Hunt details unavailable">
           {`GET /api/hunt/${huntId} is not built yet, so this screen is using the schema defaults: ±${FALLBACK_HUNT.maxAccuracyM} m accuracy and a ${FALLBACK_HUNT.cooldownSeconds}s cooldown. The server still decides every claim.`}

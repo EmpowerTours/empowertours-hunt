@@ -45,7 +45,22 @@ export interface PublicHuntRow {
   spawnMaxRadiusM: number;
 }
 
+/**
+ * Who walked the ground this hunt is played on.
+ *
+ * Names only, and only names people chose to set. A wallet address here would
+ * publish "this person surveyed this street", permanently, for anybody — which
+ * is a thing nobody agreed to by walking a boundary. A displayName is an
+ * explicit act; an address is just how they logged in.
+ */
+export interface Surveyor {
+  displayName: string;
+  zones: number;
+}
+
 export interface PublicHuntJson {
+  /** Empty when nobody walked it — an OSM import credits nobody. */
+  surveyors?: Surveyor[];
   id: string;
   name: string;
   description: string | null;
@@ -70,6 +85,7 @@ export interface PublicHuntJson {
 export function toPublicHunt(
   row: PublicHuntRow,
   remaining?: number,
+  surveyors?: Surveyor[],
 ): PublicHuntJson {
   const json: PublicHuntJson = {
     id: row.id,
@@ -84,6 +100,7 @@ export function toPublicHunt(
     spawnMaxRadiusM: row.spawnMaxRadiusM,
   };
   if (remaining !== undefined) json.remaining = remaining;
+  if (surveyors && surveyors.length > 0) json.surveyors = surveyors;
   return json;
 }
 
@@ -114,4 +131,32 @@ export function remainingFinds(
   if (maxFindsPerPlayer <= 0) return undefined;
   const left = maxFindsPerPlayer - findCount;
   return left > 0 ? left : 0;
+}
+
+
+/**
+ * Roll surveyed zones up into credited names.
+ *
+ * Only WALKED zones count. An OSM ring is coordinates typed into a script, and
+ * crediting somebody for running it would make the credit meaningless the
+ * first time anyone noticed — which is also why paying for one would be worse.
+ *
+ * A surveyor with no displayName is dropped rather than shown as an address.
+ */
+export function creditSurveyors(
+  zones: readonly {
+    source: string;
+    surveyedBy: { displayName: string | null } | null;
+  }[],
+): Surveyor[] {
+  const byName = new Map<string, number>();
+  for (const z of zones) {
+    if (z.source !== "WALKED") continue;
+    const name = z.surveyedBy?.displayName;
+    if (!name) continue;
+    byName.set(name, (byName.get(name) ?? 0) + 1);
+  }
+  return [...byName.entries()]
+    .map(([displayName, count]) => ({ displayName, zones: count }))
+    .sort((a, b) => b.zones - a.zones);
 }
