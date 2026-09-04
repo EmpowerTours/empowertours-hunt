@@ -189,6 +189,7 @@ model Player {
   warranties    PlantWarranty[]
   createdHunts  Hunt[]          @relation("HuntCreator")
   surveyedZones Zone[]
+  dimeClaim     DimeClaim?
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -1091,4 +1092,49 @@ enum ZoneSource {
   OSM
   /// Walked by a player, with their GPS track as the boundary.
   WALKED
+}
+
+/// One free "Dime Que Sí" music-licence claim per player.
+///
+/// The relayer (a funded hot wallet) buys the licence on the music v3
+/// SalesController — which refuses a zero price, so "free" is an app flow, not
+/// a contract feature — and transfers it to this player's passkey wallet. The
+/// player pays no gas and holds no WMON; the relayer does both transactions.
+///
+/// `playerId` is UNIQUE: one claim per passkey, forever. Without it a single
+/// wallet claims the whole supply, which is the only thing that turns a free
+/// drop into a drained relayer.
+model DimeClaim {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String @unique
+
+  /// The wallet the licence was sent to, snapshotted — the player's address at
+  /// claim time, so a later wallet change cannot rewrite who claimed.
+  walletAddress String
+
+  /// The licence token id, once the relayer has bought and transferred it.
+  licenseId String?
+
+  /// PENDING at first touch, SENT once the transfer confirms, FAILED if the
+  /// relayer could not complete. A claim is recorded BEFORE the chain work so
+  /// the unique constraint blocks a concurrent double-claim; the row is then
+  /// advanced by the outcome.
+  status DimeClaimStatus @default(PENDING)
+
+  purchaseTxHash String? @unique
+  transferTxHash String? @unique
+  failReason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+enum DimeClaimStatus {
+  PENDING
+  SENT
+  FAILED
 }
