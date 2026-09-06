@@ -91,7 +91,24 @@ if [ -f package.json ]; then
         if has typecheck; then run "typecheck" bash -lc "$PM typecheck"
         elif [ -f tsconfig.json ]; then run "tsc --noEmit" bash -lc "npx --no-install tsc --noEmit"; fi
         has lint  && run "lint"  bash -lc "$PM lint"
-        has test  && run "test"  bash -lc "$PM test"
+        # test-only-what-changed, mirroring the solidity scoping. typecheck and
+        # lint above already cover the WHOLE project, so this scopes only the
+        # (re-run-heavy) unit tests to those AFFECTED by uncommitted changes,
+        # via the runner's own dependency graph. VERIFY_ALL=1 runs the whole
+        # suite; a clean tree or an unrecognised runner does too.
+        if has test; then
+            _JS_CHANGED=$(git status --porcelain -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mts' '*.cts' 2>/dev/null | head -1)
+            _RUNNER=""
+            grep -qE '"test"[[:space:]]*:[[:space:]]*"[^"]*vitest' package.json 2>/dev/null && _RUNNER=vitest
+            grep -qE '"test"[[:space:]]*:[[:space:]]*"[^"]*jest'   package.json 2>/dev/null && _RUNNER=jest
+            if [ "${VERIFY_ALL:-0}" = "1" ] || [ -z "$_JS_CHANGED" ] || [ -z "$_RUNNER" ]; then
+                run "test (all)" bash -lc "$PM test"
+            elif [ "$_RUNNER" = "vitest" ]; then
+                run "test (changed)" bash -lc "$PM test -- --changed --passWithNoTests"
+            else
+                run "test (changed)" bash -lc "$PM test -- --onlyChanged --passWithNoTests"
+            fi
+        fi
         if has build; then
             if [ "${VERIFY_SKIP_BUILD:-0}" = "1" ]; then skip "build (VERIFY_SKIP_BUILD=1)"
             else run "build" bash -lc "$PM build"; fi
