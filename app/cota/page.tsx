@@ -257,6 +257,20 @@ export default function CotaPage() {
           >
             {t("practice")}
           </a>
+          {/* The live door. Secondary to practice on purpose: new hunters go to
+              practice, funded accounts go live. Honest about the AUSD gate so a
+              hunter with only MON is not sent down a path they can't finish. */}
+          <a
+            href="/cota/enroll"
+            className="border-hull-line text-ink flex min-h-14 w-full items-center justify-center rounded-2xl border-2 px-5 text-base font-semibold"
+          >
+            {lang === "es" ? "Operar en vivo →" : "Trade live →"}
+          </a>
+          <p className="text-ink-faint text-center text-xs">
+            {lang === "es"
+              ? "En vivo es para cuentas ya fondeadas con AUSD en Perpl. ¿Nuevo? Usa práctica."
+              : "Live is for accounts already funded with AUSD on Perpl. New? Use practice."}
+          </p>
         </Panel>
       ) : (
         <>
