@@ -26,6 +26,7 @@ export const APPROVAL_HOLD_REASONS = [
   "player_suspended",
   "player_not_active",
   "account_too_new",
+  "no_prior_position",
 ] as const;
 export type ApprovalHoldReason = (typeof APPROVAL_HOLD_REASONS)[number];
 
@@ -58,6 +59,26 @@ export interface AutoApprovalContext {
    * earned it, they just cash out after review until the account matures.
    */
   minAccountAgeSeconds: number;
+  /**
+   * Has this player ever had a position accepted BEFORE the one being paid?
+   *
+   * This is the gate the account-age check cannot be: age is defeated by
+   * patience, which costs a script nothing — a farm pre-registers wallets and
+   * waits. A second accepted position cannot be waited for. It has to be
+   * produced, at plausible speed from the first one, which is the only part of
+   * a spoofing farm that has to actually simulate movement.
+   *
+   * It matters because the FIRST position a player reports is unverifiable by
+   * construction: `lastFix` is null, so `validatePosition` skips both the
+   * cooldown and the teleport check, and `accuracyM` is client-supplied. A
+   * fresh account can therefore declare any coordinate on earth, have a spawn
+   * placed around it, and collect it. Every later position is anchored to that
+   * one; this is the only point where nothing anchors.
+   *
+   * HOLDS rather than refuses. A real player's first collect is genuine — they
+   * just get paid after a human looks, once.
+   */
+  hasPriorAcceptedPosition: boolean;
 }
 
 export interface AutoApproved {
@@ -104,6 +125,17 @@ export function decideAutoApproval(ctx: AutoApprovalContext): ApprovalDecision {
     return hold(
       "account_too_new",
       `account is ${ctx.accountAgeSeconds}s old, minimum ${ctx.minAccountAgeSeconds}s for auto-approval`,
+    );
+  }
+
+  // First accepted position ever. Unlike the age gate this cannot be waited
+  // out, because it demands a second fix at plausible speed from the first.
+  // Deliberately not configurable: there is no hunt for which paying an
+  // unanchored first position without review is correct.
+  if (!ctx.hasPriorAcceptedPosition) {
+    return hold(
+      "no_prior_position",
+      "first accepted position for this player; nothing anchors it, so the payout waits for review",
     );
   }
 

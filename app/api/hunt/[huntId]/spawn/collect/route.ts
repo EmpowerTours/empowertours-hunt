@@ -412,6 +412,14 @@ export async function POST(
                 Math.floor((now.getTime() - playerRow.createdAt.getTime()) / 1000),
               );
 
+              // Has any position of this player's ever been accepted before
+              // this one? Counted inside the transaction and BEFORE the
+              // ClaimAttempt for this collect is written (that happens below),
+              // so the current attempt cannot count as its own anchor.
+              const priorAccepted = await tx.claimAttempt.count({
+                where: { playerId: player.id, accepted: true },
+              });
+
               const decision = decideAutoApproval({
                 amountWei: amount,
                 autoApproveMaxWei: toWei(hunt.autoApproveMaxWei),
@@ -426,6 +434,7 @@ export async function POST(
                 playerActive: player.active,
                 accountAgeSeconds,
                 minAccountAgeSeconds: hunt.minAccountAgeSeconds,
+                hasPriorAcceptedPosition: priorAccepted > 0,
               });
 
               // One payout per spawn — @unique on spawnId is what makes paying the

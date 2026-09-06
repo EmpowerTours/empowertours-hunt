@@ -28,6 +28,7 @@ function ctx(over: Partial<AutoApprovalContext> = {}): AutoApprovalContext {
     playerActive: true,
     accountAgeSeconds: 3600,
     minAccountAgeSeconds: 0,
+    hasPriorAcceptedPosition: true,
     ...over,
   };
 }
@@ -35,6 +36,39 @@ function ctx(over: Partial<AutoApprovalContext> = {}): AutoApprovalContext {
 describe("decideAutoApproval", () => {
   it("releases a small, clean spawn payout", () => {
     expect(decideAutoApproval(ctx())).toEqual({ autoApprove: true });
+  });
+
+  it("holds a player's very first accepted position, at any amount", () => {
+    // The attack this exists for: register, wait out the age gate (free for a
+    // script), check in at spoofed coordinates — which nothing can contradict,
+    // because lastFix is null and accuracyM is client-supplied — have a spawn
+    // placed around that point, and collect it. Every later fix is anchored to
+    // the first; the first is anchored to nothing.
+    const d = decideAutoApproval(
+      ctx({ hasPriorAcceptedPosition: false, amountWei: 1n }),
+    );
+    expect(d.autoApprove).toBe(false);
+    if (!d.autoApprove) expect(d.reason).toBe("no_prior_position");
+  });
+
+  it("is not defeated by waiting: an old account still holds on its first fix", () => {
+    // The whole point of this gate over the age gate. A pre-warmed wallet is
+    // arbitrarily old and still has no anchoring position.
+    const d = decideAutoApproval(
+      ctx({
+        hasPriorAcceptedPosition: false,
+        accountAgeSeconds: 86_400 * 365,
+        minAccountAgeSeconds: 3600,
+      }),
+    );
+    expect(d.autoApprove).toBe(false);
+    if (!d.autoApprove) expect(d.reason).toBe("no_prior_position");
+  });
+
+  it("releases once a prior position anchors the player", () => {
+    expect(
+      decideAutoApproval(ctx({ hasPriorAcceptedPosition: true })),
+    ).toEqual({ autoApprove: true });
   });
 
   it("holds a flagged attempt at any amount", () => {
@@ -176,6 +210,7 @@ describe("the account-age gate", () => {
       playerActive: true,
       accountAgeSeconds: 3600,
       minAccountAgeSeconds: 0,
+      hasPriorAcceptedPosition: true,
       ...over,
     };
   }
