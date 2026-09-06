@@ -101,6 +101,10 @@ export default function CotaPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signedDigest, setSignedDigest] = useState<string | null>(null);
+  // Practice vs live, chosen UP FRONT. Both sign the same leash; this only
+  // decides where the leash is used — a funded account shouldn't have to sign,
+  // then dig past practice to find the live door.
+  const [mode, setMode] = useState<"practice" | "live">("practice");
 
   useEffect(() => {
     let live = true;
@@ -220,8 +224,47 @@ export default function CotaPage() {
         <LanguageSwitch className="shrink-0" />
       </header>
 
-      <Note tone="info" title={t("paper")}>
-        {t("paperBody")}
+      {/* The choice, up front — not buried behind signing. */}
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setMode("practice")}
+          className={`flex min-h-16 flex-col items-center justify-center rounded-2xl border-2 px-3 transition-colors ${
+            mode === "practice"
+              ? "border-phosphor bg-phosphor/10 text-ink"
+              : "border-hull-line text-ink-dim"
+          }`}
+        >
+          <span className="text-base font-semibold">
+            {lang === "es" ? "Práctica" : "Practice"}
+          </span>
+          <span className="text-xs">{lang === "es" ? "gratis" : "free"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("live")}
+          className={`flex min-h-16 flex-col items-center justify-center rounded-2xl border-2 px-3 transition-colors ${
+            mode === "live"
+              ? "border-phosphor bg-phosphor/10 text-ink"
+              : "border-hull-line text-ink-dim"
+          }`}
+        >
+          <span className="text-base font-semibold">
+            {lang === "es" ? "En vivo" : "Trade live"}
+          </span>
+          <span className="text-xs">
+            {lang === "es" ? "con AUSD" : "needs AUSD"}
+          </span>
+        </button>
+      </div>
+      <Note tone={mode === "live" ? "warn" : "info"}>
+        {mode === "live"
+          ? lang === "es"
+            ? "Opera AUSD real en Perpl bajo tu correa firmada. Necesitas una cuenta Perpl ya fondeada con AUSD."
+            : "Trade real AUSD on Perpl under your signed leash. Needs a Perpl account already funded with AUSD."
+          : lang === "es"
+            ? "Practica con dinero de mentira. No necesitas cripto ni AUSD."
+            : "Practice with fake money — no crypto or AUSD needed."}
       </Note>
 
       {auth.status !== "signed-in" ? (
@@ -251,21 +294,39 @@ export default function CotaPage() {
           >
             {t("another")}
           </Button>
-          <a
-            href="/cota/practice"
-            className="bg-phosphor text-void flex min-h-14 w-full items-center justify-center rounded-2xl px-5 text-lg font-semibold"
-          >
-            {t("practice")}
-          </a>
-          {/* The live door. Secondary to practice on purpose: new hunters go to
-              practice, funded accounts go live. Honest about the AUSD gate so a
-              hunter with only MON is not sent down a path they can't finish. */}
-          <a
-            href="/cota/enroll"
-            className="border-hull-line text-ink flex min-h-14 w-full items-center justify-center rounded-2xl border-2 px-5 text-base font-semibold"
-          >
-            {lang === "es" ? "Operar en vivo →" : "Trade live →"}
-          </a>
+          {/* The primary CTA follows the mode chosen up top — live users get the
+              live door, not a practice button they have to look past. */}
+          {mode === "live" ? (
+            <>
+              <a
+                href="/cota/enroll"
+                className="bg-phosphor text-void flex min-h-14 w-full items-center justify-center rounded-2xl px-5 text-lg font-semibold"
+              >
+                {lang === "es" ? "Operar en vivo →" : "Trade live →"}
+              </a>
+              <a
+                href="/cota/practice"
+                className="border-hull-line text-ink-dim flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm"
+              >
+                {lang === "es" ? "O practica primero" : "Or practice first"}
+              </a>
+            </>
+          ) : (
+            <>
+              <a
+                href="/cota/practice"
+                className="bg-phosphor text-void flex min-h-14 w-full items-center justify-center rounded-2xl px-5 text-lg font-semibold"
+              >
+                {t("practice")}
+              </a>
+              <a
+                href="/cota/enroll"
+                className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm"
+              >
+                {lang === "es" ? "Operar en vivo →" : "Trade live →"}
+              </a>
+            </>
+          )}
           <p className="text-ink-faint text-center text-xs">
             {lang === "es"
               ? "En vivo es para cuentas ya fondeadas con AUSD en Perpl. ¿Nuevo? Usa práctica."
