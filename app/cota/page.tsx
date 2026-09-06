@@ -267,17 +267,27 @@ export default function CotaPage() {
             : "Practice with fake money — no crypto or AUSD needed."}
       </Note>
 
-      {/* The live path needs AUSD; the bridge is how you get it. Surface it here
-          so it isn't an orphaned route — visible whenever live mode is chosen. */}
+      {/* The live path needs AUSD; there are two ways to get it, by where your
+          money already is. Surfaced here so neither route is orphaned. */}
       {mode === "live" && (
-        <a
-          href="/cota/bridge"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es"
-            ? "Puente: traer AUSD a Monad →"
-            : "Bridge AUSD to Monad →"}
-        </a>
+        <div className="grid gap-2">
+          <a
+            href="/cota/swap"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Cambiar MON cazado → AUSD →"
+              : "Swap hunted MON → AUSD →"}
+          </a>
+          <a
+            href="/cota/bridge"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Traer AUSD de otra red (puente) →"
+              : "Bring AUSD from another chain →"}
+          </a>
+        </div>
       )}
 
       {auth.status !== "signed-in" ? (
