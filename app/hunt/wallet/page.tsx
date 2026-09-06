@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ProgressPanel } from "./ProgressPanel";
+import { CotaEntry } from "./CotaEntry";
 
 export const metadata: Metadata = { title: "Progress" };
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default function WalletPage() {
         </Link>
       </header>
 
+      <CotaEntry />
       <ProgressPanel />
     </main>
   );

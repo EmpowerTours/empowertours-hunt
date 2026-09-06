@@ -85,7 +85,7 @@ export function SignInPanel() {
       {auth.canSignIn ? (
         <>
           <Button type="button" onClick={() => void onSignIn()} disabled={busy}>
-            {busy ? "WAITING…" : "CONTINUE WITH FACE ID"}
+            {busy ? "WAITING…" : "CONTINUE WITH YOUR PHONE"}
           </Button>
           <p className="text-ink-faint px-2 text-center text-xs leading-snug">
             A passkey lives in your phone&apos;s secure enclave. There is no

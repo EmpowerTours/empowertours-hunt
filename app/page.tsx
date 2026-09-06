@@ -48,7 +48,7 @@ export default function LandingPage() {
 
       <div className="space-y-4 pb-2">
         <p className="text-ink text-center text-base font-semibold">
-          No wallet. No seed phrase. Just Face&nbsp;ID.
+          No wallet. No seed phrase. Just your phone.
         </p>
         <SignInPanel />
       </div>
