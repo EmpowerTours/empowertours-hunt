@@ -14,6 +14,7 @@ import {
   sessionTypedData,
 } from "./messages";
 import { SESSION_STATEMENT } from "./typedData";
+import { getCaptchaToken } from "@/lib/auth/turnstile";
 
 // ---------------------------------------------------------------------------
 // Passkey -> signature -> session. This is the browser half the server has been
@@ -140,6 +141,11 @@ async function establishSession(passkey: PasskeyAccount): Promise<void> {
     }),
   );
 
+  // Only on the registration path. A returning player logs in above and never
+  // sees this, so the cost falls on identity creation, which is the thing being
+  // rationed. Null when no site key is configured.
+  const captchaToken = await getCaptchaToken();
+
   const registered = await fetch("/api/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -150,6 +156,7 @@ async function establishSession(passkey: PasskeyAccount): Promise<void> {
       clientTs: regTs,
       nonce: regNonce,
       signature: regSignature,
+      ...(captchaToken === null ? {} : { captchaToken }),
     }),
   });
 

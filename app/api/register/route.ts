@@ -5,6 +5,7 @@ import { clientIp } from "@/lib/auth";
 import { verifyRegistrationSignature } from "@/lib/auth/eip712";
 import { issueSession, sessionCookieHeader } from "@/lib/auth/mera";
 import { checkLimit } from "@/lib/ratelimit";
+import { verifyCaptcha, captchaConfigured } from "@/lib/auth/captcha";
 
 // ---------------------------------------------------------------------------
 // Open registration.
@@ -21,6 +22,12 @@ import { checkLimit } from "@/lib/ratelimit";
 //     later matters (a TURBO cohort member's) would be free.
 //   * The RATE LIMIT is flood protection. It is NOT the sybil bound — a
 //     determined attacker can make wallets faster than we can rate limit them.
+//   * The CAPTCHA raises the unit cost of an identity. Seven accounts were
+//     minted here in 100 seconds on 2026-09-04 and one of them collected a
+//     payout; a per-identity human step is what makes that burst expensive.
+//     It belongs here and NOT on the claim path, where it would tax every real
+//     player outdoors and stop no spoofer. Inert until TURNSTILE_SECRET_KEY is
+//     set — see lib/auth/captcha.ts.
 //   * The SYBIL BOUND is economic and lives in the schema: Hunt.budgetCreditWei,
 //     Hunt.budgetMonWei, Hunt.maxFindsPerPlayer, Hunt.spawnDailyCapWeiPerPlayer.
 //     Ten thousand fake players cannot extract more than one hunt's budget.
@@ -43,6 +50,10 @@ const RegisterInput = z.object({
   nonce: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/),
   signature: z.string().regex(/^0x[0-9a-fA-F]{130,}$/),
   displayName: z.string().max(64).optional(),
+  // Cloudflare Turnstile token. Optional in the schema so a client that predates
+  // the captcha still parses; whether a MISSING token is acceptable is decided
+  // by verifyCaptcha, which rejects it once a secret is configured.
+  captchaToken: z.string().max(2048).optional(),
 });
 
 export async function POST(req: Request) {
@@ -64,6 +75,26 @@ export async function POST(req: Request) {
     }
 
     const input = RegisterInput.parse(await req.json());
+
+    // After parsing, so a malformed body never costs a call to Cloudflare, and
+    // before the signature check and the write, so neither is reachable by a
+    // bot. The rate limit above bounds how often this outbound call can be
+    // forced.
+    const captcha = await verifyCaptcha(input.captchaToken, ip);
+    if (!captcha.ok) {
+      return NextResponse.json(
+        { error: "captcha required", reason: captcha.reason },
+        { status: 403 },
+      );
+    }
+    if (!captchaConfigured()) {
+      // Loud rather than silent. An unconfigured captcha is indistinguishable
+      // from a working one in the response, and that ambiguity is exactly how
+      // an inert control gets mistaken for an active one.
+      console.warn(
+        "[register] TURNSTILE_SECRET_KEY is not set - registration is NOT bot-protected",
+      );
+    }
 
     const verified = await verifyRegistrationSignature({
       wallet: input.wallet,

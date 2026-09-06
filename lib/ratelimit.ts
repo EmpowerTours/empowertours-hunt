@@ -101,9 +101,20 @@ const LIMITS: Record<LimitName, LimitSpec> = {
     perIp: { tokens: 20, windowSeconds: 60 },
     failClosed: true,
   },
+  // Registration mints an identity, so the burst is what matters, not the
+  // sustained rate: 20/15min let seven accounts appear in 100 seconds on
+  // 2026-09-04, one of which collected a payout. A token bucket's capacity IS
+  // its burst, so lowering the capacity is the change that bites.
+  //
+  // NOTE the trade-off, because it is a real one: this is a mobile, outdoor
+  // game, and carrier-grade NAT can put a whole city behind one egress IP. A
+  // tight per-IP cap can therefore block genuine players who share an exit
+  // node. That is why the captcha, not this number, is the primary control on
+  // bulk identity minting — raise this for an event where a crowd registers
+  // together from one network.
   register: {
     perPlayer: null,
-    perIp: { tokens: 20, windowSeconds: 900 },
+    perIp: { tokens: 5, windowSeconds: 600 },
     failClosed: true,
   },
   // Signing a Cota moves no money, but it writes an authorisation row and
