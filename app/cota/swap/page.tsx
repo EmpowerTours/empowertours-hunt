@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { formatEther, parseEther } from "viem";
 import { useAuthSlot } from "@/app/providers";
@@ -8,7 +8,6 @@ import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { signInAccount } from "@/lib/auth/passkey";
 import {
-  AUSD_DECIMALS,
   formatAusd,
   minOut,
   publicClient,
@@ -108,26 +107,27 @@ export default function SwapPage() {
   }, [address]);
 
   useEffect(() => {
-    void refreshBalances();
+    void (async () => {
+      await refreshBalances();
+    })();
   }, [refreshBalances]);
 
-  // Live quote, debounced. Empty/invalid input clears it.
-  const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Live quote, debounced. All setState happens inside the delayed callback —
+  // never synchronously in the effect body (react-hooks/set-state-in-effect).
   useEffect(() => {
-    if (quoteTimer.current) clearTimeout(quoteTimer.current);
-    let value: bigint;
-    try {
-      value = parseEther(monInput || "0");
-    } catch {
-      setQuote(null);
-      return;
-    }
-    if (value <= 0n) {
-      setQuote(null);
-      return;
-    }
     let cancelled = false;
-    quoteTimer.current = setTimeout(() => {
+    const timer = setTimeout(() => {
+      let value: bigint;
+      try {
+        value = parseEther(monInput || "0");
+      } catch {
+        if (!cancelled) setQuote(null);
+        return;
+      }
+      if (value <= 0n) {
+        if (!cancelled) setQuote(null);
+        return;
+      }
       void publicClient()
         .readContract({
           address: SWAP_ADDRESS,
@@ -144,6 +144,7 @@ export default function SwapPage() {
     }, 300);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [monInput]);
 
