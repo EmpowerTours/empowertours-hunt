@@ -5,6 +5,7 @@ import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { verifyCotaSignature } from "@/lib/auth/eip712";
 import { checkLimit } from "@/lib/ratelimit";
 import { cotaDigest, isCotaVenue } from "@/lib/cota/typedData";
+import { anchorCota } from "@/lib/cota/anchor";
 
 // ---------------------------------------------------------------------------
 // Storing a signed Cota.
@@ -131,7 +132,28 @@ export async function POST(req: Request) {
       select: { id: true, digest: true, createdAt: true },
     });
 
-    return NextResponse.json({ ok: true, cota: row }, { status: 201 });
+    // Anchor the leash to Monad — a SEPARATE act (see Cota.anchorTxHash). The
+    // sign has already succeeded and is stored; if anchoring fails, the row
+    // simply stays un-anchored and can be re-tried. It must never turn a valid
+    // signature into a 500.
+    let anchorTxHash: string | null = null;
+    try {
+      const res = await anchorCota(row.digest, input.signature);
+      if (res && "txHash" in res) {
+        anchorTxHash = res.txHash;
+        await prisma.cota.update({
+          where: { id: row.id },
+          data: { anchorTxHash: res.txHash, anchoredAt: new Date() },
+        });
+      }
+    } catch (anchorErr) {
+      console.error("[cota] anchor failed (sign is still valid)", anchorErr);
+    }
+
+    return NextResponse.json(
+      { ok: true, cota: { ...row, anchorTxHash } },
+      { status: 201 },
+    );
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: "sign in first" }, { status: 401 });

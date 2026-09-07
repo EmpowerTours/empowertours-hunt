@@ -101,6 +101,9 @@ export default function CotaPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signedDigest, setSignedDigest] = useState<string | null>(null);
+  // Monad tx that anchored the leash to AuditAnchorV2, once it lands. Null while
+  // un-anchored (anchoring is a separate act that can be off or can fail).
+  const [anchorTx, setAnchorTx] = useState<string | null>(null);
   // Practice vs live, chosen UP FRONT. Both sign the same leash; this only
   // decides where the leash is used — a funded account shouldn't have to sign,
   // then dig past practice to find the live door.
@@ -202,11 +205,12 @@ export default function CotaPage() {
         }),
       });
       const body = (await res.json()) as {
-        cota?: { digest: string };
+        cota?: { digest: string; anchorTxHash?: string | null };
         error?: string;
       };
       if (!res.ok) throw new Error(body.error ?? String(res.status));
       setSignedDigest(body.cota?.digest ?? null);
+      setAnchorTx(body.cota?.anchorTxHash ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed");
     } finally {
@@ -309,10 +313,29 @@ export default function CotaPage() {
           <p className="text-ink-faint font-mono text-[11px] break-all">
             {signedDigest}
           </p>
+          {anchorTx ? (
+            <a
+              href={`https://monadscan.com/tx/${anchorTx}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#4ade80] underline"
+            >
+              {lang === "es"
+                ? "Anclado en Monad ✓ ver tx"
+                : "Anchored on Monad ✓ view tx"}
+            </a>
+          ) : (
+            <p className="text-ink-faint text-[11px]">
+              {lang === "es"
+                ? "Firmado y verificable. Anclaje on-chain pendiente."
+                : "Signed and verifiable. On-chain anchor pending."}
+            </p>
+          )}
           <Button
             tone="ghost"
             onClick={() => {
               setSignedDigest(null);
+              setAnchorTx(null);
             }}
           >
             {t("another")}
