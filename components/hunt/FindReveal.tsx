@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { Button, LinkButton } from "@/components/ui/primitives";
 import {
   TURBO_MONTH_WEI,
@@ -31,6 +32,7 @@ export function FindReveal({
   find: ClaimFound;
   onDismiss: () => void;
 }) {
+  const t = useTranslations("find");
   const dismissRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -50,7 +52,7 @@ export function FindReveal({
       className="bg-void/95 fixed inset-0 z-50 overflow-y-auto backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="Cache found"
+      aria-label={t("dialogLabel")}
     >
       {/* Flare — one shot, opacity and transform only. */}
       <div
@@ -65,10 +67,10 @@ export function FindReveal({
       <div className="safe-top safe-bottom reveal-in relative mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-5 px-5">
         <div className="text-center">
           <div className="text-phosphor font-mono text-sm tracking-[0.4em] uppercase">
-            Cache recovered
+            {t("recovered")}
           </div>
           <h1 className="text-ink mt-2 text-4xl leading-tight font-bold text-balance">
-            {find.cache.label ?? "Unmarked cache"}
+            {find.cache.label ?? t("unmarked")}
           </h1>
         </div>
 
@@ -79,7 +81,7 @@ export function FindReveal({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={ipfsUrl(find.cache.photoCid)}
-            alt={find.cache.label ?? "The cache"}
+            alt={find.cache.label ?? t("photoAlt")}
             className="border-hull-line max-h-72 w-full rounded-2xl border object-cover"
             loading="eager"
           />
@@ -94,7 +96,7 @@ export function FindReveal({
         {/* --- The credit ------------------------------------------------ */}
         <div className="border-phosphor/40 bg-hull rounded-2xl border-2 p-5 text-center">
           <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
-            TURBO credit earned
+            {t("creditEarned")}
           </div>
           <div className="text-phosphor mt-1 font-mono text-5xl leading-none font-bold">
             {formatMon(credit)}
@@ -108,15 +110,16 @@ export function FindReveal({
             />
           </div>
           <p className="text-ink-faint mt-2 text-xs leading-snug">
-            {percentOfMonth.toFixed(1)}% of a TURBO Explorer month (
-            {formatMon(TURBO_MONTH_WEI, 0)} WMON). Credit is a discount on the
-            cohort subscription — it is not withdrawable MON.
+            {t("monthNote", {
+              percent: percentOfMonth.toFixed(1),
+              month: formatMon(TURBO_MONTH_WEI, 0),
+            })}
           </p>
         </div>
 
         {find.creditBalanceWei !== null ? (
           <p className="text-ink-dim text-center font-mono text-sm">
-            Balance now{" "}
+            {t("balanceNow")}{" "}
             <span className="text-phosphor">
               {formatMon(weiOrZero(find.creditBalanceWei))} WMON
             </span>
@@ -125,15 +128,15 @@ export function FindReveal({
 
         <p className="text-ink-dim text-center font-mono text-sm">
           {find.remaining > 0
-            ? `${find.remaining} cache${find.remaining === 1 ? "" : "s"} still hidden`
-            : "That was the last one."}
+            ? t("stillHidden", { count: find.remaining })
+            : t("lastOne")}
         </p>
 
         <div className="space-y-3">
           <Button ref={dismissRef} type="button" onClick={onDismiss}>
-            BACK TO THE SCOPE
+            {t("back")}
           </Button>
-          <LinkButton href="/hunt/wallet">View progress</LinkButton>
+          <LinkButton href="/hunt/wallet">{t("viewProgress")}</LinkButton>
         </div>
       </div>
     </div>

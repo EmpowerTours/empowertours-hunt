@@ -10,7 +10,7 @@ import { useTicker } from "@/components/hooks/useTicker";
 import { BandReadout } from "@/components/hunt/BandReadout";
 import {
   ClaimButton,
-  claimGate,
+  useClaimGate,
   type ClaimPhase,
 } from "@/components/hunt/ClaimButton";
 import { FindReveal } from "@/components/hunt/FindReveal";
@@ -25,7 +25,7 @@ import {
   scanSpawns,
   submitClaim,
 } from "@/components/hunt/client";
-import { isTerminalSpawnReason, refusalCopy } from "@/components/hunt/copy";
+import { isTerminalSpawnReason } from "@/components/hunt/copy";
 import { useSpawnReason } from "@/components/hunt/useSpawnReason";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { useTranslations } from "next-intl";
@@ -110,6 +110,9 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   const spawnReason = useSpawnReason();
   const tPayout = useTranslations("payout");
   const tGps = useTranslations("gps");
+  const tHunt = useTranslations("hunt");
+  const tNav = useTranslations("nav");
+  const tRefusal = useTranslations("refusal");
   const [collectingId, setCollectingId] = useState<string | null>(null);
   const [collectNote, setCollectNote] = useState<string | null>(null);
   const [scanTick, setScanTick] = useState(0);
@@ -198,14 +201,14 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         if (controller.signal.aborted) return;
         if (e instanceof ApiError && e.status === 401) {
           setScanStopped(true);
-          setSpawnError("Sign in to receive spawns.");
+          setSpawnError(tHunt("signInForSpawns"));
           return;
         }
         // A 429 here is self-inflicted only if something else is scanning; back
         // off rather than hammering a money-path limiter.
         if (e instanceof ApiError && e.status === 429) return;
         setSpawnError(
-          e instanceof ApiError ? e.message : "Could not reach the spawn feed.",
+          e instanceof ApiError ? e.message : tHunt("spawnFeedUnreachable"),
         );
       });
     return () => controller.abort();
@@ -252,7 +255,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     Math.ceil((cooldownUntil - now) / 1000),
   );
 
-  const gate = claimGate({
+  const gate = useClaimGate({
     fix,
     maxAccuracyM,
     phase,
@@ -293,7 +296,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           ? e.message
           : e instanceof Error
             ? e.message
-            : "The claim could not be sent.",
+            : tHunt("claimNotSentBody"),
       );
     } finally {
       if (!controller.signal.aborted) setPhase("idle");
@@ -343,25 +346,31 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     return () => window.clearTimeout(id);
   }, [refusal]);
 
-  const refusalText = refusal === null ? null : refusalCopy(refusal);
+  const refusalText =
+    refusal === null
+      ? null
+      : {
+          title: tRefusal(`${refusal}.title`),
+          body: tRefusal(`${refusal}.body`),
+        };
 
   return (
     <main className="safe-top safe-bottom mx-auto flex w-full max-w-md flex-col gap-4 px-4 pb-6">
       <header className="flex items-center justify-between gap-3 pt-2">
         <div className="min-w-0">
           <h1 className="text-ink truncate text-lg font-semibold">
-            {hunt?.name ?? "Hunt"}
+            {hunt?.name ?? tHunt("titleFallback")}
           </h1>
           <p className="text-ink-faint font-mono text-[11px] tracking-[0.16em] uppercase">
-            {huntActive ? "Live" : "Closed"} ·{" "}
-            {compass.heading === null ? "North-up" : "Heading-up"}
+            {huntActive ? tHunt("live") : tHunt("closed")} ·{" "}
+            {compass.heading === null ? tHunt("northUp") : tHunt("headingUp")}
           </p>
         </div>
         <Link
           href="/hunt/wallet"
           className="border-hull-line text-ink-dim flex min-h-11 shrink-0 items-center rounded-xl border px-3 font-mono text-xs tracking-widest uppercase"
         >
-          Wallet
+          {tNav("wallet")}
         </Link>
       </header>
 
@@ -437,7 +446,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
       ) : null}
 
       {claimError ? (
-        <Note tone="warn" title="Claim not sent">
+        <Note tone="warn" title={tHunt("claimNotSentTitle")}>
           {claimError}
         </Note>
       ) : null}
@@ -451,22 +460,24 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           Naming them costs nothing and cannot be farmed — unlike a reward per
           area surveyed, which would pay people to mark the highway walkable. */}
       {hunt?.surveyors && hunt.surveyors.length > 0 ? (
-        <Note title="Surveyed by">
+        <Note title={tHunt("surveyedBy")}>
           {hunt.surveyors.map((s) => s.displayName).join(", ")}
         </Note>
       ) : null}
 
       {huntMissing ? (
-        <Note title="Hunt details unavailable">
-          {`GET /api/hunt/${huntId} is not built yet, so this screen is using the schema defaults: ±${FALLBACK_HUNT.maxAccuracyM} m accuracy and a ${FALLBACK_HUNT.cooldownSeconds}s cooldown. The server still decides every claim.`}
+        <Note title={tHunt("detailsUnavailableTitle")}>
+          {tHunt("detailsUnavailableBody", {
+            huntId,
+            accuracy: FALLBACK_HUNT.maxAccuracyM,
+            cooldown: FALLBACK_HUNT.cooldownSeconds,
+          })}
         </Note>
       ) : null}
 
       {signer === null ? (
         <p className="text-ink-faint px-1 text-center text-xs leading-snug">
-          Claims are unsigned in this build and spawn collection is unavailable
-          — the EIP-712 signer has not been registered yet. The server remains
-          the only thing that decides whether anything pays.
+          {tHunt("unsignedBuild")}
         </p>
       ) : null}
 

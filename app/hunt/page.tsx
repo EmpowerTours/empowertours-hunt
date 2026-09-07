@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 import { prisma } from "@/lib/db/prisma";
 import { PUBLIC_HUNT_SELECT, isListable } from "@/lib/hunt/publicHunt";
 import { HuntList } from "./HuntList";
@@ -39,15 +40,19 @@ export default async function HuntsPage() {
     redirect(`/hunt/${listable[0].id}`);
   }
 
+  const t = await getTranslations();
+
   return (
     <main className="safe-top safe-bottom mx-auto flex w-full max-w-md flex-col gap-4 px-4 pb-6">
       <header className="flex items-center justify-between gap-3 pt-2">
-        <h1 className="text-ink text-2xl font-bold">Hunts</h1>
+        <h1 className="text-ink text-2xl font-bold">
+          {t("huntList.pageTitle")}
+        </h1>
         <Link
           href="/hunt/wallet"
           className="border-hull-line text-ink-dim flex min-h-11 items-center rounded-xl border px-3 font-mono text-xs tracking-widest uppercase"
         >
-          Wallet
+          {t("nav.wallet")}
         </Link>
       </header>
 

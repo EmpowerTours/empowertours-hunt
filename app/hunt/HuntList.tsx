@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { ApiError, fetchHunts } from "@/components/hunt/client";
 import type { PublicHunt } from "@/components/hunt/types";
 import { Note } from "@/components/ui/primitives";
@@ -13,6 +14,7 @@ type LoadState =
   | { kind: "error"; message: string };
 
 export function HuntList() {
+  const t = useTranslations("huntList");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
   useEffect(() => {
@@ -26,13 +28,12 @@ export function HuntList() {
           return;
         }
         if (e instanceof ApiError && e.status === 401) {
-          setState({ kind: "error", message: "Sign in to see live hunts." });
+          setState({ kind: "error", message: t("signInToSee") });
           return;
         }
         setState({
           kind: "error",
-          message:
-            e instanceof ApiError ? e.message : "Could not reach the server.",
+          message: e instanceof ApiError ? e.message : t("serverUnreachable"),
         });
       });
     return () => controller.abort();
@@ -41,37 +42,31 @@ export function HuntList() {
   if (state.kind === "loading") {
     return (
       <div className="border-hull-line bg-hull text-ink-dim rounded-2xl border p-4 font-mono text-sm">
-        Scanning…
+        {t("scanning")}
       </div>
     );
   }
 
   if (state.kind === "missing") {
     return (
-      <Note title="Hunt list not built">
-        <code className="font-mono">GET /api/hunts</code> does not exist yet.
-        Open a hunt directly at{" "}
-        <code className="font-mono">/hunt/&lt;huntId&gt;</code> — the scope
-        works without this list.
+      <Note title={t("missingTitle")}>
+        {t.rich("missingBody", {
+          code: (chunks) => <code className="font-mono">{chunks}</code>,
+        })}
       </Note>
     );
   }
 
   if (state.kind === "error") {
     return (
-      <Note tone="warn" title="Could not load hunts">
+      <Note tone="warn" title={t("errorTitle")}>
         {state.message}
       </Note>
     );
   }
 
   if (state.hunts.length === 0) {
-    return (
-      <Note title="No hunts running">
-        Nothing is live right now. Check back — hunts open and close on a
-        schedule.
-      </Note>
-    );
+    return <Note title={t("noneTitle")}>{t("noneBody")}</Note>;
   }
 
   return (
@@ -91,7 +86,7 @@ export function HuntList() {
                   hunt.active ? "text-phosphor" : "text-ink-faint"
                 }`}
               >
-                {hunt.active ? "Live" : "Closed"}
+                {hunt.active ? t("live") : t("closed")}
               </span>
             </div>
             {hunt.description ? (
@@ -100,8 +95,8 @@ export function HuntList() {
               </p>
             ) : null}
             <div className="text-ink-faint mt-2 font-mono text-xs">
-              ±{hunt.maxAccuracyM} m required
-              {hunt.spawnEnabled ? " · spawns on" : ""}
+              {t("accuracyRequired", { meters: hunt.maxAccuracyM })}
+              {hunt.spawnEnabled ? ` ${t("spawnsOn")}` : ""}
             </div>
           </Link>
         </li>

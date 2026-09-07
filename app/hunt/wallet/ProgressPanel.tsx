@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { ApiError, fetchProgress } from "@/components/hunt/client";
 import {
@@ -34,6 +35,7 @@ type LoadState =
   | { kind: "error"; message: string };
 
 export function ProgressPanel() {
+  const t = useTranslations("wallet");
   const auth = useAuthSlot();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
@@ -50,8 +52,7 @@ export function ProgressPanel() {
         } else {
           setState({
             kind: "error",
-            message:
-              e instanceof ApiError ? e.message : "Could not reach the server.",
+            message: e instanceof ApiError ? e.message : t("serverUnreachable"),
           });
         }
       });
@@ -61,7 +62,7 @@ export function ProgressPanel() {
   if (state.kind === "loading") {
     return (
       <Panel>
-        <p className="text-ink-dim font-mono text-sm">Reading ledger…</p>
+        <p className="text-ink-dim font-mono text-sm">{t("reading")}</p>
       </Panel>
     );
   }
@@ -69,25 +70,22 @@ export function ProgressPanel() {
   if (state.kind === "missing") {
     return (
       <div className="space-y-3">
-        <Note title="Balance endpoint not built">
-          <code className="font-mono">GET /api/me</code> does not exist yet, so
-          this screen has nothing truthful to show. It deliberately shows
-          nothing rather than a zero it cannot vouch for — a balance of
-          &ldquo;0&rdquo; you have not earned is worse than no balance at all.
+        <Note title={t("missingTitle")}>
+          {t.rich("missingBody", {
+            code: (chunks) => <code className="font-mono">{chunks}</code>,
+          })}
         </Note>
         <Panel>
           <div className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
-            Signed in as
+            {t("signedInAs")}
           </div>
           <div className="text-ink mt-1 font-mono text-lg">
             {auth.status === "signed-in" || auth.status === "blocked"
               ? shortAddress(auth.walletAddress)
-              : "not signed in"}
+              : t("notSignedInValue")}
           </div>
           <p className="text-ink-faint mt-2 text-xs leading-snug">
-            Credit is earned from cache finds and shown here once the ledger is
-            exposed. It is denominated in WMON-wei against a{" "}
-            {formatMon(TURBO_MONTH_WEI, 0)} WMON Explorer month.
+            {t("creditExplainer", { month: formatMon(TURBO_MONTH_WEI, 0) })}
           </p>
         </Panel>
       </div>
@@ -95,16 +93,12 @@ export function ProgressPanel() {
   }
 
   if (state.kind === "signed-out") {
-    return (
-      <Note title="Not signed in">
-        Sign in to see your credit. Balances are per wallet.
-      </Note>
-    );
+    return <Note title={t("signedOutTitle")}>{t("signedOutBody")}</Note>;
   }
 
   if (state.kind === "error") {
     return (
-      <Note tone="warn" title="Could not load your balance">
+      <Note tone="warn" title={t("errorTitle")}>
         {state.message}
       </Note>
     );
@@ -126,38 +120,39 @@ export function ProgressPanel() {
           idea what an Explorer month was. Nothing is removed: place a cache
           with a reward and the panel returns by itself. */}
       {credit > 0n ? (
-      <Panel className="border-phosphor/40">
-        <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
-          TURBO credit
-        </div>
-        <div className="text-phosphor mt-1 font-mono text-5xl leading-none font-bold">
-          {formatMon(credit)}
-        </div>
-        <div className="text-ink-dim mt-1 font-mono text-sm">WMON</div>
+        <Panel className="border-phosphor/40">
+          <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
+            {t("turboCredit")}
+          </div>
+          <div className="text-phosphor mt-1 font-mono text-5xl leading-none font-bold">
+            {formatMon(credit)}
+          </div>
+          <div className="text-ink-dim mt-1 font-mono text-sm">WMON</div>
 
-        <div className="bg-hull-2 mt-4 h-3 w-full overflow-hidden rounded-full">
-          <div
-            className="bg-phosphor h-full rounded-full transition-[width]"
-            style={{ width: `${percent}%` }}
-            role="progressbar"
-            aria-valuenow={Math.round(percent)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Progress toward a TURBO Explorer month"
-          />
-        </div>
+          <div className="bg-hull-2 mt-4 h-3 w-full overflow-hidden rounded-full">
+            <div
+              className="bg-phosphor h-full rounded-full transition-[width]"
+              style={{ width: `${percent}%` }}
+              role="progressbar"
+              aria-valuenow={Math.round(percent)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={t("progressAria")}
+            />
+          </div>
 
-        <p className="text-ink mt-2 text-sm">
-          {percent >= 100
-            ? "That covers a full TURBO Explorer month."
-            : `${percent.toFixed(1)}% of an Explorer month — ${formatMon(remaining, 2)} WMON to go.`}
-        </p>
-        <p className="text-ink-faint mt-2 text-xs leading-snug">
-          Credit is a discount on the TURBO cohort subscription (
-          {formatMon(TURBO_MONTH_WEI, 0)} WMON per Explorer month). It is not
-          withdrawable and cannot be sent anywhere.
-        </p>
-      </Panel>
+          <p className="text-ink mt-2 text-sm">
+            {percent >= 100
+              ? t("coversMonth")
+              : t("percentOfMonth", {
+                  percent: percent.toFixed(1),
+                  remaining: formatMon(remaining, 2),
+                })}
+          </p>
+          <p className="text-ink-faint mt-2 text-xs leading-snug">
+            {t("creditNote", { month: formatMon(TURBO_MONTH_WEI, 0) })}
+          </p>
+        </Panel>
       ) : null}
 
       {/* --- What is actually in the wallet --------------------------------
@@ -166,7 +161,7 @@ export function ProgressPanel() {
           differ for the minutes between approval and the sweep. */}
       <Panel className="border-spawn/40">
         <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
-          Wallet balance
+          {t("walletBalance")}
         </div>
         {progress.walletBalanceWei === null ||
         progress.walletBalanceWei === undefined ? (
@@ -181,8 +176,8 @@ export function ProgressPanel() {
         <div className="text-ink-dim mt-1 font-mono text-sm">
           {progress.walletBalanceWei === null ||
           progress.walletBalanceWei === undefined
-            ? "MON · could not read the chain just now"
-            : "MON · on chain"}
+            ? t("couldNotReadChain")
+            : t("onChain")}
         </div>
         {progress.walletAddress ? (
           <p className="text-ink-faint mt-3 font-mono text-[11px] break-all">
@@ -194,16 +189,19 @@ export function ProgressPanel() {
       {/* --- Earned through this hunt ------------------------------------- */}
       <Panel className="border-spawn/40">
         <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
-          MON from spawns
+          {t("monFromSpawns")}
         </div>
         <div className="text-spawn mt-1 font-mono text-4xl leading-none font-bold">
           {formatMon(weiOrZero(progress.collectedMonWei))}
         </div>
-        <div className="text-ink-dim mt-1 font-mono text-sm">MON · settled</div>
+        <div className="text-ink-dim mt-1 font-mono text-sm">
+          {t("monSettled")}
+        </div>
         {weiOrZero(progress.pendingMonWei) > 0n ? (
           <p className="text-ink-dim mt-3 text-sm">
-            {formatMon(weiOrZero(progress.pendingMonWei))} MON is earned and on
-            its way. It lands in your wallet within a few minutes.
+            {t("pendingMon", {
+              amount: formatMon(weiOrZero(progress.pendingMonWei)),
+            })}
           </p>
         ) : null}
       </Panel>
@@ -217,7 +215,7 @@ export function ProgressPanel() {
       {progress.payouts && progress.payouts.length > 0 ? (
         <Panel>
           <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
-            Payouts
+            {t("payouts")}
           </div>
           <ul className="mt-3 space-y-2">
             {progress.payouts.map((p) => {
@@ -242,11 +240,11 @@ export function ProgressPanel() {
                       rel="noreferrer noopener"
                       className="text-spawn shrink-0 font-mono text-xs underline"
                     >
-                      receipt ↗
+                      {t("receipt")}
                     </a>
                   ) : (
                     <span className="text-ink-faint shrink-0 font-mono text-xs">
-                      on its way
+                      {t("onItsWay")}
                     </span>
                   )}
                 </li>
@@ -254,17 +252,15 @@ export function ProgressPanel() {
             })}
           </ul>
           <p className="text-ink-faint mt-3 text-xs leading-snug">
-            Every settled payout is a transaction on Monad. Tap a receipt to
-            see it on the explorer — you do not have to take this screen&apos;s
-            word for it.
+            {t("payoutsNote")}
           </p>
         </Panel>
       ) : null}
 
       <div className="grid grid-cols-2 gap-3">
-        <Stat label="Caches found" value={String(progress.findCount)} />
+        <Stat label={t("cachesFound")} value={String(progress.findCount)} />
         <Stat
-          label="Spawns swept"
+          label={t("spawnsSwept")}
           value={String(progress.spawnCount)}
           tone="mon"
         />
@@ -273,20 +269,15 @@ export function ProgressPanel() {
       {progress.turboUsername ? (
         <Panel>
           <div className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
-            TURBO handle
+            {t("turboHandle")}
           </div>
           <div className="text-ink mt-1 font-mono text-lg">
             {progress.turboUsername}
           </div>
-          <p className="text-ink-faint mt-2 text-xs">
-            Credit redeems against this builder identity.
-          </p>
+          <p className="text-ink-faint mt-2 text-xs">{t("turboHandleNote")}</p>
         </Panel>
       ) : (
-        <Note title="No TURBO handle linked">
-          Credit accrues either way, but it can only be redeemed once a TURBO
-          registry handle is linked to this wallet.
-        </Note>
+        <Note title={t("noHandleTitle")}>{t("noHandleBody")}</Note>
       )}
     </div>
   );

@@ -1,8 +1,20 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { formatAge } from "./format";
 import type { GeoFix, GeoStatus } from "./types";
 import { Note } from "@/components/ui/primitives";
+
+// GeoStatus -> "fix" namespace key for the Note title.
+const TITLE_KEY = {
+  denied: "titleDenied",
+  unsupported: "titleUnsupported",
+  unavailable: "titleUnavailable",
+  timeout: "titleTimeout",
+  idle: "titleDefault",
+  locating: "titleDefault",
+  ready: "titleDefault",
+} as const;
 
 /* ---------------------------------------------------------------------------
    GPS honesty panel.
@@ -49,6 +61,8 @@ export function FixReadout({
   now: number;
   onRetry: () => void;
 }) {
+  const t = useTranslations("fix");
+  const tGps = useTranslations("gps");
   const quality = fixQuality(fix, maxAccuracyM);
   const color = QUALITY_COLOR[quality];
   const blocking =
@@ -59,15 +73,15 @@ export function FixReadout({
       <div className="border-hull-line bg-hull flex items-center gap-4 rounded-2xl border p-4">
         <div className="min-w-0 flex-1">
           <div className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
-            GPS accuracy
+            {tGps("accuracy")}
           </div>
           <div className="font-mono text-2xl leading-none" style={{ color }}>
             {fix ? `±${Math.round(fix.accuracyM)} m` : "—"}
           </div>
           <div className="text-ink-faint mt-1 font-mono text-xs">
             {fix
-              ? `${formatAge(now - fix.at)} · needs ±${maxAccuracyM} m`
-              : `needs ±${maxAccuracyM} m`}
+              ? `${formatAge(now - fix.at)} · ${tGps("needs", { meters: maxAccuracyM })}`
+              : tGps("needs", { meters: maxAccuracyM })}
           </div>
         </div>
 
@@ -95,40 +109,25 @@ export function FixReadout({
             onClick={onRetry}
             className="border-hull-line text-ink min-h-14 shrink-0 rounded-xl border-2 px-4 font-mono text-sm tracking-wider uppercase"
           >
-            Retry
+            {tGps("retry")}
           </button>
         )}
       </div>
 
       {message ? (
-        <Note tone={blocking ? "stop" : "warn"} title={geoTitle(status)}>
+        <Note tone={blocking ? "stop" : "warn"} title={t(TITLE_KEY[status])}>
           {message}
         </Note>
       ) : null}
 
       {message === null && quality === "too-coarse" ? (
-        <Note tone="warn" title="Claim will be refused">
-          Your phone is only sure to ±{Math.round(fix?.accuracyM ?? 0)} m and
-          this hunt needs ±{maxAccuracyM} m. Step into open sky and wait — the
-          server rejects a claim on this fix, so tapping now only burns a rate
-          limit.
+        <Note tone="warn" title={t("refusedTitle")}>
+          {t("refusedBody", {
+            current: Math.round(fix?.accuracyM ?? 0),
+            needed: maxAccuracyM,
+          })}
         </Note>
       ) : null}
     </div>
   );
-}
-
-function geoTitle(status: GeoStatus): string {
-  switch (status) {
-    case "denied":
-      return "Location blocked";
-    case "unsupported":
-      return "No geolocation";
-    case "unavailable":
-      return "No fix";
-    case "timeout":
-      return "Fix stale";
-    default:
-      return "Location";
-  }
 }

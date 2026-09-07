@@ -1,8 +1,27 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { bandStyle } from "@/components/radar/bands";
 import type { HintBand } from "./types";
 import type { HintStatus } from "@/components/hooks/useHint";
+
+// Band -> message key, so the label and gloss come from the catalogue rather
+// than from bands.ts (which stays English data feeding CSS custom properties).
+const LABEL_KEY = {
+  cold: "labelCold",
+  cool: "labelCool",
+  warm: "labelWarm",
+  hot: "labelHot",
+  burning: "labelBurning",
+} as const;
+
+const GLOSS_KEY = {
+  cold: "glossCold",
+  cool: "glossCool",
+  warm: "glossWarm",
+  hot: "glossHot",
+  burning: "glossBurning",
+} as const;
 
 /* ---------------------------------------------------------------------------
    The reading, in words.
@@ -29,29 +48,30 @@ export function BandReadout({
   cacheless?: boolean;
   error: string | null;
 }) {
+  const t = useTranslations("band");
   const style = bandStyle(complete ? null : band);
   const label = cacheless
-    ? "SPAWNS ONLY"
+    ? t("spawnsOnly")
     : complete
-      ? "ALL FOUND"
+      ? t("allFound")
       : band === null
-      ? "NO READING"
-      : style.label;
+        ? t("noReading")
+        : t(LABEL_KEY[band]);
   // "Nothing here to find" is not "you found everything". Saying the second
   // to somebody on a spawn-only hunt tells them they finished something they
   // never started, and that there is nothing left — on a hunt that is working
   // exactly as intended.
   const gloss = cacheless
-    ? "No hidden caches on this hunt. Walk and rewards drop near you."
+    ? t("cachelessGloss")
     : complete
-    ? "Every cache in this hunt is yours. Spawns still drop."
-    : status === "throttled"
-      ? "Reading paused — too many samples. It will resume on its own."
-      : status === "error"
-        ? (error ?? "The scope lost the server.")
-        : band === null
-          ? "Waiting for a fix and a reading."
-          : style.gloss;
+      ? t("completeGloss")
+      : status === "throttled"
+        ? t("throttled")
+        : status === "error"
+          ? (error ?? t("errorFallback"))
+          : band === null
+            ? t("waiting")
+            : t(GLOSS_KEY[band]);
 
   return (
     <div
@@ -66,7 +86,7 @@ export function BandReadout({
           {label}
         </div>
         <div className="text-ink-dim shrink-0 font-mono text-xs tracking-[0.16em] uppercase">
-          {complete ? "0 left" : `${remaining} left`}
+          {complete ? t("zeroLeft") : t("remaining", { count: remaining })}
         </div>
       </div>
 
@@ -96,10 +116,10 @@ export function BandReadout({
           reader, announced only when it changes. */}
       <p className="sr-only" role="status" aria-live="polite">
         {complete
-          ? "All caches found."
+          ? t("srAllFound")
           : band === null
-            ? "No proximity reading."
-            : `Proximity ${style.label}. ${remaining} caches left.`}
+            ? t("srNoReading")
+            : t("srProximity", { label: t(LABEL_KEY[band]), count: remaining })}
       </p>
     </div>
   );

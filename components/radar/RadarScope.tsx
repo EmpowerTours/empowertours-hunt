@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { bandStyle } from "./bands";
 import {
   formatCountdown,
@@ -43,6 +44,16 @@ const RING_RADII = [24, 48, 72, 96] as const;
 const SWEEP_SLICES = 14;
 
 type CssVars = React.CSSProperties & Record<`--${string}`, string>;
+
+// Band -> "band" namespace label key, for the accessible reading only. The
+// visual instrument still reads its colour and motion from bands.ts.
+const BAND_LABEL_KEY = {
+  cold: "labelCold",
+  cool: "labelCool",
+  warm: "labelWarm",
+  hot: "labelHot",
+  burning: "labelBurning",
+} as const;
 
 export interface SpawnMark {
   spawn: PublicSpawn;
@@ -96,6 +107,8 @@ export function RadarScope({
   now,
 }: RadarScopeProps) {
   const uid = useId().replace(/:/g, "");
+  const tRadar = useTranslations("radar");
+  const tBand = useTranslations("band");
   const style = bandStyle(complete ? null : band);
   const reducedMotion = usePrefersReducedMotion();
   // Damped, never stopped. The CSS comment on .scope-sweep says why: a parked
@@ -109,11 +122,11 @@ export function RadarScope({
     let best: SpawnMark | null = null;
     for (const mark of spawns) {
       if (new Date(mark.spawn.expiresAt).getTime() - now <= 0) continue;
-      if (best === null || mark.distanceMeters < best.distanceMeters) best = mark;
+      if (best === null || mark.distanceMeters < best.distanceMeters)
+        best = mark;
     }
     return best;
   }, [spawns, now]);
-
 
   const spokes = useMemo(
     () =>
@@ -147,10 +160,13 @@ export function RadarScope({
   };
 
   const ariaLabel = complete
-    ? "Radar scope: every cache in this hunt has been found."
+    ? tRadar("ariaComplete")
     : band === null
-      ? "Radar scope: no proximity reading yet."
-      : `Radar scope: proximity reading ${style.label}. ${spawns.length} spawn${spawns.length === 1 ? "" : "s"} in view.`;
+      ? tRadar("ariaNoReading")
+      : tRadar("ariaReading", {
+          label: tBand(BAND_LABEL_KEY[band]),
+          count: spawns.length,
+        });
 
   return (
     <svg
@@ -324,7 +340,13 @@ export function RadarScope({
               like it begins near the middle rather than at it. */}
           <circle cx="0" cy="0" r="2.4" fill={style.color} opacity="0.95" />
           {/* The head, riding the rim — the end that draws the circle. */}
-          <circle cx="0" cy={-RIM + 2} r="2" fill={style.color} opacity="0.95" />
+          <circle
+            cx="0"
+            cy={-RIM + 2}
+            r="2"
+            fill={style.color}
+            opacity="0.95"
+          />
         </g>
 
         {/* GPS uncertainty, to scale. */}

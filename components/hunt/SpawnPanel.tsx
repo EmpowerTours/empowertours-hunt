@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { Note } from "@/components/ui/primitives";
 import { formatCountdown, formatMeters, formatMon, weiOrZero } from "./format";
 import { useSpawnReason } from "./useSpawnReason";
@@ -45,6 +46,7 @@ export function SpawnPanel({
   error: string | null;
   signingAvailable: boolean;
 }) {
+  const t = useTranslations("spawnPanel");
   const spawnReason = useSpawnReason();
   const live = marks.filter(
     (m) => new Date(m.spawn.expiresAt).getTime() - now > 0,
@@ -54,12 +56,12 @@ export function SpawnPanel({
     <div className="space-y-2">
       <div className="text-ink-dim px-1 font-mono text-[11px] tracking-[0.18em] uppercase">
         {live.length === 0
-          ? "Spawns · real MON"
-          : `${live.length} spawn${live.length === 1 ? "" : "s"} · real MON`}
+          ? t("header")
+          : t("headerCount", { count: live.length })}
       </div>
 
       {error ? (
-        <Note tone="warn" title="Spawn feed">
+        <Note tone="warn" title={t("feedTitle")}>
           {error}
         </Note>
       ) : null}
@@ -71,7 +73,7 @@ export function SpawnPanel({
               ? spawnReason(scanReason)
               : scanReason
                 ? spawnReason(scanReason)
-                : "Nothing on the scope. Drops appear near you at random and expire fast."}
+                : t("nothing")}
           </p>
         </div>
       ) : null}
@@ -131,18 +133,17 @@ export function SpawnPanel({
                       disabled={collecting || !signingAvailable}
                       className="bg-spawn text-void mt-3 min-h-14 w-full rounded-xl text-lg font-semibold tracking-wide disabled:opacity-50"
                     >
-                      {collecting ? "COLLECTING…" : "COLLECT"}
+                      {collecting ? t("collecting") : t("collect")}
                     </button>
                     {!signingAvailable ? (
                       <p className="text-ink-faint mt-2 text-xs leading-snug">
-                        Collecting MON requires a signature. The passkey signer
-                        is not registered in this build.
+                        {t("signerMissing")}
                       </p>
                     ) : null}
                   </>
                 ) : (
                   <p className="text-ink-faint mt-2 font-mono text-xs">
-                    Walk {formatMeters(stillToWalk)} closer to collect
+                    {t("walkCloser", { distance: formatMeters(stillToWalk) })}
                   </p>
                 )}
               </div>
