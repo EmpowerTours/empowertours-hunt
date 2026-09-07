@@ -9,6 +9,7 @@ import {
   uniformBigInt,
   deriveSpawn,
   deriveSpawnInArea,
+  originNearSurvey,
   evaluateSpawnEligibility,
   validateSpawnCollect,
   type SpawnEligibilityContext,
@@ -618,5 +619,45 @@ describe("unsurveyed hunts: the opt-in that trades a guarantee for reach", () =>
     ];
     const area = { include: [tiny], exclude: [] as Ring[] };
     expect(deriveSpawnInArea("seed", params, area, 10, true).ok).toBe(false);
+  });
+});
+
+describe("originNearSurvey — play-anywhere boundary", () => {
+  // A tiny surveyed square near Tierra Colorada (~17.16,-99.52).
+  const square: Ring = [
+    { lat: 17.16, lng: -99.52 },
+    { lat: 17.17, lng: -99.52 },
+    { lat: 17.17, lng: -99.51 },
+    { lat: 17.16, lng: -99.51 },
+  ];
+  const area = { include: [square], exclude: [] as Ring[] };
+
+  it("is true inside the surveyed box", () => {
+    expect(originNearSurvey({ lat: 17.165, lng: -99.515 }, area, 300)).toBe(
+      true,
+    );
+  });
+
+  it("is true just outside the box but within the margin", () => {
+    // ~100m north of the top edge; margin 300m keeps a survey gap on-grid.
+    expect(originNearSurvey({ lat: 17.1709, lng: -99.515 }, area, 300)).toBe(
+      true,
+    );
+  });
+
+  it("is false in another city (~40km away)", () => {
+    expect(originNearSurvey({ lat: 17.5506, lng: -99.5024 }, area, 300)).toBe(
+      false,
+    );
+  });
+
+  it("is false when there is no survey", () => {
+    expect(
+      originNearSurvey(
+        { lat: 17.165, lng: -99.515 },
+        { include: [], exclude: [] as Ring[] },
+        300,
+      ),
+    ).toBe(false);
   });
 });

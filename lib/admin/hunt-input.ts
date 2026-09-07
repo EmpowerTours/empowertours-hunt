@@ -75,6 +75,7 @@ export interface HuntWriteInput {
   spawnMaxWei?: Prisma.Decimal;
   spawnMinRadiusM?: number;
   spawnMaxRadiusM?: number;
+  unsurveyedSpawnRadiusM?: number;
   spawnTtlSeconds?: number;
   spawnCooldownSeconds?: number;
   spawnDailyCapWeiPerPlayer?: Prisma.Decimal;
@@ -91,6 +92,10 @@ export const HUNT_DEFAULTS = {
   maxFindsPerPlayer: 0,
   spawnMinRadiusM: 80,
   spawnMaxRadiusM: 600,
+  // Play-anywhere by default: a new hunt drops within this radius of the player
+  // even before it is surveyed, so any city works out of the box. Set to 0 to
+  // require a survey. Surveyed ground still overrides this where it exists.
+  unsurveyedSpawnRadiusM: 300,
   spawnTtlSeconds: 900,
   spawnCooldownSeconds: 600,
   spawnMinMon: "0.0005",
@@ -159,6 +164,15 @@ export function parseHuntInput(
   if (spawnMinRadiusM !== undefined) out.spawnMinRadiusM = spawnMinRadiusM;
   const spawnMaxRadiusM = optionalInt(body, "spawnMaxRadiusM", 1, 100_000);
   if (spawnMaxRadiusM !== undefined) out.spawnMaxRadiusM = spawnMaxRadiusM;
+  // 0 is valid: it means "surveyed-only". So the range starts at 0, not 1.
+  const unsurveyedSpawnRadiusM = optionalInt(
+    body,
+    "unsurveyedSpawnRadiusM",
+    0,
+    100_000,
+  );
+  if (unsurveyedSpawnRadiusM !== undefined)
+    out.unsurveyedSpawnRadiusM = unsurveyedSpawnRadiusM;
   const spawnTtlSeconds = optionalInt(body, "spawnTtlSeconds", 30, 86_400);
   if (spawnTtlSeconds !== undefined) out.spawnTtlSeconds = spawnTtlSeconds;
   const spawnCooldownSeconds = optionalInt(

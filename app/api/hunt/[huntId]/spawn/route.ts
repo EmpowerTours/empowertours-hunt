@@ -9,6 +9,7 @@ import {
   deriveSeed,
   commitSeed,
   deriveSpawnInArea,
+  originNearSurvey,
 } from "@/lib/hunt/spawn";
 import type { Ring } from "@/lib/geo/polygon";
 
@@ -208,10 +209,20 @@ export async function POST(
     // away than one 150m away — across a river, on a highway shoulder, inside
     // somebody's yard are all within 600m of a pavement. Shrinking the radius
     // is what keeps the weaker guarantee honest rather than merely weaker.
-    const unsurveyed = area.include.length === 0 && area.exclude.length === 0;
-    const allowUnsurveyed =
-      unsurveyed && hunt.unsurveyedSpawnRadiusM > 0;
-    const maxRadiusM = allowUnsurveyed
+    // Play-anywhere, with survey as a refinement layer. If the hunt opted into
+    // an unsurveyed radius and the player is OFF the surveyed grid — no survey
+    // at all, or standing in a city the survey never covered — drop around them
+    // via the radius instead of refusing. A player ON the grid still gets the
+    // refined, on-street placement, which respects EXCLUDE rings. This is what
+    // lets one hunt work worldwide without importing every city.
+    const optedIntoRadius = hunt.unsurveyedSpawnRadiusM > 0;
+    const onSurveyGrid =
+      area.include.length > 0 &&
+      originNearSurvey(eligibility.origin, area, hunt.unsurveyedSpawnRadiusM);
+    const useRadius = optedIntoRadius && !onSurveyGrid;
+    // Off the grid, place with no hull constraint — the radius is the only bound.
+    const placementArea = useRadius ? { include: [], exclude: [] } : area;
+    const maxRadiusM = useRadius
       ? Math.min(hunt.spawnMaxRadiusM, hunt.unsurveyedSpawnRadiusM)
       : hunt.spawnMaxRadiusM;
     const minRadiusM = Math.min(hunt.spawnMinRadiusM, maxRadiusM);
@@ -225,9 +236,9 @@ export async function POST(
         minWei: toWei(hunt.spawnMinWei),
         maxWei: toWei(hunt.spawnMaxWei),
       },
-      area,
+      placementArea,
       10,
-      allowUnsurveyed,
+      useRadius,
     );
 
     if (!placement.ok) {

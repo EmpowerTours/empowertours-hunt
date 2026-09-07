@@ -62,6 +62,7 @@ export default async function HuntDetailPage({
     spawnMaxMon: formatMon(weiOf(hunt.spawnMaxWei)),
     spawnMinRadiusM: hunt.spawnMinRadiusM,
     spawnMaxRadiusM: hunt.spawnMaxRadiusM,
+    unsurveyedSpawnRadiusM: hunt.unsurveyedSpawnRadiusM,
     spawnTtlSeconds: hunt.spawnTtlSeconds,
     spawnCooldownSeconds: hunt.spawnCooldownSeconds,
     spawnDailyCapMonPerPlayer: formatMon(weiOf(hunt.spawnDailyCapWeiPerPlayer)),

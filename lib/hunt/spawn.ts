@@ -370,6 +370,51 @@ export function deriveSpawnInArea(
   return { ok: false, attempts: maxAttempts };
 }
 
+/**
+ * Is the player standing within the surveyed region? A cheap bounding-box test
+ * over the INCLUDE rings, widened by `marginM`.
+ *
+ * This is the seam between "play anywhere" and "survey as a refinement layer".
+ * A player inside the surveyed city's box gets on-street surveyed placement
+ * (which respects EXCLUDE rings someone marked unsafe). A player far outside it
+ * — no survey, or standing in another city entirely — is off the grid, and the
+ * caller drops around them via the opted-in radius instead of refusing.
+ *
+ * A box, not per-ring distance, on purpose: the margin absorbs gaps between
+ * surveyed streets so a legitimate hole in the survey does not read as "another
+ * city", while a genuinely distant player (tens of km) always does. Returns
+ * false when there is no survey at all.
+ */
+export function originNearSurvey(
+  origin: LatLng,
+  area: WalkableArea,
+  marginM: number,
+): boolean {
+  if (area.include.length === 0) return false;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  for (const ring of area.include) {
+    for (const v of ring) {
+      if (v.lat < minLat) minLat = v.lat;
+      if (v.lat > maxLat) maxLat = v.lat;
+      if (v.lng < minLng) minLng = v.lng;
+      if (v.lng > maxLng) maxLng = v.lng;
+    }
+  }
+  if (!Number.isFinite(minLat)) return false;
+  const dLat = marginM / 111_000;
+  const cos = Math.abs(Math.cos((origin.lat * Math.PI) / 180));
+  const dLng = marginM / (111_000 * (cos < 1e-6 ? 1e-6 : cos));
+  return (
+    origin.lat >= minLat - dLat &&
+    origin.lat <= maxLat + dLat &&
+    origin.lng >= minLng - dLng &&
+    origin.lng <= maxLng + dLng
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Eligibility — may this player be granted a spawn?
 // ---------------------------------------------------------------------------

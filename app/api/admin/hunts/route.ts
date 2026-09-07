@@ -51,6 +51,8 @@ export async function POST(req: Request) {
       spawnMaxWei: input.spawnMaxWei ?? decimalMon(HUNT_DEFAULTS.spawnMaxMon),
       spawnMinRadiusM: input.spawnMinRadiusM ?? HUNT_DEFAULTS.spawnMinRadiusM,
       spawnMaxRadiusM: input.spawnMaxRadiusM ?? HUNT_DEFAULTS.spawnMaxRadiusM,
+      unsurveyedSpawnRadiusM:
+        input.unsurveyedSpawnRadiusM ?? HUNT_DEFAULTS.unsurveyedSpawnRadiusM,
       spawnTtlSeconds: input.spawnTtlSeconds ?? HUNT_DEFAULTS.spawnTtlSeconds,
       spawnCooldownSeconds:
         input.spawnCooldownSeconds ?? HUNT_DEFAULTS.spawnCooldownSeconds,

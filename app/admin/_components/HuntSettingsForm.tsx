@@ -34,6 +34,7 @@ export interface HuntFormValues {
   spawnMaxMon: string;
   spawnMinRadiusM: number;
   spawnMaxRadiusM: number;
+  unsurveyedSpawnRadiusM: number;
   spawnTtlSeconds: number;
   spawnCooldownSeconds: number;
   spawnDailyCapMonPerPlayer: string;
@@ -351,6 +352,19 @@ export function HuntSettingsForm({
               className={inputClass}
               value={v.spawnMaxRadiusM}
               onChange={(e) => set("spawnMaxRadiusM", Number(e.target.value))}
+            />
+          </Field>
+          <Field
+            label="Play-anywhere radius (m)"
+            explain="Drop spawns within this radius of the player even where the hunt is NOT surveyed — so any city works out of the box. 0 = surveyed-only. Surveyed streets always override this where they exist; it is the fallback for players off the grid."
+          >
+            <input
+              type="number"
+              className={inputClass}
+              value={v.unsurveyedSpawnRadiusM}
+              onChange={(e) =>
+                set("unsurveyedSpawnRadiusM", Number(e.target.value))
+              }
             />
           </Field>
           <Field
