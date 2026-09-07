@@ -15,7 +15,13 @@
 
 import type { Hex } from "viem";
 import { signInAccount, type PasskeyAccount } from "@/lib/auth/passkey";
-import { COTA_TYPES, HUNT_DOMAIN, type CotaMessage } from "./typedData";
+import {
+  COTA_TYPES,
+  HUNT_DOMAIN,
+  cotaDigest,
+  type CotaMessage,
+} from "./typedData";
+import { anchorLeashWithAccount } from "./anchor";
 
 /**
  * A fresh nonce in the format lib/auth/eip712.ts accepts (`[A-Za-z0-9_-]{16,128}`).
@@ -64,6 +70,60 @@ export async function signCota(message: CotaMessage): Promise<Hex> {
         nonce: message.nonce,
       },
     });
+  } finally {
+    passkey?.session.end();
+  }
+}
+
+/**
+ * Sign a Cota AND anchor it on Monad in one passkey session.
+ *
+ * One Face ID covers both: the EIP-712 signature and the anchor transaction are
+ * both local secp256k1 operations on the same in-memory key, so opening the
+ * passkey once is enough. The hunter pays the small anchor fee from their own
+ * wallet — their leash chains under their own address, no platform wallet.
+ *
+ * Anchoring is best-effort: if it throws, the signature still stands and is
+ * returned, and the leash is simply stored un-anchored (anchorTxHash null).
+ */
+export async function signAndAnchorCota(
+  message: CotaMessage,
+): Promise<{ signature: Hex; anchorTxHash: `0x${string}` | null }> {
+  let passkey: PasskeyAccount | null = null;
+  try {
+    passkey = await signInAccount();
+    const signature = await passkey.account.signTypedData({
+      domain: HUNT_DOMAIN,
+      types: COTA_TYPES,
+      primaryType: "Cota",
+      message: {
+        venue: message.venue,
+        markets: [...message.markets],
+        maxNotionalUsdE6: message.maxNotionalUsdE6,
+        maxLeverageX100: message.maxLeverageX100,
+        maxDailyLossUsdE6: message.maxDailyLossUsdE6,
+        maxTradesPerDay: message.maxTradesPerDay,
+        notBefore: message.notBefore,
+        notAfter: message.notAfter,
+        clientTs: message.clientTs,
+        nonce: message.nonce,
+      },
+    });
+
+    let anchorTxHash: `0x${string}` | null = null;
+    try {
+      const res = await anchorLeashWithAccount(
+        passkey.account,
+        cotaDigest(message),
+        signature,
+      );
+      if ("txHash" in res) anchorTxHash = res.txHash;
+    } catch (anchorErr) {
+      // The signature is valid regardless; leave the leash un-anchored.
+      console.error("[cota] anchor failed (leash still signed)", anchorErr);
+    }
+
+    return { signature, anchorTxHash };
   } finally {
     passkey?.session.end();
   }

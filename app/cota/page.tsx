@@ -7,7 +7,7 @@ import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { readback } from "@/lib/cota/readback";
 import { leverageX100, LossyScaleError, usdE6 } from "@/lib/cota/scale";
-import { newBrowserNonce, signCota } from "@/lib/cota/sign";
+import { newBrowserNonce, signAndAnchorCota } from "@/lib/cota/sign";
 import type { CotaMessage } from "@/lib/cota/typedData";
 
 // ---------------------------------------------------------------------------
@@ -186,7 +186,10 @@ export default function CotaPage() {
         clientTs: now,
         nonce: newBrowserNonce(),
       };
-      const signature = await signCota(message);
+      // One passkey session, one Face ID: signs the leash and anchors it from
+      // the hunter's own wallet. anchorTxHash is null if anchoring was skipped
+      // or failed — the signature is valid either way.
+      const { signature, anchorTxHash } = await signAndAnchorCota(message);
       const res = await fetch("/api/cota", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -202,6 +205,7 @@ export default function CotaPage() {
           clientTs: message.clientTs.toString(),
           nonce: message.nonce,
           signature,
+          ...(anchorTxHash ? { anchorTxHash } : {}),
         }),
       });
       const body = (await res.json()) as {
@@ -210,7 +214,8 @@ export default function CotaPage() {
       };
       if (!res.ok) throw new Error(body.error ?? String(res.status));
       setSignedDigest(body.cota?.digest ?? null);
-      setAnchorTx(body.cota?.anchorTxHash ?? null);
+      // Prefer the server-verified hash; fall back to what we anchored.
+      setAnchorTx(body.cota?.anchorTxHash ?? anchorTxHash ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed");
     } finally {

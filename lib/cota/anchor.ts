@@ -3,32 +3,27 @@
 // A signed Cota is a self-verifying DB row (see app/api/cota/route.ts). This
 // module makes it VERIFIABLE BY ANYONE: it writes the leash digest to
 // AuditAnchorV2, an append-only, per-anchorer, prevHash-chained log
-// (0x8422b555…, mainnet 143). After anchoring, the claim "this bound was
-// authorised" no longer rests on trusting our table — it rests on a chain
-// event: Anchored(anchorer, orderHash=digest, sequence, prevHash, execCommitment).
+// (0x8422b555…, mainnet 143). After anchoring, "this bound was authorised" no
+// longer rests on trusting our table — it rests on a chain event:
+// Anchored(anchorer, orderHash=digest, sequence, prevHash, execCommitment).
 //
-// Design decisions, per the house rules:
-//   • DEDICATED anchorer key (COTA_ANCHOR_PRIVATE_KEY), NEVER the payout
-//     treasury. Sharing that wallet's nonce with real-money MON payouts is
-//     exactly the double-send class lib/hunt/payout.ts exists to prevent.
-//     A distinct key also gives Cota its own clean per-anchorer chain.
-//   • Anchoring is a SEPARATE act from signing (schema comment on Cota.
-//     anchorTxHash). A failure here NEVER fails the sign — the caller swallows
-//     it and the row simply stays un-anchored until re-tried.
-//   • Serialised in-process: one anchorer address means one monotonic sequence
-//     AND one wallet nonce; concurrent anchors would race both. The queue makes
-//     signs anchor one at a time; a cross-instance race is caught by the
-//     SequenceMismatch retry and the AlreadyAnchored idempotency check.
+// HUNTER-ANCHORED. The hunter anchors their OWN leash from their OWN Mera
+// wallet, in the SAME passkey session as the signature (one Face ID — both are
+// local key ops), paying the small MON fee themselves. This means:
+//   • Each hunter's leashes chain under THEIR address — their own on-chain
+//     record, not a shared one.
+//   • No platform anchorer wallet, so nothing can share a nonce with the MON
+//     payout treasury (the double-send class lib/hunt/payout.ts guards).
+// Anchoring is a SEPARATE act from signing (schema comment on Cota.
+// anchorTxHash): a failure here never invalidates the signed leash.
 
 import {
-  createPublicClient,
-  createWalletClient,
-  http,
   keccak256,
+  parseEventLogs,
   type Hex,
+  type LocalAccount,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { monad } from "@/lib/monad";
+import { publicClient, walletClientFor } from "@/lib/cota/swap";
 
 export const AUDIT_ANCHOR_ADDRESS =
   "0x8422b555DCE11913A4657C2f47C839637FC71ffd" as const;
@@ -62,79 +57,57 @@ export const AUDIT_ANCHOR_ABI = [
     ],
     outputs: [{ name: "", type: "bytes32" }],
   },
+  {
+    type: "event",
+    name: "Anchored",
+    inputs: [
+      { name: "anchorer", type: "address", indexed: true },
+      { name: "orderHash", type: "bytes32", indexed: true },
+      { name: "sequence", type: "uint64", indexed: true },
+      { name: "prevHash", type: "bytes32", indexed: false },
+      { name: "execCommitment", type: "bytes32", indexed: false },
+    ],
+  },
 ] as const;
 
 const ZERO_BYTES32 =
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 
-function rpcUrl(): string {
-  return process.env.MONAD_RPC_URL || "https://rpc.monad.xyz";
-}
-
-function anchorKey(): Hex | null {
-  const k = process.env.COTA_ANCHOR_PRIVATE_KEY?.trim();
-  if (!k) return null;
-  return (k.startsWith("0x") ? k : `0x${k}`) as Hex;
-}
-
 export type AnchorResult =
   | { txHash: `0x${string}`; sequence: number }
-  | { alreadyAnchored: true }
-  | { disabled: true }
-  | null;
+  | { alreadyAnchored: true };
 
-// One anchorer, one sequence, one nonce — so anchors from this process run
-// strictly one after another. `.catch` keeps the chain alive past a failure.
-let queue: Promise<unknown> = Promise.resolve();
-
-export async function anchorCota(
-  digest: string,
-  signature: string,
+/**
+ * Anchor a leash from the hunter's own wallet. Call inside the passkey session
+ * that produced `signature`, using the same `account` — one Face ID covers both
+ * the signature and this transaction, because both are local key operations.
+ *
+ * The caller treats any throw as best-effort: the leash is signed regardless.
+ */
+export async function anchorLeashWithAccount(
+  account: LocalAccount,
+  digest: Hex,
+  signature: Hex,
 ): Promise<AnchorResult> {
-  const key = anchorKey();
-  if (!key) {
-    console.warn(
-      "[cota/anchor] COTA_ANCHOR_PRIVATE_KEY unset — anchoring disabled, sign stored un-anchored",
-    );
-    return { disabled: true };
-  }
-  const run = queue.then(() => doAnchor(key, digest, signature));
-  queue = run.catch(() => undefined);
-  return run;
-}
-
-async function doAnchor(
-  key: Hex,
-  digest: string,
-  signature: string,
-): Promise<AnchorResult> {
-  const account = privateKeyToAccount(key);
-  const pub = createPublicClient({ chain: monad, transport: http(rpcUrl()) });
-  const wallet = createWalletClient({
-    account,
-    chain: monad,
-    transport: http(rpcUrl()),
-  });
-
-  const orderHash = digest as `0x${string}`;
+  const pub = publicClient();
   // Bind the actual ECDSA signature into the on-chain record: the anchor then
   // commits to WHAT was signed (digest) and THAT it was signed (this sig).
-  const execCommitment = keccak256(signature as `0x${string}`);
+  const execCommitment = keccak256(signature);
 
   // Idempotent: the contract reverts AlreadyAnchored, but check first so a
-  // re-sign of the same bound returns cleanly instead of throwing.
+  // re-sign of the same bound resolves cleanly instead of throwing.
   const existing = (await pub.readContract({
     address: AUDIT_ANCHOR_ADDRESS,
     abi: AUDIT_ANCHOR_ABI,
     functionName: "execCommitmentOf",
-    args: [account.address, orderHash],
+    args: [account.address, digest],
   })) as `0x${string}`;
   if (existing && existing !== ZERO_BYTES32) {
     return { alreadyAnchored: true };
   }
 
-  // Two attempts: a concurrent anchorer (another instance) can take our
-  // sequence between the read and the send — re-read and try once more.
+  // Two attempts: this hunter signing two leashes in quick succession could
+  // race their own sequence — re-read and try once more.
   for (let attempt = 0; attempt < 2; attempt++) {
     const seq = (await pub.readContract({
       address: AUDIT_ANCHOR_ADDRESS,
@@ -143,11 +116,11 @@ async function doAnchor(
       args: [account.address],
     })) as bigint;
     try {
-      const hash = await wallet.writeContract({
+      const hash = await walletClientFor(account).writeContract({
         address: AUDIT_ANCHOR_ADDRESS,
         abi: AUDIT_ANCHOR_ABI,
         functionName: "anchor",
-        args: [orderHash, execCommitment, seq],
+        args: [digest, execCommitment, seq],
       });
       const receipt = await pub.waitForTransactionReceipt({
         hash,
@@ -162,5 +135,38 @@ async function doAnchor(
       throw e;
     }
   }
-  return null;
+  throw new Error("anchor failed after retry");
+}
+
+/**
+ * Server-side: confirm a client-reported anchor tx really anchored THIS digest
+ * from THIS player, before the row records it. Anchoring is trust-minimising —
+ * storing a hash the client merely claimed would undercut that. Returns false
+ * (never throws) so a verification hiccup just leaves the row un-anchored.
+ */
+export async function verifyAnchorTx(
+  txHash: Hex,
+  digest: Hex,
+  playerAddress: string,
+): Promise<boolean> {
+  try {
+    const receipt = await publicClient().getTransactionReceipt({
+      hash: txHash,
+    });
+    if (receipt.status !== "success") return false;
+    const events = parseEventLogs({
+      abi: AUDIT_ANCHOR_ABI,
+      logs: receipt.logs,
+      eventName: "Anchored",
+    });
+    return events.some(
+      (e) =>
+        e.address.toLowerCase() === AUDIT_ANCHOR_ADDRESS.toLowerCase() &&
+        (e.args.orderHash as string).toLowerCase() === digest.toLowerCase() &&
+        (e.args.anchorer as string).toLowerCase() ===
+          playerAddress.toLowerCase(),
+    );
+  } catch {
+    return false;
+  }
 }

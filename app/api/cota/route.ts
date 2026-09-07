@@ -5,7 +5,7 @@ import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { verifyCotaSignature } from "@/lib/auth/eip712";
 import { checkLimit } from "@/lib/ratelimit";
 import { cotaDigest, isCotaVenue } from "@/lib/cota/typedData";
-import { anchorCota } from "@/lib/cota/anchor";
+import { verifyAnchorTx } from "@/lib/cota/anchor";
 
 // ---------------------------------------------------------------------------
 // Storing a signed Cota.
@@ -43,6 +43,12 @@ const CotaInput = z.object({
   clientTs: scaled,
   nonce: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/),
   signature: z.string().regex(/^0x[0-9a-fA-F]{130,}$/),
+  // The hunter anchors their own leash client-side (see lib/cota/anchor.ts) and
+  // reports the tx here. Optional: a leash is valid whether or not it anchored.
+  anchorTxHash: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/)
+    .optional(),
 });
 
 function secondsToDate(v: string): Date {
@@ -132,22 +138,32 @@ export async function POST(req: Request) {
       select: { id: true, digest: true, createdAt: true },
     });
 
-    // Anchor the leash to Monad — a SEPARATE act (see Cota.anchorTxHash). The
-    // sign has already succeeded and is stored; if anchoring fails, the row
-    // simply stays un-anchored and can be re-tried. It must never turn a valid
-    // signature into a 500.
+    // The hunter anchored client-side and reported the tx. Record it only after
+    // confirming on-chain that this tx really anchored THIS digest from THIS
+    // player — storing a merely-claimed hash would undercut the whole point.
+    // A leash is valid with or without an anchor, so any failure here just
+    // leaves the row un-anchored; it never turns a signature into an error.
     let anchorTxHash: string | null = null;
-    try {
-      const res = await anchorCota(row.digest, input.signature);
-      if (res && "txHash" in res) {
-        anchorTxHash = res.txHash;
-        await prisma.cota.update({
-          where: { id: row.id },
-          data: { anchorTxHash: res.txHash, anchoredAt: new Date() },
-        });
+    if (input.anchorTxHash) {
+      try {
+        const ok = await verifyAnchorTx(
+          input.anchorTxHash as `0x${string}`,
+          row.digest as `0x${string}`,
+          player.walletAddress,
+        );
+        if (ok) {
+          anchorTxHash = input.anchorTxHash;
+          await prisma.cota.update({
+            where: { id: row.id },
+            data: { anchorTxHash: input.anchorTxHash, anchoredAt: new Date() },
+          });
+        }
+      } catch (anchorErr) {
+        console.error(
+          "[cota] anchor verify failed (sign still valid)",
+          anchorErr,
+        );
       }
-    } catch (anchorErr) {
-      console.error("[cota] anchor failed (sign is still valid)", anchorErr);
     }
 
     return NextResponse.json(
