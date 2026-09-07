@@ -52,6 +52,9 @@ const T = {
       "La transacción se revirtió en la cadena — revisa tu MON y el precio. No se cambió nada.",
     back: "Cota",
     goTrade: "Ir a operar en Cota →",
+    keepGas: "Guarda algo de MON para el gas — no cambies todo tu saldo.",
+    overMax: "Deja ~0.05 MON para el gas. Toca Máx.",
+    max: "Máx",
   },
   en: {
     title: "Swap MON for AUSD",
@@ -75,8 +78,16 @@ const T = {
       "The transaction reverted on-chain — check your MON balance and the price. Nothing was swapped.",
     back: "Cota",
     goTrade: "Go trade on Cota →",
+    keepGas: "Keep some MON for gas — don't swap your whole balance.",
+    overMax: "Leave ~0.05 MON for gas. Tap Max.",
+    max: "Max",
   },
 } as const;
+
+// Never swap the whole balance: a swap that leaves no MON for gas reverts
+// underpriced (this is exactly what bit the first live test). Reserve this much
+// MON for gas and cap the swap amount to it.
+const GAS_RESERVE = parseEther("0.05");
 
 export default function SwapPage() {
   const lang: Lang = useLocale() === "es" ? "es" : "en";
@@ -217,6 +228,17 @@ export default function SwapPage() {
 
   const deskLow = quote !== null && available !== null && quote > available;
   const noMon = monBalance !== null && monBalance === 0n;
+  // Cap the amount so a hunter always keeps MON for gas (see GAS_RESERVE).
+  const maxSwap =
+    monBalance !== null && monBalance > GAS_RESERVE
+      ? monBalance - GAS_RESERVE
+      : 0n;
+  let overMax = false;
+  try {
+    overMax = monInput.trim() !== "" && parseEther(monInput) > maxSwap;
+  } catch {
+    overMax = false;
+  }
 
   return (
     <main className="text-ink mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
@@ -302,9 +324,20 @@ export default function SwapPage() {
             </Panel>
           ) : (
             <Panel className="space-y-3">
-              <label className="text-ink-dim block text-xs tracking-wide uppercase">
-                {t.amount}
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-ink-dim block text-xs tracking-wide uppercase">
+                  {t.amount}
+                </label>
+                {maxSwap > 0n && (
+                  <button
+                    type="button"
+                    onClick={() => setMonInput(formatEther(maxSwap))}
+                    className="text-phosphor text-xs font-semibold"
+                  >
+                    {t.max}
+                  </button>
+                )}
+              </div>
               <input
                 inputMode="decimal"
                 value={monInput}
@@ -322,13 +355,19 @@ export default function SwapPage() {
               </div>
               {deskLow && <Note tone="warn">{t.deskLow}</Note>}
               {noMon && <Note tone="warn">{t.noMon}</Note>}
+              {overMax && <Note tone="warn">{t.overMax}</Note>}
               {error && <Note tone="warn">{error}</Note>}
+              <p className="text-ink-faint text-xs">{t.keepGas}</p>
               <Button
                 onClick={() => {
                   void doSwap();
                 }}
                 disabled={
-                  phase === "swapping" || quote === null || deskLow || noMon
+                  phase === "swapping" ||
+                  quote === null ||
+                  deskLow ||
+                  noMon ||
+                  overMax
                 }
               >
                 {phase === "swapping" ? t.swapping : t.swap}
