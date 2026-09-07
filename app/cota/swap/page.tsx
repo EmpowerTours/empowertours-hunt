@@ -48,6 +48,10 @@ const T = {
       "No tienes MON en tu billetera Cota. Envía MON a la dirección de arriba.",
     viewTx: "Ver transacción",
     next: "Ahora deposita el AUSD en Perpl y opera en Cota.",
+    reverted:
+      "La transacción se revirtió en la cadena — revisa tu MON y el precio. No se cambió nada.",
+    back: "Cota",
+    goTrade: "Ir a operar en Cota →",
   },
   en: {
     title: "Swap MON for AUSD",
@@ -67,6 +71,10 @@ const T = {
     noMon: "No MON in your Cota wallet. Send MON to the address above.",
     viewTx: "View transaction",
     next: "Now deposit the AUSD to Perpl and trade on Cota.",
+    reverted:
+      "The transaction reverted on-chain — check your MON balance and the price. Nothing was swapped.",
+    back: "Cota",
+    goTrade: "Go trade on Cota →",
   },
 } as const;
 
@@ -172,6 +180,17 @@ export default function SwapPage() {
         args: [value],
       })) as bigint;
       const { account } = await signInAccount();
+      // Simulate BEFORE spending gas: this reverts with the real reason (rate
+      // stale, desk empty, not enough MON…) so explainSwapError can name it,
+      // instead of the tx silently reverting on-chain.
+      await pc.simulateContract({
+        account: account.address,
+        address: SWAP_ADDRESS,
+        abi: SWAP_ABI,
+        functionName: "swap",
+        args: [minOut(q)],
+        value,
+      });
       const hash = await walletClientFor(account).writeContract({
         address: SWAP_ADDRESS,
         abi: SWAP_ABI,
@@ -179,8 +198,14 @@ export default function SwapPage() {
         args: [minOut(q)],
         value,
       });
-      await pc.waitForTransactionReceipt({ hash });
       setTxHash(hash);
+      const receipt = await pc.waitForTransactionReceipt({ hash });
+      // A mined tx can still be reverted — never claim success on that.
+      if (receipt.status !== "success") {
+        setError(t.reverted);
+        setPhase("error");
+        return;
+      }
       setAusdOut(q);
       setPhase("done");
       void refreshBalances();
@@ -188,13 +213,16 @@ export default function SwapPage() {
       setError(explainSwapError(e, lang));
       setPhase("error");
     }
-  }, [monInput, lang, t.tooLittle, refreshBalances]);
+  }, [monInput, lang, t.tooLittle, t.reverted, refreshBalances]);
 
   const deskLow = quote !== null && available !== null && quote > available;
   const noMon = monBalance !== null && monBalance === 0n;
 
   return (
     <main className="text-ink mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
+      <a href="/cota" className="text-ink-dim w-fit text-sm hover:underline">
+        ← {t.back}
+      </a>
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">{t.title}</h1>
@@ -254,6 +282,12 @@ export default function SwapPage() {
                   {t.viewTx} →
                 </a>
               )}
+              <a
+                href="/cota"
+                className="bg-phosphor text-void flex min-h-12 w-full items-center justify-center rounded-2xl px-5 text-sm font-semibold"
+              >
+                {t.goTrade}
+              </a>
               <Button
                 tone="ghost"
                 onClick={() => {
