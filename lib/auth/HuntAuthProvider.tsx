@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { Providers } from "@/app/providers";
+import { ensureCredentialCookie } from "./passkey";
 import { claimSigner, signInWithPasskey } from "./signIn";
 
 /**
@@ -17,6 +19,15 @@ import { claimSigner, signInWithPasskey } from "./signIn";
  * Player row could be created, and the signed spawn-collect path was disabled.
  */
 export function HuntAuthProvider({ children }: { children: React.ReactNode }) {
+  // Seed the cross-subdomain passkey cookie from this origin's localStorage on
+  // load. A player already signed in on hunt then carries the SAME wallet to
+  // cota and turbo without a fresh ceremony; on an origin with no stored
+  // credential (a sibling subdomain) this is a no-op. Lives in the auth lane
+  // because the passkey credential is Mera's concern, not the UI's.
+  useEffect(() => {
+    ensureCredentialCookie();
+  }, []);
+
   return (
     <Providers signIn={signInWithPasskey} signer={claimSigner}>
       {children}

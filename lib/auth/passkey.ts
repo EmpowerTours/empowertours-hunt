@@ -203,26 +203,49 @@ export interface PasskeyAccount {
   credentialId: string;
 }
 
-export function storedCredential(): PasskeyCredentialMetadata | undefined {
+function credentialFromLocalStorage(): PasskeyCredentialMetadata | undefined {
   try {
     const raw = localStorage.getItem(CREDENTIAL_KEY);
-    if (raw !== null) {
-      const parsed: unknown = JSON.parse(raw);
-      if (
-        typeof parsed === "object" &&
-        parsed !== null &&
-        "credentialId" in parsed &&
-        typeof (parsed as { credentialId: unknown }).credentialId === "string"
-      ) {
-        return parsed as PasskeyCredentialMetadata;
-      }
+    if (raw === null) return undefined;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "credentialId" in parsed &&
+      typeof (parsed as { credentialId: unknown }).credentialId === "string"
+    ) {
+      return parsed as PasskeyCredentialMetadata;
     }
   } catch {
-    // Fall through to the cross-subdomain cookie below.
+    // ignore
   }
-  // Nothing in this origin's localStorage — on a sibling subdomain (cota,
-  // turbo) that is the norm, so consult the shared cookie before giving up and
-  // forcing a discoverable-credential lookup that a non-resident passkey fails.
+  return undefined;
+}
+
+/**
+ * Copy a localStorage credential into the shared cross-subdomain cookie.
+ *
+ * Called on every page load (see app/providers.tsx) so a player ALREADY signed
+ * in on hunt seeds the cookie just by opening the app — no fresh passkey
+ * ceremony needed. Without this the cookie would only ever be written during a
+ * sign-in that already succeeded, which for a returning session never re-runs.
+ */
+export function ensureCredentialCookie(): void {
+  const local = credentialFromLocalStorage();
+  if (local) writeCredentialCookie(local);
+}
+
+export function storedCredential(): PasskeyCredentialMetadata | undefined {
+  const local = credentialFromLocalStorage();
+  if (local) {
+    // Backfill the shared cookie so siblings (cota, turbo) can use this same
+    // credential id as allowCredentials rather than a discoverable lookup a
+    // non-resident passkey fails.
+    writeCredentialCookie(local);
+    return local;
+  }
+  // Nothing in this origin's localStorage — on a sibling subdomain that is the
+  // norm, so consult the shared cookie.
   return readCredentialCookie();
 }
 
