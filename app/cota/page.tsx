@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
+import { LeashHistory } from "@/components/cota/LeashHistory";
 import { readback } from "@/lib/cota/readback";
 import { leverageX100, LossyScaleError, usdE6 } from "@/lib/cota/scale";
 import { newBrowserNonce, signAndAnchorCota } from "@/lib/cota/sign";
@@ -225,6 +227,12 @@ export default function CotaPage() {
 
   return (
     <main className="mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
+      <Link
+        href="/hunt"
+        className="text-ink-dim inline-flex items-center gap-1 text-sm"
+      >
+        ← {lang === "es" ? "Volver a cazar" : "Back to hunting"}
+      </Link>
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-ink text-2xl font-semibold">{t("title")}</h1>
@@ -495,6 +503,13 @@ export default function CotaPage() {
             {busy ? t("signing") : t("sign")}
           </Button>
         </>
+      )}
+
+      {auth.status === "signed-in" && (
+        <LeashHistory
+          lang={lang === "es" ? "es" : "en"}
+          refreshKey={signedDigest}
+        />
       )}
     </main>
   );
