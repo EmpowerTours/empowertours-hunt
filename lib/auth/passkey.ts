@@ -109,6 +109,70 @@ const HARD_GUARD_MS = CEREMONY_TIMEOUT_MS + 15_000;
 
 const CREDENTIAL_KEY = "hunt.passkey.credential";
 
+// The credential id is remembered in localStorage (per-origin) AND — when the
+// relying party is a parent domain shared across EmpowerTours subdomains — in a
+// cookie scoped to that domain.
+//
+// localStorage does NOT cross origins, so a player who created their passkey on
+// hunt.empowertours.xyz arrives at cota.empowertours.xyz with nothing to pass
+// as allowCredentials. A non-discoverable passkey then cannot be found, and
+// Chrome surfaces that as a "cross-origin" refusal / a fallback to "continue
+// with your phone". The cookie carries the credential id across the sibling
+// subdomains so every door can invoke the SAME passkey directly.
+//
+// Safe to share: a credential id is a public handle. The passkey's private key
+// never leaves the authenticator, and use still requires user verification —
+// knowing the id grants nothing on its own.
+const CREDENTIAL_COOKIE = "et.passkey.credential";
+
+/** The domain to scope the cookie to, or null when the rpId is host-specific. */
+function credentialCookieDomain(): string | null {
+  const id = RP_ID.toLowerCase();
+  // Only a real parent domain (has a dot, not localhost) is shared; a
+  // host-specific rpId is one app's and must not leak its id to siblings.
+  if (!id.includes(".") || id === "localhost") return null;
+  return id;
+}
+
+function writeCredentialCookie(meta: PasskeyCredentialMetadata): void {
+  if (typeof document === "undefined") return;
+  const domain = credentialCookieDomain();
+  if (domain === null) return;
+  try {
+    const value = encodeURIComponent(JSON.stringify(meta));
+    // ~400 days, refreshed each sign-in. Lax + Secure: never sent cross-site,
+    // only over https, and it carries no secret regardless.
+    document.cookie = `${CREDENTIAL_COOKIE}=${value}; domain=${domain}; path=/; max-age=34560000; secure; samesite=lax`;
+  } catch {
+    // No cookie just means the cross-subdomain hint is absent; same-origin
+    // localStorage still gets a returning player straight back in.
+  }
+}
+
+function readCredentialCookie(): PasskeyCredentialMetadata | undefined {
+  if (typeof document === "undefined") return undefined;
+  try {
+    const match = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith(`${CREDENTIAL_COOKIE}=`));
+    if (match === undefined) return undefined;
+    const parsed: unknown = JSON.parse(
+      decodeURIComponent(match.slice(CREDENTIAL_COOKIE.length + 1)),
+    );
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "credentialId" in parsed &&
+      typeof (parsed as { credentialId: unknown }).credentialId === "string"
+    ) {
+      return parsed as PasskeyCredentialMetadata;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 class CeremonyTimeout extends Error {
   constructor() {
     super("ceremony timed out");
@@ -142,20 +206,24 @@ export interface PasskeyAccount {
 export function storedCredential(): PasskeyCredentialMetadata | undefined {
   try {
     const raw = localStorage.getItem(CREDENTIAL_KEY);
-    if (raw === null) return undefined;
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "credentialId" in parsed &&
-      typeof (parsed as { credentialId: unknown }).credentialId === "string"
-    ) {
-      return parsed as PasskeyCredentialMetadata;
+    if (raw !== null) {
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "credentialId" in parsed &&
+        typeof (parsed as { credentialId: unknown }).credentialId === "string"
+      ) {
+        return parsed as PasskeyCredentialMetadata;
+      }
     }
-    return undefined;
   } catch {
-    return undefined;
+    // Fall through to the cross-subdomain cookie below.
   }
+  // Nothing in this origin's localStorage — on a sibling subdomain (cota,
+  // turbo) that is the norm, so consult the shared cookie before giving up and
+  // forcing a discoverable-credential lookup that a non-resident passkey fails.
+  return readCredentialCookie();
 }
 
 function rememberCredential(credential: PasskeyCredentialMetadata): void {
@@ -171,6 +239,12 @@ function rememberCredential(credential: PasskeyCredentialMetadata): void {
     // Private browsing can refuse storage. The passkey still works; the browser
     // will offer a chooser next time instead of going straight in.
   }
+  // Also share it across sibling subdomains so the SAME passkey works on cota
+  // and turbo, not just the origin it was created on.
+  writeCredentialCookie({
+    credentialId: credential.credentialId,
+    transports: credential.transports,
+  });
 }
 
 function accountFromPrfOutput(
