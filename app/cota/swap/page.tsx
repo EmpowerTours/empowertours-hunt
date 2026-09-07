@@ -107,28 +107,43 @@ export default function SwapPage() {
 
   // Desk float + wallet MON balance.
   const refreshBalances = useCallback(async () => {
-    try {
-      const pc = publicClient();
-      const avail = (await pc.readContract({
-        address: SWAP_ADDRESS,
-        abi: SWAP_ABI,
-        functionName: "available",
-      })) as bigint;
-      setAvailable(avail);
-      if (address) {
-        setMonBalance(
-          await pc.getBalance({ address: address as `0x${string}` }),
-        );
+    const pc = publicClient();
+    // Retry: the public RPC drops the occasional read (worse under community
+    // load), and a single silent failure used to strand the display on "…"
+    // forever with no retry. Three attempts with backoff, then the 12s poll.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const avail = (await pc.readContract({
+          address: SWAP_ADDRESS,
+          abi: SWAP_ABI,
+          functionName: "available",
+        })) as bigint;
+        setAvailable(avail);
+        if (address) {
+          setMonBalance(
+            await pc.getBalance({ address: address as `0x${string}` }),
+          );
+        }
+        return;
+      } catch {
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
       }
-    } catch {
-      // reads can fail transiently; leave the last known values
     }
   }, [address]);
 
   useEffect(() => {
-    void (async () => {
-      await refreshBalances();
-    })();
+    let live = true;
+    const tick = () => {
+      if (live) void refreshBalances();
+    };
+    tick();
+    // Poll so the display self-heals if the first read (or a later one) drops,
+    // and stays current as the wallet's MON changes.
+    const id = setInterval(tick, 12000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
   }, [refreshBalances]);
 
   // Live quote, debounced. All setState happens inside the delayed callback —
