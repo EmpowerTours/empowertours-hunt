@@ -1,7 +1,11 @@
+import { redirect } from "next/navigation";
 import { SignInPanel } from "@/components/auth/SignInPanel";
 import { RadarScope } from "@/components/radar/RadarScope";
+import { isCotaHost } from "@/lib/host";
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  // cota.* is the trading app, not the hunt game — send its root to Cota.
+  if (await isCotaHost()) redirect("/cota");
   return (
     <main className="safe-top safe-bottom mx-auto flex min-h-dvh w-full max-w-md flex-col justify-between gap-8 px-5">
       <div className="flex flex-1 flex-col items-center justify-center gap-7 pt-6">

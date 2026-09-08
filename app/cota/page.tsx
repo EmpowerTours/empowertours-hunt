@@ -109,6 +109,17 @@ export default function CotaPage() {
   // Sign-in errors were swallowed by `void auth.signIn()`; surfaced here so the
   // exact passkey failure (type + message) is visible on-device.
   const [signInErr, setSignInErr] = useState<string | null>(null);
+  // On the cota.* trading host there is no hunt game, so hide the way back to
+  // it. Set after mount to avoid a hydration mismatch. It stays on
+  // hunt.empowertours.xyz/cota, where the game does exist.
+  const [onCotaHost, setOnCotaHost] = useState(false);
+  useEffect(() => {
+    // Past a microtask so this isn't the synchronous set-state-in-effect the
+    // lint forbids; runs right after mount to read the client-only hostname.
+    void Promise.resolve().then(() =>
+      setOnCotaHost(window.location.hostname.startsWith("cota.")),
+    );
+  }, []);
   // Practice vs live, chosen UP FRONT. Both sign the same leash; this only
   // decides where the leash is used — a funded account shouldn't have to sign,
   // then dig past practice to find the live door.
@@ -230,12 +241,14 @@ export default function CotaPage() {
 
   return (
     <main className="mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
-      <Link
-        href="/hunt"
-        className="text-ink-dim inline-flex items-center gap-1 text-sm"
-      >
-        ← {lang === "es" ? "Volver a cazar" : "Back to hunting"}
-      </Link>
+      {!onCotaHost && (
+        <Link
+          href="/hunt"
+          className="text-ink-dim inline-flex items-center gap-1 text-sm"
+        >
+          ← {lang === "es" ? "Volver a cazar" : "Back to hunting"}
+        </Link>
+      )}
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-ink text-2xl font-semibold">{t("title")}</h1>

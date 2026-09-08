@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { HuntScreen } from "./HuntScreen";
+import { isCotaHost } from "@/lib/host";
 
 export const metadata: Metadata = { title: "Scope" };
 
@@ -12,6 +14,8 @@ export default async function HuntPage({
 }: {
   params: Promise<{ huntId: string }>;
 }) {
+  // The hunt game is not served on the cota trading host.
+  if (await isCotaHost()) redirect("/cota");
   const { huntId } = await params;
   return <HuntScreen huntId={huntId} />;
 }

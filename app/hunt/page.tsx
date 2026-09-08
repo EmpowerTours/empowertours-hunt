@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { prisma } from "@/lib/db/prisma";
 import { PUBLIC_HUNT_SELECT, isListable } from "@/lib/hunt/publicHunt";
+import { isCotaHost } from "@/lib/host";
 import { HuntList } from "./HuntList";
 
 export const metadata: Metadata = { title: "Hunts" };
@@ -26,6 +27,8 @@ export const dynamic = "force-dynamic";
  * redirect into a hunt the list refuses to display.
  */
 export default async function HuntsPage() {
+  // The hunt game is not served on the cota trading host.
+  if (await isCotaHost()) redirect("/cota");
   const rows = await prisma.hunt.findMany({
     where: { active: true },
     orderBy: [{ startsAt: "asc" }, { name: "asc" }],
