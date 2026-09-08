@@ -330,6 +330,16 @@ export default function CotaPage() {
               ? "Traer AUSD de otra red (puente) →"
               : "Bring AUSD from another chain →"}
           </a>
+          {/* Once you hold AUSD, this opens the Perpl account. It must run
+              before enrolling a key — enrollment 404s without an account. */}
+          <a
+            href="/cota/deposit"
+            className="bg-phosphor/10 border-phosphor/40 text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Fondear cuenta Perpl (depositar AUSD) →"
+              : "Fund Perpl account (deposit AUSD) →"}
+          </a>
         </div>
       )}
 

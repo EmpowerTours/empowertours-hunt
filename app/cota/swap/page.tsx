@@ -51,7 +51,7 @@ const T = {
     reverted:
       "La transacción se revirtió en la cadena — revisa tu MON y el precio. No se cambió nada.",
     back: "Cota",
-    goTrade: "Ir a operar en Cota →",
+    goTrade: "Depositar AUSD en Perpl →",
     keepGas: "Guarda algo de MON para el gas — no cambies todo tu saldo.",
     overMax: "Deja ~0.05 MON para el gas. Toca Máx.",
     max: "Máx",
@@ -77,7 +77,7 @@ const T = {
     reverted:
       "The transaction reverted on-chain — check your MON balance and the price. Nothing was swapped.",
     back: "Cota",
-    goTrade: "Go trade on Cota →",
+    goTrade: "Deposit AUSD to Perpl →",
     keepGas: "Keep some MON for gas — don't swap your whole balance.",
     overMax: "Leave ~0.05 MON for gas. Tap Max.",
     max: "Max",
@@ -320,7 +320,7 @@ export default function SwapPage() {
                 </a>
               )}
               <a
-                href="/cota"
+                href="/cota/deposit"
                 className="bg-phosphor text-void flex min-h-12 w-full items-center justify-center rounded-2xl px-5 text-sm font-semibold"
               >
                 {t.goTrade}
