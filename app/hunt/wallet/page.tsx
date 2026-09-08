@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { ProgressPanel } from "./ProgressPanel";
 import { CotaEntry } from "./CotaEntry";
+import { isCotaHost } from "@/lib/host";
 
 export const metadata: Metadata = { title: "Progress" };
 export const dynamic = "force-dynamic";
 
 export default async function WalletPage() {
+  // The hunt wallet (game progress, back-to-hunt) is not served on cota.
+  if (await isCotaHost()) redirect("/cota");
   const t = await getTranslations();
   return (
     <main className="safe-top safe-bottom mx-auto flex w-full max-w-md flex-col gap-4 px-4 pb-6">

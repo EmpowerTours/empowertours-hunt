@@ -304,6 +304,14 @@ export default function PracticePage() {
 
   return (
     <main className="mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
+      {/* Always reachable: practice used to trap you here with no way back to
+          Cota to switch into live mode. */}
+      <a
+        href="/cota"
+        className="text-ink-dim inline-flex items-center gap-1 text-sm"
+      >
+        ← {lang === "es" ? "Cota · cambiar a en vivo" : "Cota · switch to live"}
+      </a>
       <header>
         <h1 className="text-ink text-2xl font-semibold">{t.title}</h1>
         <p className="text-ink-dim mt-1 text-sm">{t.lede}</p>
