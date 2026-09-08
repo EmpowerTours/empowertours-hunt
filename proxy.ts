@@ -51,6 +51,28 @@ function originOf(value: string): string | null {
 }
 
 /**
+ * Is this origin the app's own parent domain or a subdomain of it?
+ *
+ * The app is served on several hosts under one registrable domain (hunt, cota,
+ * turbo … under empowertours.xyz = NEXT_PUBLIC_RP_ID). Railway's proxy rewrites
+ * Host, so `req.nextUrl.host` is NOT a reliable same-origin anchor — which is
+ * why a same-origin POST from cota was refused. Matching the ORIGIN header
+ * (browser-set, unspoofable by a hostile page) against the known parent domain
+ * is host-independent and still safe: a cross-site attacker's origin is never
+ * under empowertours.xyz.
+ */
+function isOwnDomain(candidate: string): boolean {
+  const parent = process.env.NEXT_PUBLIC_RP_ID?.trim().toLowerCase();
+  if (!parent || !parent.includes(".") || parent === "localhost") return false;
+  try {
+    const host = new URL(candidate).host.toLowerCase();
+    return host === parent || host.endsWith(`.${parent}`);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Allowed origins.
  *
  * When ALLOWED_ORIGINS is set it is authoritative — that is the deployment that
@@ -118,7 +140,10 @@ export function proxy(req: NextRequest) {
   // slip past a comparison. A browser always sends one of them on a mutating
   // request, so this costs a real client nothing; it costs a scripted or
   // cross-site caller the request.
-  if (!(candidate !== null && allowed.has(candidate))) {
+  if (
+    candidate === null ||
+    !(allowed.has(candidate) || isOwnDomain(candidate))
+  ) {
     return NextResponse.json(
       { error: "cross-origin request refused" },
       { status: 403 },
