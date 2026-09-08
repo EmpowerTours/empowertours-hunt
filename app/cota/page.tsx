@@ -9,7 +9,7 @@ import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { LeashHistory } from "@/components/cota/LeashHistory";
 import { readback } from "@/lib/cota/readback";
 import { leverageX100, LossyScaleError, usdE6 } from "@/lib/cota/scale";
-import { newBrowserNonce, signAndAnchorCota } from "@/lib/cota/sign";
+import { newBrowserNonce, signAndAnchorCota, signCota } from "@/lib/cota/sign";
 import type { CotaMessage } from "@/lib/cota/typedData";
 
 // ---------------------------------------------------------------------------
@@ -202,10 +202,20 @@ export default function CotaPage() {
         clientTs: now,
         nonce: newBrowserNonce(),
       };
-      // One passkey session, one Face ID: signs the leash and anchors it from
-      // the hunter's own wallet. anchorTxHash is null if anchoring was skipped
-      // or failed — the signature is valid either way.
-      const { signature, anchorTxHash } = await signAndAnchorCota(message);
+      // Anchoring is a LIVE-mode concern: it is an on-chain tx that costs gas
+      // and exists to make a real trading authorisation independently
+      // verifiable. Practice is a simulation, so it signs the leash (to have a
+      // limit to practice against) but does NOT anchor — no gas, no on-chain
+      // record for a practice session.
+      let signature: `0x${string}`;
+      let anchorTxHash: string | null = null;
+      if (mode === "live") {
+        const signed = await signAndAnchorCota(message);
+        signature = signed.signature;
+        anchorTxHash = signed.anchorTxHash;
+      } else {
+        signature = await signCota(message);
+      }
       const res = await fetch("/api/cota", {
         method: "POST",
         headers: { "content-type": "application/json" },

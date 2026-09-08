@@ -57,7 +57,7 @@ const T = {
   es: {
     title: "Autoriza tu clave",
     intro:
-      "Esto crea una clave de trading para Perpl. Puede abrir y cerrar posiciones dentro de tu Cota — nunca puede retirar fondos. La clave se queda en este teléfono; nosotros no la guardamos.",
+      "Esto crea una clave de trading para Perpl que puede abrir y cerrar posiciones dentro de tu Cota. Por tu seguridad, la clave nunca puede sacar dinero de tu cuenta — sólo TÚ puedes retirar, desde tu propia wallet. La clave se queda en este teléfono; nosotros no la guardamos.",
     signin: "Inicia sesión para autorizar",
     begin: "Crear clave",
     fetching: "Preparando…",
@@ -72,7 +72,7 @@ const T = {
     cancel: "Cancelar",
     doneTitle: "Clave autorizada ✓",
     doneBody:
-      "Tu clave está guardada en este teléfono. Puede operar dentro de tu Cota y no puede retirar. Vence en 90 días.",
+      "Tu clave está guardada en este teléfono. Puede operar dentro de tu Cota pero nunca puede retirar tu dinero — sólo tú puedes, desde tu wallet. Vence en 90 días.",
     haveKey: "Ya tienes una clave activa",
     account: "Cuenta",
     reenrol: "Crear una nueva",
@@ -84,7 +84,7 @@ const T = {
   en: {
     title: "Authorize your key",
     intro:
-      "This creates a Perpl trading key. It can open and close positions within your Cota — it can never withdraw funds. The key stays on this phone; we never store it.",
+      "This creates a Perpl trading key that can open and close positions within your Cota. For your safety the key can never move money out of your account — only YOU can withdraw, from your own wallet. The key stays on this phone; we never store it.",
     signin: "Sign in to authorize",
     begin: "Create key",
     fetching: "Preparing…",
@@ -99,7 +99,7 @@ const T = {
     cancel: "Cancel",
     doneTitle: "Key authorized ✓",
     doneBody:
-      "Your key is saved on this phone. It can trade within your Cota and cannot withdraw. It expires in 90 days.",
+      "Your key is saved on this phone. It can trade within your Cota but can never withdraw your money — only you can, from your wallet. It expires in 90 days.",
     haveKey: "You already have an active key",
     account: "Account",
     reenrol: "Create a new one",
