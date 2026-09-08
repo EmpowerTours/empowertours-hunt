@@ -247,7 +247,7 @@ export default function CotaPage() {
     } finally {
       setBusy(false);
     }
-  }, [ceilings, durationSeconds]);
+  }, [ceilings, durationSeconds, mode]);
 
   return (
     <main className="mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
