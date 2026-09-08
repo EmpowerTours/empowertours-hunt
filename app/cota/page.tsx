@@ -44,6 +44,13 @@ const DEFAULTS = {
   days: 30,
 };
 
+// A live leash smaller than this can never place a fillable order: a MON market
+// order under ~$3 comes back TakerOrderSettlementFailed (chain-verified — a $1
+// order filled 0, a $3 order filled fully). Signing one wastes a real signature
+// and, if anchored, real gas on a leash that authorises nothing tradable. The
+// app refuses it rather than leaving the check to someone reading the database.
+const MIN_LIVE_NOTIONAL_USD = 3;
+
 function Field({
   label,
   value,
@@ -541,9 +548,20 @@ export default function CotaPage() {
             </Note>
           ) : null}
 
+          {mode === "live" && maxNotional < MIN_LIVE_NOTIONAL_USD ? (
+            <Note tone="warn">
+              {lang === "es"
+                ? `En vivo, el tamaño máximo debe ser al menos $${MIN_LIVE_NOTIONAL_USD}. Órdenes más pequeñas no se ejecutan en Perpl.`
+                : `A live leash needs a max size of at least $${MIN_LIVE_NOTIONAL_USD}. Smaller orders won't fill on Perpl.`}
+            </Note>
+          ) : null}
           <Button
             onClick={() => void onSign()}
-            disabled={busy || ceilings === null}
+            disabled={
+              busy ||
+              ceilings === null ||
+              (mode === "live" && maxNotional < MIN_LIVE_NOTIONAL_USD)
+            }
           >
             {busy ? t("signing") : t("sign")}
           </Button>
