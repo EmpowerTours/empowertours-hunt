@@ -354,5 +354,12 @@ export function explainPasskeyError(err: unknown): string {
         return `Passkey error (${err.code}).`;
     }
   }
-  return err instanceof Error ? err.message : "Something went wrong.";
+  if (err instanceof Error) {
+    // Surface the DOMException type too. On iOS the message alone ("refused",
+    // "cross-origin") is ambiguous; the name (SecurityError, NotAllowedError,
+    // NotSupportedError) is what pins the cause.
+    const kind = err.name && err.name !== "Error" ? `${err.name}: ` : "";
+    return `${kind}${err.message}`;
+  }
+  return "Something went wrong.";
 }

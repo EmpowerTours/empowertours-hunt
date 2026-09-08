@@ -106,6 +106,9 @@ export default function CotaPage() {
   // Monad tx that anchored the leash to AuditAnchorV2, once it lands. Null while
   // un-anchored (anchoring is a separate act that can be off or can fail).
   const [anchorTx, setAnchorTx] = useState<string | null>(null);
+  // Sign-in errors were swallowed by `void auth.signIn()`; surfaced here so the
+  // exact passkey failure (type + message) is visible on-device.
+  const [signInErr, setSignInErr] = useState<string | null>(null);
   // Practice vs live, chosen UP FRONT. Both sign the same leash; this only
   // decides where the leash is used — a funded account shouldn't have to sign,
   // then dig past practice to find the live door.
@@ -312,12 +315,18 @@ export default function CotaPage() {
           <p className="text-ink text-sm">{t("signInBody")}</p>
           <Button
             onClick={() => {
-              void auth.signIn();
+              setSignInErr(null);
+              void auth.signIn().catch((e) => {
+                setSignInErr(e instanceof Error ? e.message : "sign-in failed");
+              });
             }}
             disabled={!auth.canSignIn}
           >
             {t("signIn")}
           </Button>
+          {signInErr && (
+            <p className="text-alert text-xs break-words">{signInErr}</p>
+          )}
         </Panel>
       ) : signedDigest !== null ? (
         <Panel className="space-y-3">
