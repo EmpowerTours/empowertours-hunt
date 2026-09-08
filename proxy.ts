@@ -62,13 +62,17 @@ function originOf(value: string): string | null {
 function allowedOrigins(req: NextRequest): Set<string> {
   const allowed = new Set<string>();
 
+  // Extra trusted origins for genuinely cross-origin callers. ADDITIVE — it no
+  // longer short-circuits and replaces the same-origin allowance below. Setting
+  // it to hunt's host used to make every same-origin POST from a SIBLING
+  // subdomain (cota, turbo) 403 with "cross-origin request refused", even
+  // though those requests are same-origin. That was the cota sign-in failure.
   const configured = process.env.ALLOWED_ORIGINS;
   if (configured) {
     for (const entry of configured.split(",")) {
       const normalized = originOf(entry.trim());
       if (normalized) allowed.add(normalized);
     }
-    if (allowed.size > 0) return allowed;
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -77,6 +81,13 @@ function allowedOrigins(req: NextRequest): Set<string> {
     if (normalized) allowed.add(normalized);
   }
 
+  // ALWAYS allow same-origin. A request whose Origin equals the host it is
+  // addressed to is not cross-site by definition, so it is never the CSRF
+  // threat this guard exists to stop — a hostile page's Origin is its own, and
+  // will not match. This is what lets the same app serve on several subdomains
+  // (hunt, cota) without enumerating each. The real control on money paths
+  // stays the EIP-712 signature; this layer is depth, and same-origin costs it
+  // nothing.
   allowed.add(`${req.nextUrl.protocol}//${req.nextUrl.host}`.toLowerCase());
   return allowed;
 }
