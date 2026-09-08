@@ -196,9 +196,16 @@ export default function CotaEnrollPage() {
         mac?: string;
         origin?: string;
         error?: string;
+        detail?: string;
       };
       if (!res.ok || !body.typed_data || !body.mac || !body.origin) {
-        fail(body.error ?? t.notConfigured);
+        // Show the venue's own words too — the reason ("origin not whitelisted",
+        // "profile not found") is what tells us how to fix it.
+        fail(
+          [body.error ?? t.notConfigured, body.detail]
+            .filter(Boolean)
+            .join(" — "),
+        );
         return;
       }
       // The check that protects the user from signing the wrong thing.
@@ -261,9 +268,12 @@ export default function CotaEnrollPage() {
       const body = (await res.json()) as {
         api_key?: Record<string, unknown>;
         error?: string;
+        detail?: string;
       };
       if (!res.ok) {
-        fail(body.error ?? t.retry);
+        // Perpl's status+detail is in body.error (e.g. "…(404)") and body.detail;
+        // surface both so the exact refusal reason is visible on-device.
+        fail([body.error ?? t.retry, body.detail].filter(Boolean).join(" — "));
         return;
       }
       const info = (body.api_key ?? body) as Record<string, unknown>;
