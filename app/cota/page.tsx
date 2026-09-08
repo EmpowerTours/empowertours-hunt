@@ -48,8 +48,6 @@ function Field({
   label,
   value,
   onChange,
-  step = 1,
-  min = 0,
   suffix,
 }: {
   label: string;
@@ -59,6 +57,12 @@ function Field({
   min?: number;
   suffix?: string;
 }) {
+  // A local string buffer, not the numeric value, drives the input. type=number
+  // with a numeric controlled value made "50" → clear → "0" sticky, so typing
+  // 10 read as "010" and stored $1. A decimal text field over a sanitized
+  // string clears and retypes cleanly. The parent seeds these once and never
+  // changes them externally, so no value→buffer sync is needed.
+  const [buf, setBuf] = useState(String(value));
   return (
     <label className="block">
       <span className="text-ink-dim font-mono text-xs tracking-[0.14em] uppercase">
@@ -66,13 +70,12 @@ function Field({
       </span>
       <div className="mt-1.5 flex items-center gap-2">
         <input
-          type="number"
           inputMode="decimal"
-          value={value}
-          step={step}
-          min={min}
+          value={buf}
           onChange={(e) => {
-            onChange(Number(e.target.value));
+            const cleaned = e.target.value.replace(/[^0-9.]/g, "");
+            setBuf(cleaned);
+            onChange(cleaned === "" || cleaned === "." ? 0 : Number(cleaned));
           }}
           className="border-hull-line bg-hull-2 text-ink min-h-14 w-full rounded-2xl border-2 px-4 text-lg tabular-nums"
         />
