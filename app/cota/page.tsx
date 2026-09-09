@@ -350,6 +350,14 @@ export default function CotaPage() {
               ? "Fondear cuenta Perpl (depositar AUSD) →"
               : "Fund Perpl account (deposit AUSD) →"}
           </a>
+          <a
+            href="/cota/trade"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Operar bajo tu correa →"
+              : "Trade under your leash →"}
+          </a>
         </div>
       )}
 
