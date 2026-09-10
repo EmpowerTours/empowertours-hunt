@@ -61,9 +61,16 @@ const T = {
     trades: "Operaciones/día",
     anchored: "Anclada",
     notAnchored: "sin anclar",
-    place: "Colocar (próximamente)",
-    placeNote:
-      "Colocar pasa por el agente Cota, que ejecuta dentro de esta correa. Ese paso llega enseguida; por ahora esto muestra el veredicto.",
+    place: "Colocar orden",
+    placing: "Colocando…",
+    placed: "¡Orden ejecutada! ✓",
+    placeAccepted: "Aceptada (aún sin llenar)",
+    placeRejected: "Tu correa rechazó esto",
+    placeFailed: "Falló la colocación",
+    suggest: "Sugerir con Kimi",
+    suggesting: "Kimi pensando…",
+    kimiHold: "Kimi sugiere esperar",
+    proposerDown: "Kimi no está disponible ahora",
     freshNote:
       "Vista previa contra un día limpio (0 abierto, 0 perdido). El agente usa tu estado real al ejecutar.",
     back: "Cota",
@@ -89,9 +96,16 @@ const T = {
     trades: "Trades/day",
     anchored: "Anchored",
     notAnchored: "not anchored",
-    place: "Place (coming soon)",
-    placeNote:
-      "Placing runs through the Cota agent, which executes within this leash. That step is next; for now this shows the verdict.",
+    place: "Place order",
+    placing: "Placing…",
+    placed: "Order filled! ✓",
+    placeAccepted: "Accepted (not filled yet)",
+    placeRejected: "Your leash rejected this",
+    placeFailed: "Placement failed",
+    suggest: "Suggest with Kimi",
+    suggesting: "Kimi thinking…",
+    kimiHold: "Kimi suggests holding",
+    proposerDown: "Kimi is unavailable right now",
     freshNote:
       "Previewed against a clean day (0 open, 0 lost). The agent uses your real state when it executes.",
     back: "Cota",
@@ -133,6 +147,12 @@ export default function TradePage() {
   // Captured once (state initializer is allowed to be impure); keeps the
   // verdict useMemo pure. A preview doesn't need second-precision "now".
   const [now] = useState(() => BigInt(Math.floor(Date.now() / 1000)));
+  const [kimiBusy, setKimiBusy] = useState(false);
+  const [kimiNote, setKimiNote] = useState<string | null>(null);
+  const [placePhase, setPlacePhase] = useState<
+    "idle" | "placing" | "done" | "error"
+  >("idle");
+  const [placeMsg, setPlaceMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (auth.status !== "signed-in") return;
@@ -182,6 +202,101 @@ export default function TradePage() {
   }, [bound, market, notional, lev, now]);
 
   const human = (e6: string) => (Number(e6) / 1e6).toString();
+
+  // Kimi proposes; the SAME leash gate judges it. Fills the form from the
+  // suggestion — the verdict re-computes from the filled inputs.
+  async function suggest() {
+    setKimiBusy(true);
+    setKimiNote(null);
+    try {
+      const res = await fetch("/api/cota/propose", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(cota ? { digest: cota.digest } : {}),
+      });
+      const body = (await res.json()) as {
+        proposal?: {
+          action: string;
+          market?: string;
+          side?: "long" | "short";
+          notionalUsd?: number;
+          leverage?: number;
+          rationale?: string;
+        };
+        error?: string;
+      };
+      if (!res.ok || !body.proposal) {
+        setKimiNote(body.error ? body.error : t.proposerDown);
+        return;
+      }
+      const pr = body.proposal;
+      if (
+        pr.action === "open" &&
+        pr.market &&
+        pr.notionalUsd != null &&
+        pr.leverage != null
+      ) {
+        setMarket(pr.market);
+        if (pr.side) setSide(pr.side);
+        setNotional(String(pr.notionalUsd));
+        setLev(String(pr.leverage));
+        setKimiNote(pr.rationale ?? null);
+      } else {
+        setKimiNote(`${t.kimiHold}: ${pr.rationale ?? ""}`);
+      }
+    } catch {
+      setKimiNote(t.proposerDown);
+    } finally {
+      setKimiBusy(false);
+    }
+  }
+
+  // Place the (leash-approved) order. The server route re-runs the gate before
+  // it touches the venue; this button is only enabled when the preview allows.
+  async function place() {
+    if (!market) return;
+    setPlacePhase("placing");
+    setPlaceMsg(null);
+    try {
+      const res = await fetch("/api/cota/trade", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          digest: cota?.digest,
+          market,
+          side,
+          targetNotionalUsd: Number(notional || "0"),
+          leverageX: Number(lev || "0"),
+        }),
+      });
+      const body = (await res.json()) as {
+        allowed?: boolean;
+        filled?: boolean;
+        accepted?: boolean;
+        detail?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setPlaceMsg(body.error ?? t.placeFailed);
+        setPlacePhase("error");
+      } else if (body.allowed === false) {
+        setPlaceMsg(body.detail ?? t.placeRejected);
+        setPlacePhase("error");
+      } else if (body.filled) {
+        setPlaceMsg(t.placed);
+        setPlacePhase("done");
+      } else if (body.accepted) {
+        setPlaceMsg(t.placeAccepted);
+        setPlacePhase("done");
+      } else {
+        setPlaceMsg(t.placeFailed);
+        setPlacePhase("error");
+      }
+    } catch {
+      setPlaceMsg(t.placeFailed);
+      setPlacePhase("error");
+    }
+  }
 
   return (
     <main className="text-ink mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
@@ -331,6 +446,17 @@ export default function TradePage() {
             </div>
           </Panel>
 
+          <Button
+            tone="ghost"
+            onClick={() => void suggest()}
+            disabled={kimiBusy}
+          >
+            {kimiBusy ? t.suggesting : `✨ ${t.suggest}`}
+          </Button>
+          {kimiNote && (
+            <p className="text-ink-dim text-[12px] italic">“{kimiNote}”</p>
+          )}
+
           <Panel className="space-y-2">
             <p className="text-ink-dim text-xs tracking-wide uppercase">
               {t.verdict}
@@ -345,10 +471,26 @@ export default function TradePage() {
             <p className="text-ink-faint text-[11px]">{t.freshNote}</p>
           </Panel>
 
-          <Button disabled>{t.place}</Button>
-          <p className="text-ink-faint text-center text-[11px]">
-            {t.placeNote}
-          </p>
+          <Button
+            onClick={() => void place()}
+            disabled={
+              placePhase === "placing" ||
+              decision === null ||
+              !decision.ok ||
+              !market
+            }
+          >
+            {placePhase === "placing" ? t.placing : t.place}
+          </Button>
+          {placeMsg && (
+            <p
+              className={`text-center text-[12px] ${
+                placePhase === "done" ? "text-[#4ade80]" : "text-alert"
+              }`}
+            >
+              {placeMsg}
+            </p>
+          )}
         </>
       )}
     </main>
