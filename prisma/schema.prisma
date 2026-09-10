@@ -190,9 +190,37 @@ model Player {
   createdHunts  Hunt[]          @relation("HuntCreator")
   surveyedZones Zone[]
   dimeClaim     DimeClaim?
+  perpKey       PerpKey?
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
+}
+
+// A hunter's Perpl trading key, held server-side so the Cota agent can execute
+// bounded trades on their behalf. Encrypted at rest (AES-256-GCM, key derived
+// from COTA_KEY_ENC_SECRET; see lib/cota/keystore.ts). Safe by construction:
+// the key can TRADE but Perpl never lets it WITHDRAW, and every order is
+// leash-gated + anchored — a full compromise can only trade within the leash,
+// never move a hunter's money. One per player.
+model PerpKey {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String @unique
+
+  // The Perpl account / wallet address the key trades for. Kept in the clear so
+  // the executor can select without decrypting.
+  account String
+
+  // AES-256-GCM sealed credential (api key + Ed25519 secret), base64. The
+  // playerId is the GCM AAD, so a row cannot be replayed under another player.
+  salt       String
+  iv         String
+  authTag    String
+  ciphertext String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Hunt {
