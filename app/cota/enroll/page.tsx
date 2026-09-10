@@ -57,7 +57,7 @@ const T = {
   es: {
     title: "Autoriza tu clave",
     intro:
-      "Esto crea una clave de trading para Perpl que puede abrir y cerrar posiciones dentro de tu Cota. Por tu seguridad, la clave nunca puede sacar dinero de tu cuenta — sólo TÚ puedes retirar, desde tu propia wallet. La clave se queda en este teléfono; nosotros no la guardamos.",
+      "Esto crea una clave de trading para Perpl que puede abrir y cerrar posiciones dentro de tu Cota. Por tu seguridad, la clave nunca puede sacar dinero de tu cuenta — sólo TÚ puedes retirar, desde tu propia wallet. Se guarda de forma segura para que el agente Cota opere dentro de tu correa; sigue sin poder retirar.",
     signin: "Inicia sesión para autorizar",
     begin: "Crear clave",
     fetching: "Preparando…",
@@ -84,7 +84,7 @@ const T = {
   en: {
     title: "Authorize your key",
     intro:
-      "This creates a Perpl trading key that can open and close positions within your Cota. For your safety the key can never move money out of your account — only YOU can withdraw, from your own wallet. The key stays on this phone; we never store it.",
+      "This creates a Perpl trading key that can open and close positions within your Cota. For your safety the key can never move money out of your account — only YOU can withdraw, from your own wallet. A copy is held securely so the Cota agent can trade within your leash; it still can never withdraw.",
     signin: "Sign in to authorize",
     begin: "Create key",
     fetching: "Preparing…",
@@ -298,6 +298,23 @@ export default function CotaEnrollPage() {
           Number(info.expires_at ?? f.terms.expiresAt) || f.terms.expiresAt,
       };
       saveEnrollment(enrolled);
+      // Hand the key to the server so the Cota agent can trade within your
+      // leash. Best-effort: the enrollment has succeeded and the key is on the
+      // device regardless; a failed delivery just means the agent can't act yet
+      // (retryable). The key can only trade, never withdraw.
+      try {
+        await fetch("/api/cota/perp-key", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            apiKey: enrolled.apiKey,
+            secretHex: enrolled.secretHex,
+            account: enrolled.account,
+          }),
+        });
+      } catch {
+        // Non-fatal; the hunter still holds the key on this device.
+      }
       setKey(enrolled);
       setPhase("done");
     } catch (err) {
