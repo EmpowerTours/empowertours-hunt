@@ -129,7 +129,7 @@ export function Note({
   title,
   children,
 }: {
-  tone?: "info" | "warn" | "stop";
+  tone?: "info" | "warn" | "stop" | "success";
   title?: string;
   children: React.ReactNode;
 }) {
@@ -138,13 +138,17 @@ export function Note({
       ? "border-alert/70"
       : tone === "warn"
         ? "border-band-hot/70"
-        : "border-hull-line";
+        : tone === "success"
+          ? "border-spawn/70"
+          : "border-hull-line";
   const heading =
     tone === "stop"
       ? "text-alert"
       : tone === "warn"
         ? "text-band-hot"
-        : "text-ink-dim";
+        : tone === "success"
+          ? "text-spawn"
+          : "text-ink-dim";
   return (
     <div className={`bg-hull-2/50 rounded-xl border-l-4 p-3 ${border}`}>
       {title ? (

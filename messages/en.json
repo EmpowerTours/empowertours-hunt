@@ -49,11 +49,12 @@
     "unsupported": "This browser cannot report a location. A hunt needs GPS — try Safari or Chrome over HTTPS."
   },
   "payout": {
-    "released": "Collected. The payout was released automatically and will settle on chain shortly.",
-    "held": "Collected. The payout is held for review ({reason}) — MON is never sent without a bound being satisfied.",
+    "released": "You claimed {amount} MON 🎉 — it settles on chain in a moment.",
+    "held": "You claimed {amount} MON — held for review ({reason}). MON is never sent without a bound being satisfied.",
     "failed": "The collect request failed.",
     "signerMissing": "Collecting MON must be signed, and the passkey signer is not wired up in this build.",
-    "title": "Payout"
+    "title": "Payout",
+    "claimed": "Claimed"
   },
   "cota": {
     "agreement": "What you're signing",

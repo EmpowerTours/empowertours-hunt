@@ -49,11 +49,12 @@
     "unsupported": "Este navegador no puede reportar tu ubicación. La búsqueda necesita GPS: prueba con Safari o Chrome por HTTPS."
   },
   "payout": {
-    "released": "Recogido. El pago se liberó automáticamente y se confirmará en la cadena en unos momentos.",
-    "held": "Recogido. El pago quedó retenido para revisión ({reason}): nunca se envía MON sin que se cumpla un límite.",
+    "released": "¡Reclamaste {amount} MON! 🎉 Se confirma en la cadena en un momento.",
+    "held": "Reclamaste {amount} MON — retenido para revisión ({reason}). Nunca se envía MON sin que se cumpla un límite.",
     "failed": "Falló la solicitud de recogida.",
     "signerMissing": "Recoger MON requiere una firma, y el firmante de passkey no está conectado en esta versión.",
-    "title": "Pago"
+    "title": "Pago",
+    "claimed": "Reclamado"
   },
   "cota": {
     "agreement": "Lo que estás firmando",
