@@ -68,6 +68,51 @@ export function parseWalletSnapshot(frame: unknown): AccountSnapshot[] {
   });
 }
 
+export interface OpenPositionFrame {
+  /** Position id. */
+  pid: number;
+  /** Market id. */
+  marketId: number;
+  /** Side: 1 long, 2 short (SD_LONG / SD_SHORT). */
+  side: number;
+  /** Size in the market's scaled integer units (descale by size_decimals). */
+  sizeScaled: number;
+  /** Leverage ×100, as the venue sends it. */
+  leverageX100: number;
+}
+
+/**
+ * Parse a positions frame (mt 26 snapshot / mt 27 update): `{d:[{pid,mkt,sd,st,
+ * lv,s}]}`. Returns ONLY status-open positions (`st === PS_OPEN`); a closed,
+ * liquidated or deleveraged position is dropped, because open notional is a sum
+ * over what is still open. Ported from src/venue_client.py's positions handler.
+ *
+ * The known keys are `pid, mkt, sd, st, lv, s` — deliberately no entry price or
+ * PnL, because Perpl's frames carry none (src/account_status.py). That absence
+ * is why this yields OPEN NOTIONAL, not loss: notional needs only size × mark,
+ * which is present; loss would need an entry the venue does not send here.
+ */
+export function parsePositions(frame: unknown): OpenPositionFrame[] {
+  const f = frame as { mt?: number; d?: unknown[] };
+  if ((f?.mt !== 26 && f?.mt !== 27) || !Array.isArray(f.d)) return [];
+  const out: OpenPositionFrame[] = [];
+  for (const raw of f.d) {
+    const pos = raw as Record<string, unknown>;
+    if (Number(pos.st) !== 1) continue; // PS_OPEN only
+    const pid = pos.pid;
+    const mkt = pos.mkt;
+    if (typeof pid !== "number" || typeof mkt !== "number") continue;
+    out.push({
+      pid,
+      marketId: mkt,
+      side: Number(pos.sd ?? 0),
+      sizeScaled: Number(pos.s ?? 0),
+      leverageX100: Number(pos.lv ?? 0),
+    });
+  }
+  return out;
+}
+
 export interface OrderStatus {
   /** Echoes the order's `sn`, so a client matches a status to its request. */
   clientSeq: number;

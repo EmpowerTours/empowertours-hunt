@@ -42,6 +42,7 @@ import type {
 } from "@/components/hunt/types";
 import { RadarScope, type SpawnMark } from "@/components/radar/RadarScope";
 import { Note } from "@/components/ui/primitives";
+import { formatMon, weiOrZero } from "@/components/hunt/format";
 
 /* ---------------------------------------------------------------------------
    The hunt screen.
@@ -114,7 +115,10 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   const tNav = useTranslations("nav");
   const tRefusal = useTranslations("refusal");
   const [collectingId, setCollectingId] = useState<string | null>(null);
-  const [collectNote, setCollectNote] = useState<string | null>(null);
+  const [collectNote, setCollectNote] = useState<{
+    text: string;
+    tone: "success" | "warn";
+  } | null>(null);
   const [scanTick, setScanTick] = useState(0);
 
   // Whether the hunt even has spawns is only knowable from hunt metadata that
@@ -314,10 +318,17 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         if (result.collected) {
           setSpawns((list) => list.filter((s) => s.id !== spawnId));
           setSelectedSpawnId(null);
+          const amount = formatMon(weiOrZero(result.amountMonWei));
           setCollectNote(
             result.payout.holdReason === null
-              ? tPayout("released")
-              : tPayout("held", { reason: result.payout.holdReason }),
+              ? { text: tPayout("released", { amount }), tone: "success" }
+              : {
+                  text: tPayout("held", {
+                    amount,
+                    reason: result.payout.holdReason,
+                  }),
+                  tone: "warn",
+                },
           );
         } else {
           setSpawnError(spawnReason(result.reason));
@@ -337,6 +348,18 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     },
     [fix, huntId, signer],
   );
+
+  // The claim toast is a notification, not a permanent panel: show it, let the
+  // player read the amount, then clear it. Held payouts linger a little longer
+  // because they carry a reason worth reading.
+  useEffect(() => {
+    if (collectNote === null) return;
+    const id = window.setTimeout(
+      () => setCollectNote(null),
+      collectNote.tone === "success" ? 6_000 : 9_000,
+    );
+    return () => window.clearTimeout(id);
+  }, [collectNote]);
 
   // A refusal is transient. Leaving it on screen makes the player think it
   // still applies after they have walked somewhere else.
@@ -453,7 +476,37 @@ export function HuntScreen({ huntId }: { huntId: string }) {
 
       <LanguageSwitch className="flex justify-end" />
 
-      {collectNote ? <Note title={tPayout("title")}>{collectNote}</Note> : null}
+      {/* A claim confirmation must POP UP where the player is looking — pinned to
+          the top of the viewport, not buried at the bottom of the scroll where
+          the collect result used to render. Auto-dismisses; see the effect. */}
+      {collectNote ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 top-4 z-50 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2"
+        >
+          <div
+            className={`rounded-2xl border-l-4 p-4 shadow-2xl backdrop-blur ${
+              collectNote.tone === "success"
+                ? "border-spawn bg-hull-2/95"
+                : "border-band-hot bg-hull-2/95"
+            }`}
+          >
+            <div
+              className={`font-mono text-xs tracking-[0.16em] uppercase ${
+                collectNote.tone === "success" ? "text-spawn" : "text-band-hot"
+              }`}
+            >
+              {collectNote.tone === "success"
+                ? tPayout("claimed")
+                : tPayout("title")}
+            </div>
+            <div className="text-ink mt-1 text-base leading-snug font-semibold">
+              {collectNote.text}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Credit, not payment. Somebody walked this ground and judged it safe
           to send strangers down, which is local knowledge no import produces.

@@ -191,6 +191,7 @@ model Player {
   surveyedZones Zone[]
   dimeClaim     DimeClaim?
   perpKey       PerpKey?
+  cotaFills     CotaFill[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -221,6 +222,41 @@ model PerpKey {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// One venue fill the Cota agent placed for a player, normalised to the units the
+// PnL fold reads (lib/cota/venue/pnl.ts). Perpl sends no PnL or entry price, so
+// this ledger IS the entry-price record: fold these fills and you recover the
+// open position's VWAP entry and the day's realised loss — the daily-loss stop's
+// only data source. Direction is derived from the order TYPE the agent sent
+// (T_OPEN_LONG/T_CLOSE_SHORT = buy +1; T_OPEN_SHORT/T_CLOSE_LONG = sell -1),
+// because the fill frame itself carries no side.
+model CotaFill {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  // The Perpl account/wallet this fill is for. A player who re-enrols on a
+  // different account must not have the two ledgers folded together.
+  account String
+
+  marketId  Int
+  // +1 buy, -1 sell. Signed so the fold can net a position toward zero.
+  direction Int
+  // Absolute size in market units, and fill price in USD — both descaled off the
+  // wire's scaled integers at record time so the fold reads plain numbers.
+  sizeUnits Float
+  priceUsd  Float
+  // Total (protocol+builder) fee in USD. Always a cost against the day.
+  feeUsd    Float
+  // The order rq the fill came under, to count DISTINCT orders per day.
+  orderId   Int
+  filledAt  DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([playerId, account, filledAt])
 }
 
 model Hunt {
