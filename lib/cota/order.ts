@@ -23,12 +23,20 @@ export const MT_STATUS = 3;
 export const MT_WALLET_SNAPSHOT = 19;
 export const MT_ORDER_UPDATE = 24;
 export const MT_FILLS_UPDATE = 25;
+export const MT_POSITIONS_SNAPSHOT = 26;
+export const MT_POSITIONS_UPDATE = 27;
 
 // Order types (src/venue.py).
 export const T_OPEN_LONG = 1;
 export const T_OPEN_SHORT = 2;
 export const T_CLOSE_LONG = 3;
 export const T_CLOSE_SHORT = 4;
+
+// Position side + status (src/venue.py). A position frame reports `sd` (side)
+// and `st` (status); only PS_OPEN counts toward open notional.
+export const SD_LONG = 1;
+export const SD_SHORT = 2;
+export const PS_OPEN = 1;
 
 export const CODE_ACCEPTED = 0;
 export const SIGNIN_CONTEXT = "trading-ws-signin";
