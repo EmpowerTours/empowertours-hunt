@@ -349,6 +349,18 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     [fix, huntId, signer],
   );
 
+  // The claim toast is a notification, not a permanent panel: show it, let the
+  // player read the amount, then clear it. Held payouts linger a little longer
+  // because they carry a reason worth reading.
+  useEffect(() => {
+    if (collectNote === null) return;
+    const id = window.setTimeout(
+      () => setCollectNote(null),
+      collectNote.tone === "success" ? 6_000 : 9_000,
+    );
+    return () => window.clearTimeout(id);
+  }, [collectNote]);
+
   // A refusal is transient. Leaving it on screen makes the player think it
   // still applies after they have walked somewhere else.
   useEffect(() => {
@@ -464,17 +476,36 @@ export function HuntScreen({ huntId }: { huntId: string }) {
 
       <LanguageSwitch className="flex justify-end" />
 
+      {/* A claim confirmation must POP UP where the player is looking — pinned to
+          the top of the viewport, not buried at the bottom of the scroll where
+          the collect result used to render. Auto-dismisses; see the effect. */}
       {collectNote ? (
-        <Note
-          tone={collectNote.tone}
-          title={
-            collectNote.tone === "success"
-              ? tPayout("claimed")
-              : tPayout("title")
-          }
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 top-4 z-50 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2"
         >
-          {collectNote.text}
-        </Note>
+          <div
+            className={`rounded-2xl border-l-4 p-4 shadow-2xl backdrop-blur ${
+              collectNote.tone === "success"
+                ? "border-spawn bg-hull-2/95"
+                : "border-band-hot bg-hull-2/95"
+            }`}
+          >
+            <div
+              className={`font-mono text-xs tracking-[0.16em] uppercase ${
+                collectNote.tone === "success" ? "text-spawn" : "text-band-hot"
+              }`}
+            >
+              {collectNote.tone === "success"
+                ? tPayout("claimed")
+                : tPayout("title")}
+            </div>
+            <div className="text-ink mt-1 text-base leading-snug font-semibold">
+              {collectNote.text}
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {/* Credit, not payment. Somebody walked this ground and judged it safe
