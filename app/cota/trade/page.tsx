@@ -5,13 +5,9 @@ import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
-import {
-  explainDenial,
-  mayOpen,
-  type DayState,
-  type EnforcedBound,
-  type ProposedOrder,
-} from "@/lib/cota/enforce";
+import { boundFromRow } from "@/lib/cota/bound";
+import { refusalText } from "@/lib/cota/denial-text";
+import { mayOpen, type DayState, type ProposedOrder } from "@/lib/cota/enforce";
 import { leverageX100, usdE6 } from "@/lib/cota/scale";
 
 // ---------------------------------------------------------------------------
@@ -111,20 +107,6 @@ const T = {
     back: "Cota",
   },
 } as const;
-
-function boundFromRow(c: CotaRow): EnforcedBound {
-  return {
-    venue: c.venue,
-    markets: c.markets,
-    maxNotionalUsdE6: BigInt(c.maxNotionalUsdE6),
-    maxLeverageX100: BigInt(c.maxLeverageX100),
-    maxDailyLossUsdE6: BigInt(c.maxDailyLossUsdE6),
-    maxTradesPerDay: c.maxTradesPerDay,
-    notBefore: BigInt(Math.floor(new Date(c.notBefore).getTime() / 1000)),
-    notAfter: BigInt(Math.floor(new Date(c.notAfter).getTime() / 1000)),
-    revokedAt: c.revokedAt ? new Date(c.revokedAt) : null,
-  };
-}
 
 // Preview only: a clean day. The real day-state (open notional, loss, trades)
 // is the agent's to read at execution, and enforce.ts judges it there.
@@ -273,6 +255,7 @@ export default function TradePage() {
         allowed?: boolean;
         filled?: boolean;
         accepted?: boolean;
+        reason?: string;
         detail?: string;
         error?: string;
       };
@@ -280,7 +263,11 @@ export default function TradePage() {
         setPlaceMsg(body.error ?? t.placeFailed);
         setPlacePhase("error");
       } else if (body.allowed === false) {
-        setPlaceMsg(body.detail ?? t.placeRejected);
+        setPlaceMsg(
+          (body.reason ? refusalText(body.reason, lang) : null) ??
+            body.detail ??
+            t.placeRejected,
+        );
         setPlacePhase("error");
       } else if (body.filled) {
         setPlaceMsg(t.placed);
@@ -466,7 +453,7 @@ export default function TradePage() {
             ) : decision.ok ? (
               <Pill color="#4ade80">{t.allowed}</Pill>
             ) : (
-              <Note tone="stop">{explainDenial(decision.reason)}</Note>
+              <Note tone="stop">{refusalText(decision.reason, lang)}</Note>
             )}
             <p className="text-ink-faint text-[11px]">{t.freshNote}</p>
           </Panel>

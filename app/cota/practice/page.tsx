@@ -18,7 +18,8 @@ import {
   type Side,
 } from "@/lib/cota/sim/engine";
 import type { EnforcedBound } from "@/lib/cota/enforce";
-import { explainDenial } from "@/lib/cota/enforce";
+import { boundFromRow } from "@/lib/cota/bound";
+import { refusalText } from "@/lib/cota/denial-text";
 import { leverageX100, usdE6 } from "@/lib/cota/scale";
 
 // ---------------------------------------------------------------------------
@@ -232,26 +233,16 @@ export default function PracticePage() {
     saveAccount(account);
   }, [account]);
 
-  const bound = useMemo<EnforcedBound | null>(() => {
-    if (!cota) return null;
-    return {
-      venue: cota.venue,
-      markets: cota.markets,
-      maxNotionalUsdE6: BigInt(cota.maxNotionalUsdE6),
-      maxLeverageX100: BigInt(cota.maxLeverageX100),
-      maxDailyLossUsdE6: BigInt(cota.maxDailyLossUsdE6),
-      maxTradesPerDay: cota.maxTradesPerDay,
-      notBefore: BigInt(Math.floor(new Date(cota.notBefore).getTime() / 1000)),
-      notAfter: BigInt(Math.floor(new Date(cota.notAfter).getTime() / 1000)),
-      revokedAt: cota.revokedAt === null ? null : new Date(cota.revokedAt),
-    };
-  }, [cota]);
+  const bound = useMemo<EnforcedBound | null>(
+    () => (cota ? boundFromRow(cota) : null),
+    [cota],
+  );
 
   const halted = useMemo(() => {
     if (!bound) return null;
     const d = checkHalted(account, bound, marks, new Date());
-    return d.ok ? null : explainDenial(d.reason);
-  }, [bound, account, marks]);
+    return d.ok ? null : refusalText(d.reason, lang);
+  }, [bound, account, marks, lang]);
 
   const onOpen = useCallback(() => {
     if (!bound || market === null) return;
@@ -270,14 +261,14 @@ export default function PracticePage() {
         new Date(),
       );
       if (!r.ok) {
-        setError(r.decision.ok ? null : explainDenial(r.decision.reason));
+        setError(r.decision.ok ? null : refusalText(r.decision.reason, lang));
         return;
       }
       setAccount(r.account);
     } catch (e) {
       setError(e instanceof Error ? e.message : "invalid");
     }
-  }, [bound, market, side, size, lev, account, marks]);
+  }, [bound, market, side, size, lev, account, marks, lang]);
 
   const onClose = useCallback(
     (p: PaperPosition) => {
