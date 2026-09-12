@@ -6,26 +6,26 @@ import { loadPerpKey } from "@/lib/cota/keystore";
 import { MON_MARKET, planOpen, type Market } from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
 import { readMark } from "@/lib/cota/venue/market-data";
-import {
-  explainDenial,
-  type DayState,
-  type EnforcedBound,
-} from "@/lib/cota/enforce";
+import { readAccountPositions } from "@/lib/cota/venue/account-read";
+import { buildAggregateState } from "@/lib/cota/venue/aggregate";
+import { toDayState, type MarkedMarket } from "@/lib/cota/venue/account-state";
+import { loadFills, recordFill, fillToLedgerFill } from "@/lib/cota/ledger";
+import { explainDenial, type EnforcedBound } from "@/lib/cota/enforce";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/trade — place one bounded order for the signed-in hunter.
 //
 // Flow: load the active Cota → load the server-held trading key → read the mark
-// → plan+GATE the order (enforce.ts) → and ONLY if the leash allows it, place
-// it on the venue. The gate runs before the transport; there is no path that
-// reaches placeOrder without passing mayOpen.
+// → READ THE LIVE DAY-STATE (open notional from the venue snapshot, loss from
+// the fills ledger) → plan+GATE the order (enforce.ts) → and ONLY if the leash
+// allows it, place it on the venue, then record the fill. The gate runs before
+// the transport; there is no path that reaches placeOrder without passing mayOpen.
 //
-// SCOPE NOTE (follow-up): the gate uses a clean day-state, so it enforces the
-// PER-ORDER caps — authorised market, per-order notional, leverage, validity
-// window, revocation. It does NOT yet enforce the AGGREGATE open-notional or
-// daily-loss ceilings, which need a live positions/PnL read (the piece Mandate
-// does in cota.py before it calls /api/cota/check). Wire that read in before
-// relying on this for size/loss limits across multiple concurrent positions.
+// The aggregate bounds (open-notional ceiling, daily-loss stop) ARE enforced:
+// buildAggregateState reads real positions + the fill ledger, and if loss can't
+// be vouched for (the venue holds size we have no fills for) toDayState returns
+// null and this route REFUSES — it never trades on a loss it can't verify, and
+// never substitutes a zeroed day-state. See lib/cota/venue/aggregate.ts.
 // ---------------------------------------------------------------------------
 
 const BUILDER_FEE_BPS = 2; // matches the proven builder-9 fill
@@ -44,12 +44,6 @@ const Input = z.object({
   targetNotionalUsd: z.number().positive().finite(),
   leverageX: z.number().positive().finite(),
 });
-
-const FRESH_DAY: DayState = {
-  tradesToday: 0,
-  lossTodayUsdE6: 0n,
-  openNotionalUsdE6: 0n,
-};
 
 interface CotaRow {
   venue: string;
@@ -124,9 +118,52 @@ export async function POST(req: Request) {
 
     const markUsd = await readMark(market.id, market.priceDecimals);
 
+    // Read the LIVE day-state: open notional from the venue's own position
+    // snapshot, loss from our fill ledger. If this read fails, we cannot verify
+    // the aggregate bounds, so we refuse rather than trade blind.
+    let dayState;
+    try {
+      const venuePositions = await readAccountPositions({
+        apiKey: cred.apiKey,
+        secretHex: cred.secretHex,
+      });
+      const marks = new Map<number, MarkedMarket>([
+        [market.id, { market, markUsd }],
+      ]);
+      const fills = await loadFills(player.id, cred.account);
+      const agg = buildAggregateState({
+        fills,
+        venuePositions,
+        marks,
+        nowMs: Date.now(),
+      });
+      dayState = toDayState(agg);
+    } catch (e) {
+      console.error("[cota/trade] day-state read failed", e);
+      return NextResponse.json({
+        allowed: false,
+        reason: "state_unavailable",
+        detail:
+          "could not read the account's live positions to verify the open-notional and daily-loss limits; refusing",
+        markUsd,
+      });
+    }
+
+    // Null means loss could not be vouched for (the venue holds size we have no
+    // fills for). Fail closed — never trade on a loss we can't verify.
+    if (dayState === null) {
+      return NextResponse.json({
+        allowed: false,
+        reason: "loss_unverifiable",
+        detail:
+          "the account holds positions this agent has no fill history for, so the daily-loss limit cannot be verified; refusing until reconciled",
+        markUsd,
+      });
+    }
+
     const plan = planOpen({
       bound: boundFromRow(cota),
-      state: FRESH_DAY,
+      state: dayState,
       market,
       side,
       targetNotionalUsd,
@@ -162,6 +199,21 @@ export async function POST(req: Request) {
       leverageX,
       feeBps: BUILDER_FEE_BPS,
     });
+
+    // Record the fill so the NEXT trade's loss read reconciles. A failure here
+    // is self-protecting: a missing row means the next reconcile mismatches and
+    // the route fails closed, rather than under-reporting loss.
+    if (result.filled && result.fill) {
+      try {
+        await recordFill(
+          player.id,
+          cred.account,
+          fillToLedgerFill(result.fill, market, plan.orderType, Date.now()),
+        );
+      } catch (e) {
+        console.error("[cota/trade] fill record failed", e);
+      }
+    }
 
     return NextResponse.json({
       allowed: true,
