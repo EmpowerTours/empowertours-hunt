@@ -10,7 +10,8 @@ import { readAccountPositions } from "@/lib/cota/venue/account-read";
 import { buildAggregateState } from "@/lib/cota/venue/aggregate";
 import { toDayState, type MarkedMarket } from "@/lib/cota/venue/account-state";
 import { loadFills, recordFill, fillToLedgerFill } from "@/lib/cota/ledger";
-import { explainDenial, type EnforcedBound } from "@/lib/cota/enforce";
+import { boundFromRow } from "@/lib/cota/bound";
+import { explainDenial } from "@/lib/cota/enforce";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/trade — place one bounded order for the signed-in hunter.
@@ -44,32 +45,6 @@ const Input = z.object({
   targetNotionalUsd: z.number().positive().finite(),
   leverageX: z.number().positive().finite(),
 });
-
-interface CotaRow {
-  venue: string;
-  markets: string[];
-  maxNotionalUsdE6: { toString(): string };
-  maxLeverageX100: { toString(): string };
-  maxDailyLossUsdE6: { toString(): string };
-  maxTradesPerDay: number;
-  notBefore: Date;
-  notAfter: Date;
-  revokedAt: Date | null;
-}
-
-function boundFromRow(c: CotaRow): EnforcedBound {
-  return {
-    venue: c.venue,
-    markets: c.markets,
-    maxNotionalUsdE6: BigInt(c.maxNotionalUsdE6.toString()),
-    maxLeverageX100: BigInt(c.maxLeverageX100.toString()),
-    maxDailyLossUsdE6: BigInt(c.maxDailyLossUsdE6.toString()),
-    maxTradesPerDay: c.maxTradesPerDay,
-    notBefore: BigInt(Math.floor(c.notBefore.getTime() / 1000)),
-    notAfter: BigInt(Math.floor(c.notAfter.getTime() / 1000)),
-    revokedAt: c.revokedAt,
-  };
-}
 
 export async function POST(req: Request) {
   try {
