@@ -168,12 +168,25 @@ predate 1 September and are the foundation the submission builds on:
 
 `git log --until=2026-08-31` lists them exactly.
 
-### Built during the window (33 commits since 1 September)
+### Built during the window (90 commits since 1 September)
 
-- **Cota** — an EIP-712 bound a user signs before software may trade for them,
-  with one enforcement path shared by paper and live execution
-  (`lib/cota/enforce.ts`), a bilingual read-back, and an HTTP seam a Python
-  trading agent calls before every order (`app/api/cota/check`).
+- **Cota** — an EIP-712 bound a hunter signs before software may trade for
+  them. One enforcement path (`lib/cota/enforce.ts`) governs paper and live
+  execution alike, with a bilingual read-back before signing, an HTTP seam a
+  Python trading agent calls before every order (`app/api/cota/check`), and the
+  signed bound anchored on Monad.
+- **The executor** — the half that makes the bound more than a promise:
+  server-held venue keys under AES-256-GCM (`lib/cota/keystore.ts`), the Perpl
+  wire protocol held to captured golden frames (`lib/cota/venue/frames.ts` and
+  its conformance suite), and a single order path
+  (`app/api/cota/trade`) in which the gate runs _before_ the transport — there
+  is no code path that reaches the venue without passing `mayOpen`.
+- **A daily-loss stop that refuses to guess.** Perpl's position frames carry no
+  entry price and no PnL, so unrealised loss cannot simply be read. The ledger
+  reconstructs it from our own fills by VWAP (`lib/cota/venue/pnl.ts`), and when
+  the venue holds size the ledger cannot account for, the reader returns _null_
+  rather than zero and the trade route **refuses**. A limit that silently
+  disables itself is worse than no limit.
 - **Check-in** — a verified position without a planted cache, which is what
   makes the game playable anywhere rather than only where somebody has hidden
   something.
@@ -237,5 +250,5 @@ their own licences. Walkable-area data is imported from **OpenStreetMap**
 
 ```bash
 npm install
-./.claude/verify.sh   # typecheck, lint, 627 tests, production build, secret scan
+./.claude/verify.sh   # typecheck, lint, 747 tests, production build, secret scan
 ```
