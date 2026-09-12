@@ -24,6 +24,8 @@
 // case here IS a boundary.
 // ---------------------------------------------------------------------------
 
+import { denialTextEn } from "./denial-text";
+
 /**
  * Why an order was refused, or why an open position must be closed.
  *
@@ -243,26 +245,11 @@ export function utcDayKey(at: Date): string {
   return at.toISOString().slice(0, 10);
 }
 
-/** Human-readable reason, for the screen a player is actually looking at. */
+/**
+ * Human-readable reason, for the screen a player is actually looking at.
+ * English only — the bilingual table lives in ./denial-text, which the browser
+ * reads directly. Keeping one table means the two can never drift apart.
+ */
 export function explainDenial(reason: DenyReason): string {
-  switch (reason) {
-    case "revoked":
-      return "You revoked this Cota. Sign a new one to trade again.";
-    case "not_yet_valid":
-      return "This Cota hasn't started yet.";
-    case "expired":
-      return "This Cota has expired. Sign a new one to keep going.";
-    case "wrong_venue":
-      return "This Cota doesn't authorise that venue.";
-    case "market_not_authorised":
-      return "This Cota doesn't name that market.";
-    case "notional_exceeded":
-      return "That order would push your total position past the size you set.";
-    case "leverage_exceeded":
-      return "That order asks for more leverage than you allowed.";
-    case "trade_count_exceeded":
-      return "You've used every trade this Cota allows today.";
-    case "daily_loss_reached":
-      return "Today's loss limit is reached. Trading stops until tomorrow.";
-  }
+  return denialTextEn(reason);
 }
