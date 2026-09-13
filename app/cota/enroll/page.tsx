@@ -362,6 +362,13 @@ export default function CotaEnrollPage() {
                 <dd>{t.scopeVal}</dd>
               </div>
             </dl>
+            {/* A hunter arriving here with a working key wants to USE it. The
+                only action used to be "create a new one" — the destructive one,
+                offered as the sole way forward. Trading is primary; re-enrolling
+                stays available but stops being the default. */}
+            <a href="/cota/trade">
+              <Button className="w-full">{t.goTrade}</Button>
+            </a>
             <Button tone="ghost" onClick={reenrol}>
               {t.reenrol}
             </Button>
