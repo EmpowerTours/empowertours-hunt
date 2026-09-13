@@ -265,6 +265,7 @@ export default function TradePage() {
         reason?: string;
         detail?: string;
         error?: string;
+        code?: number;
       };
       if (!res.ok) {
         setPlaceMsg(body.error ?? t.placeFailed);
@@ -283,7 +284,17 @@ export default function TradePage() {
         setPlaceMsg(t.placeAccepted);
         setPlacePhase("done");
       } else {
-        setPlaceMsg(t.placeFailed);
+        // The leash allowed it and the VENUE refused. `error` carries the real
+        // reason — OrderForwardingNotAllowed is the one to expect on a fresh
+        // account, and the gateway returns code 0 while the chain rejects, so
+        // without this it reads as an ordinary non-fill. Never swallow it.
+        setPlaceMsg(
+          body.error
+            ? `${t.placeFailed}: ${body.error}`
+            : body.code != null
+              ? `${t.placeFailed} (code ${body.code})`
+              : t.placeFailed,
+        );
         setPlacePhase("error");
       }
     } catch {
