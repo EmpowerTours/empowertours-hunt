@@ -76,9 +76,10 @@ const T = {
     haveKey: "Ya tienes una clave activa",
     account: "Cuenta",
     reenrol: "Crear una nueva",
+    goTrade: "Operar con tu correa →",
     retry: "Intentar de nuevo",
     deviceNote:
-      "La clave vive sólo en este navegador. Si lo borras, autorízala de nuevo.",
+      "Si borras este navegador, vuelve a autorizar para operar desde aquí. Tu copia cifrada en el servidor sigue ahí hasta que venza.",
     notConfigured: "La autorización no está habilitada en este momento.",
   },
   en: {
@@ -103,9 +104,10 @@ const T = {
     haveKey: "You already have an active key",
     account: "Account",
     reenrol: "Create a new one",
+    goTrade: "Trade within your leash →",
     retry: "Try again",
     deviceNote:
-      "The key lives only in this browser. Clear it and you'll authorize again.",
+      "Clear this browser and you'll authorize again to trade from here. Your encrypted copy on the server stays until it expires.",
     notConfigured: "Authorization isn't enabled right now.",
   },
 } as const;
@@ -410,6 +412,12 @@ export default function CotaEnrollPage() {
         <div className="flex flex-col gap-3">
           <div className="text-xl font-bold text-[#4ade80]">{t.doneTitle}</div>
           <p className="text-ink-dim text-sm">{t.doneBody}</p>
+          {/* swap -> deposit -> enroll each hand off to the next step; this was
+              the one that did not, so a hunter who finished the whole setup
+              landed on a screen with nowhere to go. */}
+          <a href="/cota/trade" className="mt-1">
+            <Button className="w-full">{t.goTrade}</Button>
+          </a>
         </div>
       ) : phase === "error" ? (
         <div className="flex flex-col gap-4">
