@@ -72,7 +72,7 @@ const T = {
     cancel: "Cancelar",
     doneTitle: "Clave autorizada ✓",
     doneBody:
-      "Tu clave está guardada en este teléfono. Puede operar dentro de tu Cota pero nunca puede retirar tu dinero — sólo tú puedes, desde tu wallet. Vence en 90 días.",
+      "Tu clave queda en este teléfono y también cifrada en nuestro servidor — así el agente puede operar por ti aunque cierres la app. Puede operar dentro de tu Cota y nunca puede retirar tu dinero: sólo tú puedes, desde tu wallet, y eso lo impone Perpl, no nosotros. Vence en 90 días.",
     haveKey: "Ya tienes una clave activa",
     account: "Cuenta",
     reenrol: "Crear una nueva",
@@ -99,7 +99,7 @@ const T = {
     cancel: "Cancel",
     doneTitle: "Key authorized ✓",
     doneBody:
-      "Your key is saved on this phone. It can trade within your Cota but can never withdraw your money — only you can, from your wallet. It expires in 90 days.",
+      "Your key is kept on this phone and also encrypted on our server — that is what lets the agent trade for you when the app is closed. It can trade within your Cota and can never withdraw your money: only you can, from your wallet, and Perpl enforces that, not us. It expires in 90 days.",
     haveKey: "You already have an active key",
     account: "Account",
     reenrol: "Create a new one",
