@@ -152,14 +152,33 @@ describe("proposeOrder — Kimi proposes, mayOpen decides", () => {
     });
     await proposeOrder(
       { bound, state: freshDay, markets, nowSeconds: NOW },
-      { fetch, apiKey: "sk-secret", model: "kimi-k3" },
+      { fetch, apiKey: "sk-secret", model: "some-override-model" },
     );
     expect(calls[0].headers.authorization).toBe("Bearer sk-secret");
-    expect((calls[0].body as { model: string }).model).toBe("kimi-k3");
+    expect((calls[0].body as { model: string }).model).toBe(
+      "some-override-model",
+    );
     expect(
       (calls[0].body as { response_format: { type: string } }).response_format
         .type,
     ).toBe("json_object");
+  });
+
+  // The default shipped as "kimi-k3" for days: a model this account cannot call,
+  // hidden behind a billing suspension that failed every request before the
+  // model string was ever evaluated. Nothing pinned the default, so nothing
+  // caught it. GET /v1/models on the live key is the authority; on 2026-09-13 it
+  // listed exactly these two. Changing the default to anything else should have
+  // to be argued for here first.
+  it("defaults to a model this account can actually call", async () => {
+    const { fetch, calls } = kimiReturning({ action: "hold", rationale: "x" });
+    await proposeOrder(
+      { bound, state: freshDay, markets, nowSeconds: NOW },
+      { fetch, apiKey: "sk-test" }, // no model override, no MOONSHOT_MODEL
+    );
+    expect(["kimi-k2.6", "kimi-k2.7-code"]).toContain(
+      (calls[0].body as { model: string }).model,
+    );
   });
 
   it("throws ProposerError when the key is missing", async () => {

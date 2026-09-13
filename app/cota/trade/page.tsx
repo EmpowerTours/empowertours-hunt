@@ -206,9 +206,16 @@ export default function TradePage() {
           rationale?: string;
         };
         error?: string;
+        detail?: string;
       };
       if (!res.ok || !body.proposal) {
-        setKimiNote(body.error ? body.error : t.proposerDown);
+        // `detail` carries the upstream reason — an expired key, a model the
+        // account cannot call, a billing suspension. Dropping it once cost a
+        // night of debugging against a screen that only said "unavailable".
+        setKimiNote(
+          [body.error, body.detail].filter(Boolean).join(" — ") ||
+            t.proposerDown,
+        );
         return;
       }
       const pr = body.proposal;

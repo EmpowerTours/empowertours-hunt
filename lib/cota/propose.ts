@@ -25,7 +25,17 @@ import { fromLeverageX100, fromUsdE6, leverageX100, usdE6 } from "./scale";
 const MOONSHOT_BASE = "https://api.moonshot.ai/v1";
 // Tracks the current Kimi quickstart (platform.kimi.ai). Override with
 // MOONSHOT_MODEL if a given key exposes a different model string.
-const DEFAULT_MODEL = "kimi-k3";
+//
+// Read off GET /v1/models on the live key (2026-09-13), which is the authority
+// on what an account may call — the docs are not. That key lists exactly
+// `kimi-k2.7-code` and `kimi-k2.6`. An earlier default of `kimi-k3` was not on
+// the list and could never have worked, which sat hidden behind a billing
+// suspension that failed every request first.
+//
+// k2.6 over k2.7-code: this asks for a trading judgement in JSON, not code.
+// UNVERIFIED end to end — the account was suspended for insufficient balance
+// when this was chosen, so no completion has actually returned through it.
+const DEFAULT_MODEL = "kimi-k2.6";
 
 /** One market's state, the context Kimi reasons over. */
 export interface MarketSnapshot {
