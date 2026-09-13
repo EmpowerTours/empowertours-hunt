@@ -150,7 +150,14 @@ export async function proposeOrder(
     },
     body: JSON.stringify({
       model,
-      temperature: 0.3,
+      // Must be exactly 1: both k2.6 and k2.7-code reject anything else with
+      // "invalid temperature: only 1 is allowed for this model". 0.3 was chosen
+      // for determinism and is simply not available here. Sampling is wider
+      // than we would like for a trading suggestion, which costs nothing in
+      // safety — mayOpen judges whatever comes back, and a wilder proposal is
+      // refused rather than executed — but it does mean two Suggest presses can
+      // differ. Verified against the live API 2026-09-13.
+      temperature: 1,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt(input.bound, input.state) },

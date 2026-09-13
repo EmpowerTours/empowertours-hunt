@@ -181,6 +181,18 @@ describe("proposeOrder — Kimi proposes, mayOpen decides", () => {
     );
   });
 
+  // Both Moonshot models reject any temperature but 1 outright. The request had
+  // shipped 0.3, which 400s — a defect that sat invisible behind a billing
+  // suspension and a nonexistent model default. Verified against the live API.
+  it("sends the only temperature these models accept", async () => {
+    const { fetch, calls } = kimiReturning({ action: "hold", rationale: "x" });
+    await proposeOrder(
+      { bound, state: freshDay, markets, nowSeconds: NOW },
+      { fetch, apiKey: "sk-test" },
+    );
+    expect((calls[0].body as { temperature: number }).temperature).toBe(1);
+  });
+
   it("throws ProposerError when the key is missing", async () => {
     const { fetch } = kimiReturning({ action: "hold", rationale: "x" });
     await expect(
