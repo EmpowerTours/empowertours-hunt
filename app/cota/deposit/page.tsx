@@ -15,12 +15,24 @@ import {
   MIN_DEPOSIT_6DP,
   parseAusd,
 } from "@/lib/cota/deposit";
+import {
+  explainForwardingError,
+  setOrderForwarding,
+} from "@/lib/cota/forwarding";
 
 // ---------------------------------------------------------------------------
 // Deposit AUSD into a Perpl account. The step between the swap and enrolling a
 // trading key: without an on-chain account, enrollment returns "profile not
 // found" and no trade is possible. From the hunter's Mera wallet, one approve +
 // one create/top-up. Minimum 10 AUSD (Perpl's own account-open floor).
+//
+// Then a third signature that is not about money at all: allowOrderForwarding.
+// A Perpl account opens with order forwarding OFF, and with it off the gateway
+// accepts every order and the chain refuses it — a silent non-fill with no
+// error to read. It is what Perpl's own app calls "1-click trading", and it is
+// an on-chain call from the account holder's wallet, so Hunt can send it here
+// and no hunter has to find a setting in somebody else's web app. It is sent
+// after the deposit, because with no account there is nothing to switch on.
 // ---------------------------------------------------------------------------
 
 type Lang = "es" | "en";
@@ -46,7 +58,13 @@ const T = {
     swapFirst: "¿Sin AUSD? Cambia MON primero →",
     back: "Cota",
     max: "Máx",
-    twoTx: "Son dos firmas: aprobar el AUSD y luego el depósito.",
+    twoTx:
+      "Son tres firmas: aprobar el AUSD, el depósito, y activar el trading en Perpl.",
+    enabling: "Activando el trading en Perpl…",
+    enabled: "Trading activado en Perpl (reenvío de órdenes).",
+    enableFailed:
+      "El depósito sí entró, pero falta activar el reenvío de órdenes. Sin esto, Perpl acepta la orden y la cadena la rechaza.",
+    enableRetry: "Activar trading",
   },
   en: {
     title: "Fund your Perpl account",
@@ -67,7 +85,13 @@ const T = {
     swapFirst: "No AUSD? Swap MON first →",
     back: "Cota",
     max: "Max",
-    twoTx: "This is two signatures: approve the AUSD, then the deposit.",
+    twoTx:
+      "This is three signatures: approve the AUSD, the deposit, then switching trading on at Perpl.",
+    enabling: "Switching trading on at Perpl…",
+    enabled: "Trading is switched on at Perpl (order forwarding).",
+    enableFailed:
+      "The deposit went through, but order forwarding is still off. Until it is on, Perpl accepts an order and the chain rejects it.",
+    enableRetry: "Switch trading on",
   },
 } as const;
 
@@ -83,6 +107,11 @@ export default function DepositPage() {
   const [action, setAction] = useState<"create" | "deposit" | null>(null);
   const [amountDone, setAmountDone] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fwdPhase, setFwdPhase] = useState<
+    "idle" | "sending" | "done" | "error"
+  >("idle");
+  const [fwdTx, setFwdTx] = useState<string | null>(null);
+  const [fwdError, setFwdError] = useState<string | null>(null);
 
   const address = auth.walletAddress;
 
@@ -139,11 +168,36 @@ export default function DepositPage() {
       setAmountDone(amt);
       setPhase("done");
       void refreshBalance();
+      // The deposit has landed; the money is safe whatever happens next. A
+      // failure here must therefore never present as a failed deposit — it is
+      // reported on its own, with its own retry.
+      setFwdPhase("sending");
+      setFwdError(null);
+      try {
+        setFwdTx(await setOrderForwarding(account, true));
+        setFwdPhase("done");
+      } catch (e) {
+        setFwdError(explainForwardingError(e, lang));
+        setFwdPhase("error");
+      }
     } catch (e) {
       setError(explainDepositError(e, lang));
       setPhase("error");
     }
   }, [ausdInput, lang, t.min, refreshBalance]);
+
+  const retryForwarding = useCallback(async () => {
+    setFwdPhase("sending");
+    setFwdError(null);
+    try {
+      const { account } = await signInAccount();
+      setFwdTx(await setOrderForwarding(account, true));
+      setFwdPhase("done");
+    } catch (e) {
+      setFwdError(explainForwardingError(e, lang));
+      setFwdPhase("error");
+    }
+  }, [lang]);
 
   return (
     <main className="text-ink mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
@@ -192,6 +246,42 @@ export default function DepositPage() {
                 {action === "create" ? t.created : t.deposited}{" "}
                 {formatAusd(amountDone)} AUSD
               </Pill>
+              {fwdPhase === "sending" && (
+                <p className="text-ink-dim text-sm">{t.enabling}</p>
+              )}
+              {fwdPhase === "done" && (
+                <p className="text-ink-dim text-sm">
+                  {t.enabled}
+                  {fwdTx && (
+                    <>
+                      {" "}
+                      <a
+                        href={`https://monadscan.com/tx/${fwdTx}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-phosphor underline"
+                      >
+                        {t.viewTx} →
+                      </a>
+                    </>
+                  )}
+                </p>
+              )}
+              {fwdPhase === "error" && (
+                <Note tone="warn">
+                  {t.enableFailed}
+                  {fwdError ? ` ${fwdError}` : ""}
+                </Note>
+              )}
+              {fwdPhase === "error" && (
+                <Button
+                  onClick={() => {
+                    void retryForwarding();
+                  }}
+                >
+                  {t.enableRetry}
+                </Button>
+              )}
               <p className="text-ink-dim text-sm">{t.next}</p>
               {txHash && (
                 <a

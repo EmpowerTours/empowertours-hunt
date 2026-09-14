@@ -73,13 +73,15 @@ const TEXT: Record<RefusalReason, Record<Lang, string>> = {
     en: "That size is too small to buy one unit at the current price.",
     es: "Ese tamaño es muy pequeño para comprar una unidad al precio actual.",
   },
-  // Deliberately does NOT tell the hunter how to switch forwarding on: we do not
-  // know, and inventing a step would send them hunting through a settings screen
-  // that may not have one. What it must do is name the cause and clear the
-  // leash, because the alternative — what this replaces — is silence.
+  // This text used to say it was a setting on Perpl's side that we could not
+  // reach. It isn't: "1-click trading" in Perpl's app sends
+  // allowOrderForwarding(bool) to the exchange from the account holder's own
+  // wallet (lib/cota/forwarding.ts), which is a transaction Hunt can send
+  // itself. So the copy now points at the fix instead of apologising for it,
+  // and the trade page puts the button right underneath.
   forwarding_disabled: {
-    en: "Perpl hasn't enabled order forwarding on your account, so it can't accept orders from this app yet. Nothing was sent and nothing was spent. Your Cota is fine — this is a setting on Perpl's side.",
-    es: "Perpl no tiene habilitado el reenvío de órdenes en tu cuenta, así que todavía no puede aceptar órdenes desde esta app. No se envió nada ni se gastó nada. Tu Cota está bien — es una configuración del lado de Perpl.",
+    en: "Order forwarding is off on your Perpl account, so the venue can't execute an order from this app. Nothing was sent and nothing was spent, and your Cota is fine. Switch it on below — it's one transaction from your own wallet.",
+    es: "El reenvío de órdenes está apagado en tu cuenta de Perpl, así que la casa no puede ejecutar una orden desde esta app. No se envió nada ni se gastó nada, y tu Cota está bien. Actívalo abajo: es una transacción desde tu propia billetera.",
   },
 };
 

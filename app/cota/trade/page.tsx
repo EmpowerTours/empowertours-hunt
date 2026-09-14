@@ -5,7 +5,12 @@ import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
+import { signInAccount } from "@/lib/auth/passkey";
 import { boundFromRow } from "@/lib/cota/bound";
+import {
+  explainForwardingError,
+  setOrderForwarding,
+} from "@/lib/cota/forwarding";
 import { refusalText } from "@/lib/cota/denial-text";
 import { mayOpen, type DayState, type ProposedOrder } from "@/lib/cota/enforce";
 import { leverageX100, usdE6 } from "@/lib/cota/scale";
@@ -63,6 +68,9 @@ const T = {
     placeAccepted: "Aceptada (aún sin llenar)",
     placeRejected: "Tu correa rechazó esto",
     placeFailed: "Falló la colocación",
+    fwdFix: "Activar trading en Perpl",
+    fwdFixing: "Activando…",
+    fwdFixed: "Trading activado. Vuelve a colocar la orden.",
     suggest: "Sugerir con Kimi",
     suggesting: "Kimi pensando…",
     kimiHold: "Kimi sugiere esperar",
@@ -98,6 +106,9 @@ const T = {
     placeAccepted: "Accepted (not filled yet)",
     placeRejected: "Your leash rejected this",
     placeFailed: "Placement failed",
+    fwdFix: "Switch trading on at Perpl",
+    fwdFixing: "Switching on…",
+    fwdFixed: "Trading is on. Place the order again.",
     suggest: "Suggest with Kimi",
     suggesting: "Kimi thinking…",
     kimiHold: "Kimi suggests holding",
@@ -135,6 +146,11 @@ export default function TradePage() {
     "idle" | "placing" | "done" | "error"
   >("idle");
   const [placeMsg, setPlaceMsg] = useState<string | null>(null);
+  // The one refusal the hunter can clear themselves, so it is held apart from
+  // the message: forwarding is off on their Perpl account and switching it on
+  // is a transaction from their own wallet. See lib/cota/forwarding.ts.
+  const [forwardingOff, setForwardingOff] = useState(false);
+  const [fwdBusy, setFwdBusy] = useState(false);
 
   useEffect(() => {
     if (auth.status !== "signed-in") return;
@@ -240,12 +256,31 @@ export default function TradePage() {
     }
   }
 
+  // Switch order forwarding on for this hunter's Perpl account. Nothing about
+  // the order is retried here — the hunter places again, and sees the real
+  // result of the same order they already approved.
+  async function enableForwarding() {
+    setFwdBusy(true);
+    try {
+      const { account } = await signInAccount();
+      await setOrderForwarding(account, true);
+      setForwardingOff(false);
+      setPlaceMsg(t.fwdFixed);
+      setPlacePhase("idle");
+    } catch (e) {
+      setPlaceMsg(explainForwardingError(e, lang));
+    } finally {
+      setFwdBusy(false);
+    }
+  }
+
   // Place the (leash-approved) order. The server route re-runs the gate before
   // it touches the venue; this button is only enabled when the preview allows.
   async function place() {
     if (!market) return;
     setPlacePhase("placing");
     setPlaceMsg(null);
+    setForwardingOff(false);
     try {
       const res = await fetch("/api/cota/trade", {
         method: "POST",
@@ -276,6 +311,7 @@ export default function TradePage() {
             body.detail ??
             t.placeRejected,
         );
+        if (body.reason === "forwarding_disabled") setForwardingOff(true);
         setPlacePhase("error");
       } else if (body.filled) {
         setPlaceMsg(t.placed);
@@ -495,6 +531,11 @@ export default function TradePage() {
             >
               {placeMsg}
             </p>
+          )}
+          {forwardingOff && (
+            <Button onClick={() => void enableForwarding()} disabled={fwdBusy}>
+              {fwdBusy ? t.fwdFixing : t.fwdFix}
+            </Button>
           )}
         </>
       )}
