@@ -25,12 +25,24 @@ export function directionOfOrderType(orderType: number): 1 | -1 {
   throw new Error(`unknown order type ${orderType}`);
 }
 
-/** Normalise a venue fill + its order type into a LedgerFill. */
+/**
+ * Normalise a venue fill + its order type into a LedgerFill.
+ *
+ * `orderId` is supplied by the caller and is NOT the fill's `orderRq`. The wire
+ * `rq` is assigned per CONNECTION and placeOrder opens a fresh socket for every
+ * order, so it is 1 on every order this agent has ever sent. Using it here made
+ * countOrdersToday collapse every fill of the day into one distinct id, which
+ * silently disabled the leash's trades-per-day ceiling past the first trade —
+ * the bound was in the signed Cota and in enforce.ts, and never bound. The
+ * caller now mints one id per order it places and uses the same id on the
+ * pending-order row, so an adopted fill counts as the same single order.
+ */
 export function fillToLedgerFill(
   fill: Fill,
   market: Market,
   orderType: number,
   filledAtMs: number,
+  orderId: number,
 ): LedgerFill {
   return {
     marketId: market.id,
@@ -39,6 +51,6 @@ export function fillToLedgerFill(
     priceUsd: fill.priceScaled / 10 ** market.priceDecimals,
     feeUsd: Number(fill.feeBaseUnits) / 10 ** COLLATERAL_DECIMALS,
     timestampMs: filledAtMs,
-    orderId: fill.orderRq,
+    orderId,
   };
 }

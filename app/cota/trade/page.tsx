@@ -71,6 +71,14 @@ const T = {
     fwdFix: "Activar trading en Perpl",
     fwdFixing: "Activando…",
     fwdFixed: "Trading activado. Vuelve a colocar la orden.",
+    reconcile: "Adoptar la posición y continuar",
+    reconciling: "Adoptando…",
+    reconcileNote:
+      "Tu cuenta tiene una posición que este agente no registró — normalmente porque se llenó después de que el socket que la colocó se cerró. Adoptarla la anota al precio de entrada de Perpl y reanuda el trading. La pérdida de hoy se cuenta desde esa entrada.",
+    reconciled: "Posición adoptada. Vuelve a colocar la orden.",
+    reconcileNothing:
+      "No hubo nada que adoptar. Si el bloqueo sigue, la posición ya no existe en la casa y no hay precio honesto que registrar.",
+    reconcileFailed: "No se pudo adoptar",
     suggest: "Sugerir con Kimi",
     suggesting: "Kimi pensando…",
     kimiHold: "Kimi sugiere esperar",
@@ -109,6 +117,14 @@ const T = {
     fwdFix: "Switch trading on at Perpl",
     fwdFixing: "Switching on…",
     fwdFixed: "Trading is on. Place the order again.",
+    reconcile: "Adopt the position and continue",
+    reconciling: "Adopting…",
+    reconcileNote:
+      "Your account holds a position this agent never recorded — usually because it filled after the socket that placed it closed. Adopting it records it at Perpl's own entry price and resumes trading. Today's loss is counted from that entry.",
+    reconciled: "Position adopted. Place the order again.",
+    reconcileNothing:
+      "There was nothing to adopt. If it stays blocked, the venue no longer reports that position and there is no honest price to record.",
+    reconcileFailed: "Could not adopt",
     suggest: "Suggest with Kimi",
     suggesting: "Kimi thinking…",
     kimiHold: "Kimi suggests holding",
@@ -151,6 +167,12 @@ export default function TradePage() {
   // is a transaction from their own wallet. See lib/cota/forwarding.ts.
   const [forwardingOff, setForwardingOff] = useState(false);
   const [fwdBusy, setFwdBusy] = useState(false);
+  // The other refusal a hunter can clear: the venue holds size the fill ledger
+  // never saw. Only offered when the server says it is adoptable — a position
+  // the venue no longer prices cannot be, and pretending otherwise would send
+  // the hunter to a button that can only fail.
+  const [unreconciled, setUnreconciled] = useState(false);
+  const [reconBusy, setReconBusy] = useState(false);
 
   useEffect(() => {
     if (auth.status !== "signed-in") return;
@@ -274,6 +296,35 @@ export default function TradePage() {
     }
   }
 
+  // Adopt a position the ledger never recorded, at the venue's entry price.
+  // Deliberately a separate tap from placing: it is the hunter taking on size
+  // the agent cannot vouch for, and it must not ride along inside a retry.
+  async function reconcile() {
+    setReconBusy(true);
+    try {
+      const res = await fetch("/api/cota/reconcile", { method: "POST" });
+      const body = (await res.json()) as {
+        adopted?: { sizeUnits: number }[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setPlaceMsg(`${t.reconcileFailed}: ${body.error ?? ""}`.trim());
+        return;
+      }
+      if ((body.adopted?.length ?? 0) === 0) {
+        setPlaceMsg(t.reconcileNothing);
+        return;
+      }
+      setUnreconciled(false);
+      setPlaceMsg(t.reconciled);
+      setPlacePhase("idle");
+    } catch {
+      setPlaceMsg(t.reconcileFailed);
+    } finally {
+      setReconBusy(false);
+    }
+  }
+
   // Place the (leash-approved) order. The server route re-runs the gate before
   // it touches the venue; this button is only enabled when the preview allows.
   async function place() {
@@ -281,6 +332,7 @@ export default function TradePage() {
     setPlacePhase("placing");
     setPlaceMsg(null);
     setForwardingOff(false);
+    setUnreconciled(false);
     try {
       const res = await fetch("/api/cota/trade", {
         method: "POST",
@@ -301,6 +353,7 @@ export default function TradePage() {
         detail?: string;
         error?: string;
         code?: number;
+        reconcilable?: boolean;
       };
       if (!res.ok) {
         setPlaceMsg(body.error ?? t.placeFailed);
@@ -312,6 +365,8 @@ export default function TradePage() {
             t.placeRejected,
         );
         if (body.reason === "forwarding_disabled") setForwardingOff(true);
+        if (body.reason === "loss_unverifiable" && body.reconcilable)
+          setUnreconciled(true);
         setPlacePhase("error");
       } else if (body.filled) {
         setPlaceMsg(t.placed);
@@ -531,6 +586,14 @@ export default function TradePage() {
             >
               {placeMsg}
             </p>
+          )}
+          {unreconciled && (
+            <>
+              <p className="text-ink-dim text-[12px]">{t.reconcileNote}</p>
+              <Button onClick={() => void reconcile()} disabled={reconBusy}>
+                {reconBusy ? t.reconciling : t.reconcile}
+              </Button>
+            </>
           )}
           {forwardingOff && (
             <Button onClick={() => void enableForwarding()} disabled={fwdBusy}>

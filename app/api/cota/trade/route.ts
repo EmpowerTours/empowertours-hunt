@@ -6,11 +6,17 @@ import { loadPerpKey } from "@/lib/cota/keystore";
 import { MON_MARKET, planOpen, type Market } from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
 import { readMark } from "@/lib/cota/venue/market-data";
-import { readAccountPositions } from "@/lib/cota/venue/account-read";
 import type { AccountSnapshot } from "@/lib/cota/venue/frames";
-import { buildAggregateState } from "@/lib/cota/venue/aggregate";
-import { toDayState, type MarkedMarket } from "@/lib/cota/venue/account-state";
-import { loadFills, recordFill, fillToLedgerFill } from "@/lib/cota/ledger";
+import { type MarkedMarket } from "@/lib/cota/venue/account-state";
+import { readDayState } from "@/lib/cota/day-state";
+import type { Unexplained } from "@/lib/cota/venue/adopt";
+import {
+  recordFill,
+  recordPlacedOrder,
+  fillToLedgerFill,
+  directionOfOrderType,
+  newAgentOrderId,
+} from "@/lib/cota/ledger";
 import { boundFromRow } from "@/lib/cota/bound";
 import { explainDenial } from "@/lib/cota/enforce";
 
@@ -101,25 +107,30 @@ export async function POST(req: Request) {
     // Read the LIVE day-state: open notional from the venue's own position
     // snapshot, loss from our fill ledger. If this read fails, we cannot verify
     // the aggregate bounds, so we refuse rather than trade blind.
+    //
+    // readDayState may repair one thing on its own: a fill this agent's own
+    // accepted order produced that the placing socket closed before seeing. That
+    // is bookkeeping on an order the leash already gated. Anything else it holds
+    // back as `unexplained`, and the refusal below routes the hunter to an
+    // explicit reconcile rather than adopting a trade the agent never made.
     let dayState;
     let venueAccount: AccountSnapshot | null = null;
+    let unexplained: Unexplained[] = [];
     try {
-      const read = await readAccountPositions({
-        apiKey: cred.apiKey,
-        secretHex: cred.secretHex,
-      });
-      venueAccount = read.account;
       const marks = new Map<number, MarkedMarket>([
         [market.id, { market, markUsd }],
       ]);
-      const fills = await loadFills(player.id, cred.account);
-      const agg = buildAggregateState({
-        fills,
-        venuePositions: read.positions,
+      const read = await readDayState({
+        playerId: player.id,
+        account: cred.account,
+        apiKey: cred.apiKey,
+        secretHex: cred.secretHex,
         marks,
         nowMs: Date.now(),
       });
-      dayState = toDayState(agg);
+      dayState = read.dayState;
+      venueAccount = read.venueAccount;
+      unexplained = read.unexplained;
     } catch (e) {
       console.error("[cota/trade] day-state read failed", e);
       return NextResponse.json({
@@ -160,6 +171,14 @@ export async function POST(req: Request) {
         reason: "loss_unverifiable",
         detail:
           "the account holds positions this agent has no fill history for, so the daily-loss limit cannot be verified; refusing until reconciled",
+        // What the hunter can act on: each entry is size the venue holds that
+        // nothing in the ledger accounts for. `reconcilable` says whether
+        // adopting it is even possible — a position the venue prices can be
+        // adopted at that price, one it doesn't cannot be adopted at all.
+        unexplained,
+        reconcilable:
+          unexplained.length > 0 &&
+          unexplained.every((u) => u.reason === "no_pending_order"),
         markUsd,
       });
     }
@@ -193,6 +212,12 @@ export async function POST(req: Request) {
       });
     }
 
+    // One id for this order, minted here and used on BOTH the fill row and the
+    // pending-order row, so an order that is adopted later counts as the same
+    // single order it always was. See newAgentOrderId for why the venue's own rq
+    // cannot serve.
+    const agentOrderId = newAgentOrderId();
+
     const result = await placeOrder({
       apiKey: cred.apiKey,
       secretHex: cred.secretHex,
@@ -211,10 +236,32 @@ export async function POST(req: Request) {
         await recordFill(
           player.id,
           cred.account,
-          fillToLedgerFill(result.fill, market, plan.orderType, Date.now()),
+          fillToLedgerFill(
+            result.fill,
+            market,
+            plan.orderType,
+            Date.now(),
+            agentOrderId,
+          ),
         );
       } catch (e) {
         console.error("[cota/trade] fill record failed", e);
+      }
+    } else if (result.accepted) {
+      // Accepted, not filled — the chain fills after the gateway acks and this
+      // socket is already closing. Without this row the fill that lands in a
+      // moment is invisible to the ledger forever, and every later order refuses
+      // (account 5273, 2026-09-14: 214 MON open, ledger empty). With it, the
+      // next read adopts the fill at the venue's own entry price.
+      try {
+        await recordPlacedOrder(player.id, cred.account, {
+          marketId: market.id,
+          direction: directionOfOrderType(plan.orderType),
+          sizeUnits: plan.sizeUnits,
+          orderId: agentOrderId,
+        });
+      } catch (e) {
+        console.error("[cota/trade] pending order record failed", e);
       }
     }
 

@@ -91,6 +91,15 @@ export interface OpenPositionFrame {
   sizeScaled: number;
   /** Leverage ×100, as the venue sends it. */
   leverageX100: number;
+  /**
+   * `ep`: the position's entry price in the market's scaled integer units
+   * (descale by price_decimals), or null when the frame omits it.
+   *
+   * This field was believed not to exist. See the note on parsePositions.
+   */
+  entryPriceScaled: number | null;
+  /** `fee`: fee charged on this position so far, AUSD 6dp. Null if omitted. */
+  feeScaled: number | null;
 }
 
 /**
@@ -99,11 +108,35 @@ export interface OpenPositionFrame {
  * liquidated or deleveraged position is dropped, because open notional is a sum
  * over what is still open. Ported from src/venue_client.py's positions handler.
  *
- * The known keys are `pid, mkt, sd, st, lv, s` — deliberately no entry price or
- * PnL, because Perpl's frames carry none (src/account_status.py). That absence
- * is why this yields OPEN NOTIONAL, not loss: notional needs only size × mark,
- * which is present; loss would need an entry the venue does not send here.
+ * CORRECTION (2026-09-14, read off a live frame from account 5273 — the first
+ * position this executor ever opened). This comment used to say the frame
+ * carries no entry price or PnL, citing Mandate's KNOWN_POSITION_KEYS
+ * (src/account_status.py:111). That set is only the six keys MANDATE PARSED, not
+ * a survey of what the venue sends, and the `unrecognised_fields` probe built to
+ * find out was never run against an open position. The real frame is:
+ *
+ *   {pid, mkt, acc, st, sr, sd, s, lv, ep, c, fee, cfee, cpnl, dpnl, fnd, pay,
+ *    efs, xfs, oid, rq, ots, at}
+ *
+ * `ep` IS the entry price. It checks out against the venue's own totals to the
+ * microdollar: s=214 × ep=23308 = 4_987_912 = the `tv` (traded volume) on the
+ * same account's stats frame, and c=2_504_014 + fee=4_440 is exactly the balance
+ * the account lost opening it. So `size × (mark − ep)` — the unrealised PnL the
+ * daily-loss stop was built around NOT having — is computable straight from
+ * here.
+ *
+ * Nothing downstream is switched over to it yet: the fills-VWAP ledger is the
+ * proven path and still carries realised PnL, which this frame does not give per
+ * day. What `ep` is used for today is reconciliation — adopting a position the
+ * ledger missed at the venue's OWN entry price rather than a guessed one.
  */
+/** A frame field that may be absent, a number, or a numeric string. */
+function numOrNull(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function parsePositions(frame: unknown): OpenPositionFrame[] {
   const f = frame as { mt?: number; d?: unknown[] };
   if ((f?.mt !== 26 && f?.mt !== 27) || !Array.isArray(f.d)) return [];
@@ -120,6 +153,8 @@ export function parsePositions(frame: unknown): OpenPositionFrame[] {
       side: Number(pos.sd ?? 0),
       sizeScaled: Number(pos.s ?? 0),
       leverageX100: Number(pos.lv ?? 0),
+      entryPriceScaled: numOrNull(pos.ep),
+      feeScaled: numOrNull(pos.fee),
     });
   }
   return out;

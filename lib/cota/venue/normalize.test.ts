@@ -27,7 +27,13 @@ describe("fillToLedgerFill — descale off the wire", () => {
   };
 
   it("descales size, price and fee and carries direction + order id", () => {
-    const lf = fillToLedgerFill(fill, MON_MARKET, 1 /* open long */, 1_700_000);
+    const lf = fillToLedgerFill(
+      fill,
+      MON_MARKET,
+      1 /* open long */,
+      1_700_000,
+      4242,
+    );
     expect(lf).toEqual({
       marketId: 10,
       direction: 1,
@@ -35,11 +41,14 @@ describe("fillToLedgerFill — descale off the wire", () => {
       priceUsd: 0.025,
       feeUsd: 0.001,
       timestampMs: 1_700_000,
-      orderId: 42,
+      // The CALLER's id, not the fill's rq (42 above) — the wire rq is 1 on
+      // every order this agent sends, so counting distinct orders by it always
+      // answered 1 and the trades-per-day ceiling never bound.
+      orderId: 4242,
     });
   });
 
   it("a close-long fill is a sell", () => {
-    expect(fillToLedgerFill(fill, MON_MARKET, 3, 1).direction).toBe(-1);
+    expect(fillToLedgerFill(fill, MON_MARKET, 3, 1, 1).direction).toBe(-1);
   });
 });

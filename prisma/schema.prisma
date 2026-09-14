@@ -192,6 +192,7 @@ model Player {
   dimeClaim     DimeClaim?
   perpKey       PerpKey?
   cotaFills     CotaFill[]
+  cotaOrders    CotaOrder[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -257,6 +258,50 @@ model CotaFill {
   createdAt DateTime @default(now())
 
   @@index([playerId, account, filledAt])
+}
+
+/// An order this agent SENT to the venue that the venue accepted but that had
+/// not filled by the time the placing socket closed.
+///
+/// Perpl accepts an order on the gateway (code 0) and fills it on-chain a moment
+/// later. `placeOrder` holds a socket open only long enough to place, so a fill
+/// that lands after it closes was never seen and never recorded — and then the
+/// fill ledger disagrees with the venue's positions forever, the daily-loss read
+/// fails closed, and the hunter is stuck. That is what happened on the first
+/// real fill this executor ever produced (account 5273, 2026-09-14).
+///
+/// A row here is the agent's own record that it authorised a specific order
+/// under the leash. It is what lets a later position that MATCHES one be adopted
+/// into the ledger automatically, while a position matching nothing still fails
+/// closed and needs the hunter to adopt it explicitly. Without this row the two
+/// cases are indistinguishable, and treating them alike would either block
+/// every hunter or silently swallow trades the agent never made.
+model CotaOrder {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  /// The Perpl account/wallet, lowercased. Same scoping rule as CotaFill.
+  account String
+
+  marketId  Int
+  /// +1 buy, -1 sell.
+  direction Int
+  /// Size requested, in market units.
+  sizeUnits Float
+  /// The venue's request id for the order, when it gave one.
+  orderId   Int
+
+  /// Set once the order's size has been accounted for in CotaFill — either
+  /// because the placing socket saw the fill, or because a later read adopted
+  /// it. A resolved row is history, not an outstanding claim.
+  resolvedAt DateTime?
+
+  placedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([playerId, account, resolvedAt])
 }
 
 model Hunt {

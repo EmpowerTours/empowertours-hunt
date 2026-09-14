@@ -5,8 +5,22 @@
 
 import { prisma } from "@/lib/db/prisma";
 import type { LedgerFill } from "./venue/pnl";
+import type { PendingOrder } from "./venue/adopt";
+import { randomInt } from "node:crypto";
 
 export { directionOfOrderType, fillToLedgerFill } from "./venue/normalize";
+
+/**
+ * A fresh id for one order this agent places, unique enough to count by.
+ *
+ * It exists because the venue's `rq` is not: placeOrder opens a socket per order
+ * and sets rq=1 every time, so distinct-order counting on it always answered 1.
+ * 31 bits keeps it inside the column's INTEGER and a collision only ever
+ * under-counts one order against a day ceiling measured in single digits.
+ */
+export function newAgentOrderId(): number {
+  return randomInt(1, 2_147_483_647);
+}
 
 export async function recordFill(
   playerId: string,
@@ -46,4 +60,83 @@ export async function loadFills(
     timestampMs: r.filledAt.getTime(),
     orderId: r.orderId,
   }));
+}
+
+/** Record several fills at once — the adoption path writes a batch. */
+export async function recordFills(
+  playerId: string,
+  account: string,
+  fills: LedgerFill[],
+): Promise<void> {
+  if (fills.length === 0) return;
+  await prisma.cotaFill.createMany({
+    data: fills.map((f) => ({
+      playerId,
+      account: account.toLowerCase(),
+      marketId: f.marketId,
+      direction: f.direction,
+      sizeUnits: f.sizeUnits,
+      priceUsd: f.priceUsd,
+      feeUsd: f.feeUsd,
+      orderId: f.orderId,
+      filledAt: new Date(f.timestampMs),
+    })),
+  });
+}
+
+// --- Orders the agent placed that the venue accepted but had not filled -----
+//
+// Perpl fills on the chain after the gateway has acked, so placeOrder's socket
+// routinely closes before the fill frame arrives. The row written here is the
+// agent's own record that it authorised the order under the leash, and it is
+// the only thing that later distinguishes a position this agent caused (safe to
+// adopt) from one it did not (must not be adopted without the hunter).
+
+export async function recordPlacedOrder(
+  playerId: string,
+  account: string,
+  o: {
+    marketId: number;
+    direction: 1 | -1;
+    sizeUnits: number;
+    orderId: number;
+  },
+): Promise<void> {
+  await prisma.cotaOrder.create({
+    data: {
+      playerId,
+      account: account.toLowerCase(),
+      marketId: o.marketId,
+      direction: o.direction,
+      sizeUnits: o.sizeUnits,
+      orderId: o.orderId,
+    },
+  });
+}
+
+export async function loadPendingOrders(
+  playerId: string,
+  account: string,
+): Promise<PendingOrder[]> {
+  const rows = await prisma.cotaOrder.findMany({
+    where: { playerId, account: account.toLowerCase(), resolvedAt: null },
+    orderBy: { placedAt: "asc" },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    marketId: r.marketId,
+    direction: r.direction === -1 ? -1 : 1,
+    sizeUnits: r.sizeUnits,
+    orderId: r.orderId,
+    placedAtMs: r.placedAt.getTime(),
+  }));
+}
+
+/** Mark orders accounted for. A resolved row is history, not a live claim. */
+export async function resolveOrders(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await prisma.cotaOrder.updateMany({
+    where: { id: { in: ids } },
+    data: { resolvedAt: new Date() },
+  });
 }

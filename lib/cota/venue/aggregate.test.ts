@@ -21,6 +21,8 @@ function vpos(p: Partial<OpenPositionFrame>): OpenPositionFrame {
     side: 1,
     sizeScaled: 100,
     leverageX100: 100,
+    entryPriceScaled: null,
+    feeScaled: null,
     ...p,
   };
 }

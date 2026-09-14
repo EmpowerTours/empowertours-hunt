@@ -24,7 +24,15 @@ describe("parsePositions — mt 26/27, open only", () => {
       d: [{ pid: 7, mkt: 10, sd: 1, st: 1, lv: 500, s: 116 }],
     });
     expect(out).toEqual([
-      { pid: 7, marketId: 10, side: 1, sizeScaled: 116, leverageX100: 500 },
+      {
+        pid: 7,
+        marketId: 10,
+        side: 1,
+        sizeScaled: 116,
+        leverageX100: 500,
+        entryPriceScaled: null,
+        feeScaled: null,
+      },
     ]);
   });
 
@@ -62,7 +70,17 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
 
   it("prices a single MON long (sizeDecimals 0)", () => {
     const n = openNotionalUsdE6(
-      [{ pid: 1, marketId: 10, side: 1, sizeScaled: 100, leverageX100: 100 }],
+      [
+        {
+          pid: 1,
+          marketId: 10,
+          side: 1,
+          sizeScaled: 100,
+          leverageX100: 100,
+          entryPriceScaled: null,
+          feeScaled: null,
+        },
+      ],
       marks,
     );
     // 100 units × $0.025 = $2.50
@@ -71,11 +89,31 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
 
   it("counts a short the same as a long — side is irrelevant to notional", () => {
     const long = openNotionalUsdE6(
-      [{ pid: 1, marketId: 10, side: 1, sizeScaled: 100, leverageX100: 100 }],
+      [
+        {
+          pid: 1,
+          marketId: 10,
+          side: 1,
+          sizeScaled: 100,
+          leverageX100: 100,
+          entryPriceScaled: null,
+          feeScaled: null,
+        },
+      ],
       marks,
     );
     const short = openNotionalUsdE6(
-      [{ pid: 2, marketId: 10, side: 2, sizeScaled: 100, leverageX100: 100 }],
+      [
+        {
+          pid: 2,
+          marketId: 10,
+          side: 2,
+          sizeScaled: 100,
+          leverageX100: 100,
+          entryPriceScaled: null,
+          feeScaled: null,
+        },
+      ],
       marks,
     );
     expect(short).toBe(long);
@@ -84,8 +122,24 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
   it("descales size by the market's size_decimals and sums markets", () => {
     const n = openNotionalUsdE6(
       [
-        { pid: 1, marketId: 10, side: 1, sizeScaled: 100, leverageX100: 100 }, // $2.50
-        { pid: 2, marketId: 20, side: 1, sizeScaled: 500, leverageX100: 100 }, // 5.00 units × $2 = $10
+        {
+          pid: 1,
+          marketId: 10,
+          side: 1,
+          sizeScaled: 100,
+          leverageX100: 100,
+          entryPriceScaled: null,
+          feeScaled: null,
+        }, // $2.50
+        {
+          pid: 2,
+          marketId: 20,
+          side: 1,
+          sizeScaled: 500,
+          leverageX100: 100,
+          entryPriceScaled: null,
+          feeScaled: null,
+        }, // 5.00 units × $2 = $10
       ],
       marks,
     );
@@ -95,7 +149,17 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
   it("throws on a held market with no mark rather than under-report the cap", () => {
     expect(() =>
       openNotionalUsdE6(
-        [{ pid: 1, marketId: 99, side: 1, sizeScaled: 1, leverageX100: 100 }],
+        [
+          {
+            pid: 1,
+            marketId: 99,
+            side: 1,
+            sizeScaled: 1,
+            leverageX100: 100,
+            entryPriceScaled: null,
+            feeScaled: null,
+          },
+        ],
         marks,
       ),
     ).toThrow(/no mark for held market 99/);
