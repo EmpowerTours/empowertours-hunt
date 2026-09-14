@@ -60,14 +60,37 @@ export async function POST(req: Request) {
     });
     const fills = await loadFills(player.id, cred.account);
 
-    const plan = planAdoption({
-      fold: foldFills(fills).positions,
-      venue: read.positions,
-      marks,
-      pending: [],
-      nowMs: Date.now(),
-      trust: "hunter",
-    });
+    // Only MON is pinned (id + decimals), so a position on any other market has
+    // no scale to descale it by and planAdoption throws rather than guess. Say
+    // that plainly instead of returning a server error: the hunter has not hit a
+    // bug, they are holding something this agent cannot price, and the trade
+    // route will refuse on the same ground until it is closed at the venue.
+    let plan;
+    try {
+      plan = planAdoption({
+        fold: foldFills(fills).positions,
+        venue: read.positions,
+        marks,
+        pending: [],
+        nowMs: Date.now(),
+        trust: "hunter",
+      });
+    } catch (e) {
+      const held = read.positions
+        .map((p) => p.marketId)
+        .filter((id) => !marks.has(id));
+      if (held.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "this account holds a position on a market this agent does not support, so it cannot be priced or adopted",
+            unsupportedMarketIds: held,
+          },
+          { status: 409 },
+        );
+      }
+      throw e;
+    }
 
     if (plan.fills.length > 0) {
       await recordFills(player.id, cred.account, plan.fills);
