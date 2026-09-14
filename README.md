@@ -168,7 +168,7 @@ predate 1 September and are the foundation the submission builds on:
 
 `git log --until=2026-08-31` lists them exactly.
 
-### Built during the window (90 commits since 1 September)
+### Built during the window (103 commits since 1 September)
 
 - **Cota** — an EIP-712 bound a hunter signs before software may trade for
   them. One enforcement path (`lib/cota/enforce.ts`) governs paper and live
@@ -181,6 +181,31 @@ predate 1 September and are the foundation the submission builds on:
   its conformance suite), and a single order path
   (`app/api/cota/trade`) in which the gate runs _before_ the transport — there
   is no code path that reaches the venue without passing `mayOpen`.
+
+  **It has not yet produced a fill, and the reason is worth stating plainly.**
+  On 2026-09-13 the whole path ran live for the first time: MON swapped to AUSD
+  on the Chainlink-priced desk, a Perpl account created and funded, a trading
+  key enrolled into server custody, Kimi asked for a suggestion, and two orders
+  placed. The model read `maxDailyLossUsdE6` off the signed bound and declined
+  to trade on a single mid-price — the constraint reasoned about rather than
+  merely enforced. Both manual orders were then **allowed by the leash** and
+  **accepted by the gateway**, and neither opened a position.
+
+  The cause is `fw: false` on the Perpl account: order forwarding, which is how
+  an API order reaches the chain, is off by default on a fresh account. With it
+  off the gateway returns `code: 0` and the chain refuses, which is
+  indistinguishable from an ordinary non-fill. It is not a property of this
+  code — the leash, the sizing, the margin, the slippage and the signing were
+  each ruled out against the live venue — and it is not fixable from here. The
+  account's own frame is the evidence:
+  `{"id":5273,"fr":false,"fw":false,"b":"10620689"}` with positions empty.
+
+  What this repository does about it is preflight on that flag rather than send
+  an order that cannot execute (`app/api/cota/trade`, `lib/cota/venue/frames.ts`),
+  so a hunter is told *"Perpl hasn't enabled order forwarding on your account"*
+  instead of watching "Accepted" never become a fill. Two accounts of two have
+  defaulted this way, so it is what every new user meets. The question is open
+  with the venue.
 - **A daily-loss stop that refuses to guess.** Perpl's position frames carry no
   entry price and no PnL, so unrealised loss cannot simply be read. The ledger
   reconstructs it from our own fills by VWAP (`lib/cota/venue/pnl.ts`), and when
@@ -250,5 +275,5 @@ their own licences. Walkable-area data is imported from **OpenStreetMap**
 
 ```bash
 npm install
-./.claude/verify.sh   # typecheck, lint, 747 tests, production build, secret scan
+./.claude/verify.sh   # typecheck, lint, 751 tests, production build, secret scan
 ```

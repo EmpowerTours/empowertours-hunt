@@ -63,7 +63,7 @@ NEXT_PUBLIC_IPFS_GATEWAY=     # optional; has a default
 |---|---|
 | `AUTH_SESSION_SECRET` | Under 32 chars, no session can be minted **or** verified. Fails closed both ways. |
 | `ADMIN_SESSION_SECRET` | Unset disables admin auth entirely — nobody can log in. |
-| `ADMIN_BOOTSTRAP_ADDRESS` | Promotes exactly one wallet to OWNER so there's a way into a fresh database. It is a **standing grant, not a one-time coupon** — remove it once a real owner exists. |
+| `ADMIN_BOOTSTRAP_ADDRESS` | Promotes exactly one wallet to OWNER so there's a way into a fresh database. It **is** a one-time coupon: `resolveAdmin` creates the row only when `adminUser.count()` is 0, checked inside the same transaction, so once any admin exists this variable can never mint another. It is armed only while the table is EMPTY — which is exactly when removing it locks you out for good. Log in once, confirm the OWNER row, then remove it. |
 | `SPAWN_SEED_SECRET` | Spawn seeds are `HMAC-SHA256(secret, spawnId)`. Unset means the route 503s rather than draw money from a predictable source. **Changing it invalidates the reveal for existing spawns.** |
 | `CRON_SECRET` | Under 16 chars, `/api/cron/*` refuse to run. Must match `secrets.CRON_SECRET` in GitHub. |
 | `HUNT_TREASURY_PRIVATE_KEY` | Signs real MON with no human in the loop once a payout is APPROVED. See §5. |
@@ -150,17 +150,21 @@ manager.
 
 ## 8. Before you tell anyone about it
 
-- [ ] One real payout confirmed on the explorer
-- [ ] `ADMIN_BOOTSTRAP_ADDRESS` removed
+- [x] One real payout confirmed on the explorer — two sends, `status 0x1`,
+      1.0 MON each, from treasury `0xea8B5527…Fa0b`
+- [x] Keeper green in GitHub Actions, and its `schedule:` block uncommented —
+      `*/5` sweep and `*/15` reconcile both live, consecutive green runs
+- [ ] `ADMIN_BOOTSTRAP_ADDRESS` removed — **blocked, and deliberately so**: the
+      `AdminUser` table is still empty, so this variable is the only way in.
+      Log in at `/admin/login` first, then remove it.
 - [ ] At least one active `INCLUDE` zone
-- [ ] Keeper green in GitHub Actions, and its `schedule:` block uncommented
 - [ ] Walked to one spawn and collected it yourself
 
 ---
 
 ## What is still untested
 
-The 370 tests in `npm test` are all **pure-function** tests — validator,
+The 751 tests in `npm test` are all **pure-function** tests — validator,
 geometry, wei, the payout state machine. They prove the logic.
 
 `npm run test:integration` adds 37 tests against a real Postgres, covering what
