@@ -1,7 +1,15 @@
-// Read-only venue gather: connect, sign in, collect the account's OPEN positions
-// (mt 26 snapshot / 27 update), close. It NEVER sends an order — it's the
-// authoritative size half of the aggregate read, paired with the fills ledger
-// for loss. Mirrors the sign-in choreography of client.ts (the tested transport).
+// Read-only venue gather: connect, sign in, collect the ACCOUNT (mt 19) and the
+// account's OPEN positions (mt 26 snapshot / 27 update), close. It NEVER sends
+// an order — it's the authoritative size half of the aggregate read, paired with
+// the fills ledger for loss. Mirrors the sign-in choreography of client.ts (the
+// tested transport).
+//
+// The account frame is returned, not just used as a settle trigger, because it
+// carries `fw` — whether the venue will FORWARD an order for this account. A
+// fresh Perpl account defaults to fw:false (observed on 5273 and on Mandate's
+// 5103), and with it off the gateway accepts the order, the chain refuses it,
+// and the hunter sees a silent non-fill. Reading it here costs nothing: the
+// frame already arrives on this socket.
 
 import { randomBytes } from "node:crypto";
 import WebSocket from "ws";
@@ -9,13 +17,21 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes, type Hex } from "viem";
 import {
   parsePositions,
+  parseWalletSnapshot,
   signinCanonicalBytes,
+  type AccountSnapshot,
   type OpenPositionFrame,
 } from "./frames";
 import { MT_API_KEY_SIGNIN } from "../order";
 
 const WS_BASE = process.env.PERPL_WS_URL ?? "wss://app.perpl.xyz";
 const TRADING_WS_PATH = "/ws/v1/trading";
+
+export interface AccountRead {
+  /** The account the venue reports for this wallet, or null if it named none. */
+  account: AccountSnapshot | null;
+  positions: OpenPositionFrame[];
+}
 
 export interface ReadPositionsArgs {
   apiKey: string;
@@ -31,22 +47,24 @@ function b64url(bytes: Uint8Array): string {
 }
 
 /**
- * Gather the account's open positions. Resolves with one frame per still-open
- * pid after a short settle window; rejects only on transport failure or a total
- * timeout. A position that arrives then closes within the window is dropped, so
- * the result reflects what is open at the end of the read.
+ * Gather the account and its open positions. Resolves with one frame per
+ * still-open pid after a short settle window, plus the account snapshot;
+ * rejects only on transport failure or a total timeout. A position that arrives
+ * then closes within the window is dropped, so the result reflects what is open
+ * at the end of the read.
  */
 export function readAccountPositions(
   args: ReadPositionsArgs,
-): Promise<OpenPositionFrame[]> {
+): Promise<AccountRead> {
   const chainId = args.chainId ?? 143;
   const timeoutMs = args.timeoutMs ?? 12_000;
   const settleMs = args.settleMs ?? 3_000;
   const url = WS_BASE.replace(/\/$/, "") + TRADING_WS_PATH;
 
-  return new Promise<OpenPositionFrame[]>((resolve, reject) => {
+  return new Promise<AccountRead>((resolve, reject) => {
     const ws = new WebSocket(url);
     const byPid = new Map<number, OpenPositionFrame>();
+    let account: AccountSnapshot | null = null;
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
 
@@ -68,7 +86,7 @@ export function readAccountPositions(
       if (settled) return;
       settled = true;
       cleanup();
-      resolve([...byPid.values()]);
+      resolve({ account, positions: [...byPid.values()] });
     }
     function finishReject(e: Error) {
       if (settled) return;
@@ -106,10 +124,13 @@ export function readAccountPositions(
       }
       const mt = msg.mt as number | undefined;
 
-      // The wallet snapshot (19) arrives right after sign-in; start the settle
-      // window then, so positions have a bounded moment to stream in.
-      if (mt === 19 && settleTimer === undefined) {
-        settleTimer = setTimeout(finish, settleMs);
+      // The wallet snapshot (19) arrives right after sign-in; keep the account
+      // it names (client.ts trades the first one, so read the same one) and
+      // start the settle window, so positions have a bounded moment to stream in.
+      if (mt === 19) {
+        account = parseWalletSnapshot(msg)[0] ?? account;
+        if (settleTimer === undefined)
+          settleTimer = setTimeout(finish, settleMs);
       }
 
       if (mt === 26 || mt === 27) {

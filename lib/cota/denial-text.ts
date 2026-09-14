@@ -15,7 +15,10 @@ import type { DenyReason } from "./enforce";
 
 /** Refusals raised by app/api/cota/trade before or instead of the gate. */
 export type ExecRefusal =
-  "state_unavailable" | "loss_unverifiable" | "size_zero";
+  | "state_unavailable"
+  | "loss_unverifiable"
+  | "size_zero"
+  | "forwarding_disabled";
 
 export type RefusalReason = DenyReason | ExecRefusal;
 
@@ -69,6 +72,14 @@ const TEXT: Record<RefusalReason, Record<Lang, string>> = {
   size_zero: {
     en: "That size is too small to buy one unit at the current price.",
     es: "Ese tamaño es muy pequeño para comprar una unidad al precio actual.",
+  },
+  // Deliberately does NOT tell the hunter how to switch forwarding on: we do not
+  // know, and inventing a step would send them hunting through a settings screen
+  // that may not have one. What it must do is name the cause and clear the
+  // leash, because the alternative — what this replaces — is silence.
+  forwarding_disabled: {
+    en: "Perpl hasn't enabled order forwarding on your account, so it can't accept orders from this app yet. Nothing was sent and nothing was spent. Your Cota is fine — this is a setting on Perpl's side.",
+    es: "Perpl no tiene habilitado el reenvío de órdenes en tu cuenta, así que todavía no puede aceptar órdenes desde esta app. No se envió nada ni se gastó nada. Tu Cota está bien — es una configuración del lado de Perpl.",
   },
 };
 

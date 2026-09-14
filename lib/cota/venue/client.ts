@@ -47,6 +47,12 @@ export interface PlaceOrderArgs {
 export interface PlaceOrderResult {
   /** The account the venue reported for this wallet (or null if none). */
   account: AccountSnapshot | null;
+  /**
+   * Whether an order frame actually left this client. False means we refused
+   * locally and the venue never saw it — distinct from "the venue rejected it",
+   * and the difference matters: nothing was spent and nothing can fill later.
+   */
+  sentToVenue: boolean;
   /** The gateway took the order (status code 0). */
   accepted: boolean;
   /** A fill arrived for this order. */
@@ -55,6 +61,14 @@ export interface PlaceOrderResult {
   error: string | null;
   fill: Fill | null;
 }
+
+/**
+ * The error a locally-refused order carries when the account forbids forwarding.
+ * Exported so a caller can tell this refusal from a venue rejection without
+ * matching on prose.
+ */
+export const FORWARDING_DISABLED =
+  "this Perpl account does not allow order forwarding (fw:false), so an API key cannot trade it";
 
 function b64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
@@ -75,6 +89,7 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
     const ws = new WebSocket(url);
     const result: PlaceOrderResult = {
       account: null,
+      sentToVenue: false,
       accepted: false,
       filled: false,
       code: -1,
@@ -150,9 +165,20 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
           result.error = "the venue reports no account on this wallet";
           return finish();
         }
+        // Forwarding is how an API order reaches the chain. With `fw` false the
+        // gateway ACCEPTS the order (code 0) and the chain then refuses it with
+        // OrderForwardingNotAllowed, so an unsendable order is indistinguishable
+        // from an ordinary non-fill. Refuse here instead: the callers upstream
+        // preflight on the same flag, and this is the last point where we still
+        // know the answer before spending a request on it.
+        if (!result.account.forwardingAllowed) {
+          result.error = FORWARDING_DISABLED;
+          return finish();
+        }
         orderSn = 1;
         orderRq = 1;
         sent = true;
+        result.sentToVenue = true;
         ws.send(
           JSON.stringify(
             orderFrame({

@@ -37,6 +37,18 @@ export interface AccountSnapshot {
   balance: number;
   locked: number;
   frozen: boolean;
+  /**
+   * `fw`: whether the venue will FORWARD an order to the chain for this account,
+   * which is the only way an API key can trade it. An OMITTED `fw` reads as
+   * ALLOWED, matching Mandate's parser (src/account_status.py:164). That is
+   * deliberate and it is the one place this layer does not fail closed: the
+   * leash's bounds protect the hunter's money, so refusing on doubt is right
+   * there, but this flag only describes what the venue can do. If Perpl ever
+   * stops sending `fw`, defaulting to false would refuse every hunter an order
+   * the venue would happily have filled — blocking everyone to prevent nothing.
+   * A truly unforwardable order is still caught: the venue rejects it and mt 24
+   * names OrderForwardingNotAllowed.
+   */
   forwardingAllowed: boolean;
   feeTier: number;
   /** balance - locked, the free collateral an order is checked against. */
@@ -61,7 +73,7 @@ export function parseWalletSnapshot(frame: unknown): AccountSnapshot[] {
       balance,
       locked,
       frozen: a.fr === true,
-      forwardingAllowed: a.fw === true,
+      forwardingAllowed: a.fw !== false,
       feeTier: Number(a.ft ?? 0),
       available: balance - locked,
     };

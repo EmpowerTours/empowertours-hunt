@@ -50,6 +50,44 @@ describe("parseWalletSnapshot", () => {
     expect(acc.forwardingAllowed).toBe(true);
   });
 
+  // The refusal that matters most, triggered on purpose against the real frame
+  // that caused it. Account 5273 was two hours old, funded and unfrozen, and
+  // every order it sent was accepted by the gateway and dropped by the chain.
+  // `fw:false` is the whole explanation, and it is one boolean off this frame.
+  it("reads fw:false off a fresh account that cannot be traded", () => {
+    // Captured 2026-09-13 from account 5273 (hunt hunter), verbatim.
+    const frame = {
+      mt: 19,
+      as: [
+        {
+          id: 5273,
+          fr: false,
+          fw: false,
+          ft: 0,
+          b: "10620689",
+          lb: "0",
+        },
+      ],
+    };
+    const [acc] = parseWalletSnapshot(frame);
+    expect(acc.accountId).toBe(5273);
+    expect(acc.forwardingAllowed).toBe(false);
+    // Everything else is healthy — which is exactly why the failure was silent.
+    expect(acc.frozen).toBe(false);
+    expect(acc.available).toBe(10_620_689);
+  });
+
+  // Only an EXPLICIT false blocks. A venue that stops sending `fw` must not
+  // silently refuse every hunter a trade it would have filled — see the note on
+  // AccountSnapshot.forwardingAllowed, and Mandate's matching default.
+  it("treats a missing fw as allowed rather than blocking the account", () => {
+    const [acc] = parseWalletSnapshot({
+      mt: 19,
+      as: [{ id: 1, fr: false, ft: 0, b: "1", lb: "0" }],
+    });
+    expect(acc.forwardingAllowed).toBe(true);
+  });
+
   it("returns nothing for a non-snapshot frame", () => {
     expect(parseWalletSnapshot({ mt: 3 })).toEqual([]);
   });

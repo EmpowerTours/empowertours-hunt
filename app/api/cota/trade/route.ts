@@ -7,6 +7,7 @@ import { MON_MARKET, planOpen, type Market } from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
 import { readMark } from "@/lib/cota/venue/market-data";
 import { readAccountPositions } from "@/lib/cota/venue/account-read";
+import type { AccountSnapshot } from "@/lib/cota/venue/frames";
 import { buildAggregateState } from "@/lib/cota/venue/aggregate";
 import { toDayState, type MarkedMarket } from "@/lib/cota/venue/account-state";
 import { loadFills, recordFill, fillToLedgerFill } from "@/lib/cota/ledger";
@@ -21,6 +22,10 @@ import { explainDenial } from "@/lib/cota/enforce";
 // the fills ledger) → plan+GATE the order (enforce.ts) → and ONLY if the leash
 // allows it, place it on the venue, then record the fill. The gate runs before
 // the transport; there is no path that reaches placeOrder without passing mayOpen.
+//
+// Before the gate runs at all there is a VENUE preflight: an account with
+// forwarding disabled (`fw:false`) cannot execute any order, so the route says
+// so rather than sending one that the gateway accepts and the chain drops.
 //
 // The aggregate bounds (open-notional ceiling, daily-loss stop) ARE enforced:
 // buildAggregateState reads real positions + the fill ledger, and if loss can't
@@ -97,18 +102,20 @@ export async function POST(req: Request) {
     // snapshot, loss from our fill ledger. If this read fails, we cannot verify
     // the aggregate bounds, so we refuse rather than trade blind.
     let dayState;
+    let venueAccount: AccountSnapshot | null = null;
     try {
-      const venuePositions = await readAccountPositions({
+      const read = await readAccountPositions({
         apiKey: cred.apiKey,
         secretHex: cred.secretHex,
       });
+      venueAccount = read.account;
       const marks = new Map<number, MarkedMarket>([
         [market.id, { market, markUsd }],
       ]);
       const fills = await loadFills(player.id, cred.account);
       const agg = buildAggregateState({
         fills,
-        venuePositions,
+        venuePositions: read.positions,
         marks,
         nowMs: Date.now(),
       });
@@ -120,6 +127,27 @@ export async function POST(req: Request) {
         reason: "state_unavailable",
         detail:
           "could not read the account's live positions to verify the open-notional and daily-loss limits; refusing",
+        markUsd,
+      });
+    }
+
+    // Forwarding preflight. `fw` on the account frame is whether the venue will
+    // forward an order to the chain on this account's behalf; with it off the
+    // gateway returns code 0 and the chain silently refuses, which reads to a
+    // hunter as "Accepted (not filled yet)" forever. A fresh Perpl account
+    // defaults to fw:false, so this is the FIRST thing a new hunter hits — name
+    // it instead of sending an order that cannot fill.
+    //
+    // A null account is not treated as a refusal: the venue named no account, a
+    // condition placeOrder already reports on its own, and guessing here would
+    // block a hunter on a frame we failed to read rather than on a real flag.
+    if (venueAccount && !venueAccount.forwardingAllowed) {
+      return NextResponse.json({
+        allowed: false,
+        reason: "forwarding_disabled",
+        detail:
+          "this Perpl account has order forwarding disabled (fw:false), so the venue accepts orders it will never execute; nothing was sent",
+        accountId: venueAccount.accountId,
         markUsd,
       });
     }

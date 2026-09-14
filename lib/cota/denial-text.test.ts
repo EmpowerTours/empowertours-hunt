@@ -19,6 +19,7 @@ const ALL: RefusalReason[] = [
   "state_unavailable",
   "loss_unverifiable",
   "size_zero",
+  "forwarding_disabled",
 ];
 
 describe("refusal text", () => {
