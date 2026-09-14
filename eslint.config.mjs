@@ -16,9 +16,15 @@ const config = [
 
   {
     // Generated or vendored — never our code to fix.
+    //
+    // `.claude/**` covers agent worktrees. A worktree is a full second checkout
+    // of this repo WITH its own node_modules and .next, and the ignores above
+    // are top-level-only in flat config, so a single leftover worktree reported
+    // 12,107 errors and turned the verifier red on code that is not the repo's.
     ignores: [
       "node_modules/**",
       ".next/**",
+      ".claude/**",
       "lib/generated/**",
       "prisma/migrations/**",
     ],
