@@ -119,7 +119,14 @@ export async function loadPendingOrders(
   account: string,
 ): Promise<PendingOrder[]> {
   const rows = await prisma.cotaOrder.findMany({
-    where: { playerId, account: account.toLowerCase(), resolvedAt: null },
+    // Dead orders are excluded here too: a row that never reached the chain
+    // cannot be the explanation for size the venue is holding.
+    where: {
+      playerId,
+      account: account.toLowerCase(),
+      resolvedAt: null,
+      deadAt: null,
+    },
     orderBy: { placedAt: "asc" },
   });
   return rows.map((r) => ({
@@ -139,6 +146,12 @@ export async function loadPendingOrders(
  * Deliberately not filtered by `resolvedAt`: a resolved order is one that
  * filled, and it still consumed a trade. Filtering it out would make the
  * ceiling fall again every time a fill was adopted.
+ *
+ * DEAD rows are excluded, and that is the only thing here that can make the
+ * ceiling read lower. An order the chain never executed is not a trade — it
+ * opened nothing, cost nothing and risked nothing — so counting it spends a
+ * hunter's daily allowance on a non-event. Nothing marks a row dead
+ * automatically; see the column's note.
  */
 export async function loadOrdersPlacedSince(
   playerId: string,
@@ -150,6 +163,7 @@ export async function loadOrdersPlacedSince(
       playerId,
       account: account.toLowerCase(),
       placedAt: { gte: new Date(sinceMs) },
+      deadAt: null,
     },
     select: { orderId: true, placedAt: true },
   });

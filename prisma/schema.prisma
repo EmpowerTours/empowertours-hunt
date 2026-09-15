@@ -298,6 +298,28 @@ model CotaOrder {
   /// it. A resolved row is history, not an outstanding claim.
   resolvedAt DateTime?
 
+  /// Set when an order is KNOWN never to have reached the chain, so it is not a
+  /// trade and must not consume the leash's trades-per-day ceiling, nor sit
+  /// around able to "explain" a position it never opened.
+  ///
+  /// This is the ONE flag in this table that loosens a bound, so nothing sets it
+  /// automatically. It exists because eight orders on account 5273 were acked by
+  /// the gateway and discarded by the chain (OrderDescIdTooLow — a stale `rq`
+  /// from our own client), and then consumed a ceiling of five on a day when a
+  /// single order had actually traded. The venue proved they were dead: `lfr`
+  /// stood at 2 for the account's whole life, the position was exactly the two
+  /// known fills, and `tv` was their two notionals to the microdollar.
+  ///
+  /// The forward path no longer creates such rows at all — the trade route skips
+  /// the write when venueRefusedOrder sees the verdict on mt 24. This is for the
+  /// case that verdict never arrives, and for repairing what predates the guard.
+  deadAt DateTime?
+
+  /// Why it is dead, in words, for whoever reads this row later. Free text on
+  /// purpose: the venue's reason names are the useful content and they are not a
+  /// closed set this schema should pretend to know.
+  deadReason String?
+
   placedAt  DateTime @default(now())
   createdAt DateTime @default(now())
 
