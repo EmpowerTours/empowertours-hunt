@@ -19,6 +19,9 @@ import {
   nextRequestId,
   parseFill,
   parseOrderStatus,
+  parseOrderUpdate,
+  MT_ORDER_UPDATE,
+  type OrderUpdate,
   parseWalletSnapshot,
   signinCanonicalBytes,
   type AccountSnapshot,
@@ -61,6 +64,17 @@ export interface PlaceOrderResult {
   code: number;
   error: string | null;
   fill: Fill | null;
+  /**
+   * The venue's own verdict on this order, off an mt 24, or null if none arrived
+   * before we stopped waiting.
+   *
+   * This is the difference between "accepted, nothing arrived" and knowing why.
+   * The gateway ack says only that the request was taken; this says what the
+   * chain did with it, by name — OrderForwardingNotAllowed and
+   * OrderDescIdTooLow are both reasons here, and each was diagnosed the hard
+   * way before anything read this frame.
+   */
+  update: OrderUpdate | null;
 }
 
 /**
@@ -96,6 +110,7 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
       code: -1,
       error: null,
       fill: null,
+      update: null,
     };
     let orderSn = -1;
     let orderRq = -1;
@@ -210,6 +225,18 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
           if (!st.accepted) return finish(); // rejected — no fill will come
           // Accepted: wait a bounded time for the fill; unfilled is legitimate.
           fillTimer = setTimeout(finish, fillWaitMs);
+        }
+        return;
+      }
+
+      // The venue's verdict on our order. Keep the latest one; finish only when
+      // it is terminal, because Open and PartiallyFilled can still become a
+      // fill and finishing on them would throw away the outcome we came for.
+      if (mt === MT_ORDER_UPDATE) {
+        for (const u of parseOrderUpdate(msg)) {
+          if (u.orderRq !== orderRq) continue;
+          result.update = u;
+          if (u.terminal) return finish();
         }
         return;
       }

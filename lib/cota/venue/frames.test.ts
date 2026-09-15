@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   nextRequestId,
+  parseOrderUpdate,
   parseFill,
   parseOrderStatus,
   parsePositions,
@@ -275,5 +276,59 @@ describe("nextRequestId — the idempotency key that stopped the executor", () =
       lastRequestId: 9e12,
     };
     expect(nextRequestId(acc, 1_000)).toBe(9e12 + 1);
+  });
+});
+
+describe("parseOrderUpdate — the frame that says what became of the order", () => {
+  const upd = (d: unknown[]) => ({ mt: 24, d });
+
+  it("names the stale-rq refusal the executor spent an evening on", () => {
+    // reason 32 is OrderDescIdTooLow: the rq was not greater than the last one
+    // the venue forwarded. This frame was arriving the whole time.
+    const [u] = parseOrderUpdate(
+      upd([{ rq: 1, st: 7, sr: 32, fs: 0, os: 130 }]),
+    );
+    expect(u.statusName).toBe("Failed");
+    expect(u.reasonName).toBe("OrderDescIdTooLow");
+    expect(u.filledScaled).toBe(0);
+    expect(u.originalScaled).toBe(130);
+    expect(u.terminal).toBe(true);
+  });
+
+  it("names the forwarding refusal too", () => {
+    const [u] = parseOrderUpdate(
+      upd([{ rq: 7, st: 7, sr: 34, fs: 0, os: 214 }]),
+    );
+    expect(u.reasonName).toBe("OrderForwardingNotAllowed");
+  });
+
+  it("a fill is terminal; an open order is NOT", () => {
+    // Finishing on Open would discard the outcome we are waiting for.
+    expect(parseOrderUpdate(upd([{ rq: 1, st: 4 }]))[0].terminal).toBe(true);
+    expect(parseOrderUpdate(upd([{ rq: 1, st: 2 }]))[0].terminal).toBe(false);
+    expect(parseOrderUpdate(upd([{ rq: 1, st: 3 }]))[0].terminal).toBe(false);
+  });
+
+  it("renders a code this build has never seen instead of dropping it", () => {
+    // An unknown name is still the venue's answer; swallowing it puts us back
+    // to "accepted, nothing arrived".
+    const [u] = parseOrderUpdate(upd([{ rq: 1, st: 99, sr: 98 }]));
+    expect(u.statusName).toBe("status 99");
+    expect(u.reasonName).toBe("reason 98");
+  });
+
+  it("returns every update in the frame, for the caller to match on rq", () => {
+    const us = parseOrderUpdate(
+      upd([
+        { rq: 10, st: 4, sr: 43 },
+        { rq: 11, st: 6, sr: 28 },
+      ]),
+    );
+    expect(us.map((u) => u.orderRq)).toEqual([10, 11]);
+  });
+
+  it("ignores a frame that is not mt 24, and entries with no rq", () => {
+    expect(parseOrderUpdate({ mt: 25, d: [{ rq: 1 }] })).toEqual([]);
+    expect(parseOrderUpdate(upd([{ st: 4 }]))).toEqual([]);
   });
 });

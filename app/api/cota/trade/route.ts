@@ -266,6 +266,26 @@ export async function POST(req: Request) {
       }
     }
 
+    // The venue's verdict, logged whenever it did NOT fill. This is the line
+    // that names what three evenings were spent guessing at: an order the
+    // gateway accepts and the chain refuses arrives here as a status and a
+    // reason (OrderDescIdTooLow, OrderForwardingNotAllowed, CrossesBook,
+    // AmountExceedsAvailableBalance...). Log it even when the response carries
+    // it, because the hunter reporting "accepted, not filled yet" is usually not
+    // reading a JSON body.
+    if (!result.filled) {
+      console.log(
+        "[cota/trade] not filled:",
+        JSON.stringify({
+          agentOrderId,
+          accepted: result.accepted,
+          code: result.code,
+          error: result.error,
+          venue: result.update,
+        }),
+      );
+    }
+
     return NextResponse.json({
       allowed: true,
       accepted: result.accepted,
@@ -273,6 +293,12 @@ export async function POST(req: Request) {
       code: result.code,
       error: result.error,
       fill: result.fill,
+      /**
+       * The venue's own status and reason for this order, or null if it said
+       * nothing before we stopped waiting. Null is not "fine" — it means the
+       * outcome is still unknown, same as before.
+       */
+      venue: result.update,
       sizeUnits: plan.sizeUnits,
       notionalUsd: plan.notionalUsd,
       markUsd,

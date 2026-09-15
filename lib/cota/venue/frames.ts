@@ -249,3 +249,139 @@ export function parseFill(frame: unknown): Fill | null {
     builderFeeBaseUnits: String(f.bfa ?? "0"),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Order updates (mt 24) — the frame that says what BECAME of an order.
+//
+// The gateway ack (mt 3) only says the venue took the request. The outcome
+// arrives later, on an mt 24, and it carries a status and a REASON. Without it
+// an order that expired unfilled, an order the chain refused, and an order that
+// filled after our socket closed all read as "accepted, nothing arrived" — which
+// is exactly how fw:false and a stale rq each cost an evening. The venue was
+// naming both the whole time: OrderForwardingNotAllowed is reason 34 and
+// OrderDescIdTooLow is reason 32.
+//
+// Ported from Mandate's src/venue.py, which has had these names since its own
+// first live order.
+// ---------------------------------------------------------------------------
+
+export const MT_ORDER_UPDATE = 24;
+
+export const ORDER_STATUS: Record<number, string> = {
+  0: "Unspecified",
+  1: "Pending",
+  2: "Open",
+  3: "PartiallyFilled",
+  4: "Filled",
+  5: "Canceled",
+  6: "Expired",
+  7: "Failed",
+  8: "Untriggered",
+  9: "Triggered",
+  10: "Executed",
+};
+
+/**
+ * Statuses after which no fill is coming. `Open` is NOT one of them — a resting
+ * order is still live — and neither is PartiallyFilled, which can still grow.
+ */
+const TERMINAL_STATUS = new Set([4, 5, 6, 7, 10]);
+
+export const ORDER_STATUS_REASON: Record<number, string> = {
+  0: "Unspecified",
+  1: "AmountExceedsAvailableBalance",
+  2: "AccountFrozen",
+  3: "CancelExistingInvalidCloseOrders",
+  4: "CantChangeCloseOrder",
+  5: "ChangeExpiredOrderNeedsNewExpiry",
+  6: "ClearingExpiredOrder",
+  7: "ClearingFrozenAccountOrder",
+  8: "ClearingInvalidCloseOrder",
+  9: "ClearingSelfMatchingOrder",
+  10: "CloseOrderExceedsPosition",
+  11: "CloseOrderPositionMismatch",
+  12: "ContractNotOperational",
+  13: "CrossesBook",
+  14: "ExceedsLastExecutionBlock",
+  15: "ForwardingReverted",
+  16: "ImmediateOrCancelExecuted",
+  17: "ImmediateOrderUnderMinimum",
+  18: "InsuficientFundsForRecycleFee",
+  19: "InvalidAccountFrozenOrder",
+  20: "InvalidExpiryBlock",
+  21: "InvalidOrderId",
+  22: "MakerOrderFilled",
+  23: "MakerOrderSettlementFailed",
+  24: "MaximumAccountOrders",
+  25: "MaxMatchesReached",
+  26: "NoOp",
+  27: "OrderBookFull",
+  28: "OrderCancelled",
+  29: "OrderCancelledByAdmin",
+  30: "OrderCancelledByLiquidator",
+  31: "OrderChanged",
+  32: "OrderDescIdTooLow",
+  33: "OrderDoesNotExist",
+  34: "OrderForwardingNotAllowed",
+  35: "OrderPlaced",
+  36: "OrderPostFailed",
+  37: "OrderSettlementImpliesInsolvent",
+  38: "OrderSizeExceedsAvailableSize",
+  39: "PostOrderUnderMinimum",
+  40: "PriceOutOfRange",
+  41: "RecycleBalanceInsufficientSevere",
+  42: "SizeOutOfRange",
+  43: "TakerOrderFilled",
+  44: "TakerOrderSettlementFailed",
+  45: "UnableToCancelOrder",
+  46: "UnmatchedLotRemainsInFillOrKill",
+  47: "UnspecifiedCollateral",
+};
+
+export interface OrderUpdate {
+  /** The `rq` the order went out under — how an update is tied to its order. */
+  orderRq: number;
+  status: number;
+  /** ORDER_STATUS name, or `status <n>` for a code this build doesn't know. */
+  statusName: string;
+  reason: number;
+  /** ORDER_STATUS_REASON name, or `reason <n>` for an unknown code. */
+  reasonName: string;
+  /** Filled size, scaled. */
+  filledScaled: number;
+  /** Originally requested size, scaled. */
+  originalScaled: number;
+  /** True when no fill can still arrive for this order. */
+  terminal: boolean;
+}
+
+/**
+ * Parse an order update (mt 24): `{d:[{rq, st, sr, fs, os}]}`. Returns every
+ * update in the frame; the caller matches on `orderRq`.
+ *
+ * An unknown code is rendered as `status <n>` / `reason <n>` rather than
+ * dropped: a name this build has not seen is still the venue's answer, and
+ * swallowing it would put us back to "accepted, nothing arrived".
+ */
+export function parseOrderUpdate(frame: unknown): OrderUpdate[] {
+  const f = frame as { mt?: number; d?: unknown[] };
+  if (f?.mt !== MT_ORDER_UPDATE || !Array.isArray(f.d)) return [];
+  const out: OrderUpdate[] = [];
+  for (const raw of f.d) {
+    const o = raw as Record<string, unknown>;
+    if (o.rq === null || o.rq === undefined) continue;
+    const status = Number(o.st ?? 0);
+    const reason = Number(o.sr ?? 0);
+    out.push({
+      orderRq: Number(o.rq),
+      status,
+      statusName: ORDER_STATUS[status] ?? `status ${status}`,
+      reason,
+      reasonName: ORDER_STATUS_REASON[reason] ?? `reason ${reason}`,
+      filledScaled: Number(o.fs ?? 0),
+      originalScaled: Number(o.os ?? 0),
+      terminal: TERMINAL_STATUS.has(status),
+    });
+  }
+  return out;
+}

@@ -354,6 +354,12 @@ export default function TradePage() {
         error?: string;
         code?: number;
         reconcilable?: boolean;
+        venue?: {
+          statusName?: string;
+          reasonName?: string;
+          filledScaled?: number;
+          originalScaled?: number;
+        } | null;
       };
       if (!res.ok) {
         setPlaceMsg(body.error ?? t.placeFailed);
@@ -372,7 +378,15 @@ export default function TradePage() {
         setPlaceMsg(t.placed);
         setPlacePhase("done");
       } else if (body.accepted) {
-        setPlaceMsg(t.placeAccepted);
+        // "Accepted (not filled yet)" on its own is what every silent failure
+        // looked like. When the venue said what became of the order, say that
+        // instead — its own status and reason, unparaphrased.
+        const v = body.venue;
+        setPlaceMsg(
+          v?.statusName
+            ? `${t.placeAccepted} — ${v.statusName}: ${v.reasonName ?? "?"}`
+            : t.placeAccepted,
+        );
         setPlacePhase("done");
       } else {
         // The leash allowed it and the VENUE refused. `error` carries the real
