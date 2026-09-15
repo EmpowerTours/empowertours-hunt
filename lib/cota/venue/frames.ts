@@ -144,10 +144,7 @@ export interface OpenPositionFrame {
  * on a freshly-read frame can lag an order this process just sent, and without
  * it two orders in quick succession would reuse a value.
  */
-export function nextRequestId(
-  account: AccountSnapshot,
-  lastSeen = 0,
-): number {
+export function nextRequestId(account: AccountSnapshot, lastSeen = 0): number {
   return Math.max(lastSeen, account.lastRequestId) + 1;
 }
 
@@ -285,9 +282,7 @@ function fillFromEntry(entry: unknown): Fill | null {
 export function parseFills(frame: unknown): Fill[] {
   const f = frame as { mt?: number; d?: unknown[] };
   if (Array.isArray(f?.d)) {
-    return f.d
-      .map(fillFromEntry)
-      .filter((x): x is Fill => x !== null);
+    return f.d.map(fillFromEntry).filter((x): x is Fill => x !== null);
   }
   // A bare entry: either the captured single-fill shape or the mock's.
   const one = fillFromEntry(frame);
@@ -454,6 +449,25 @@ export interface OrderUpdate {
 export function venueRefusedOrder(update: OrderUpdate | null): boolean {
   if (!update) return false;
   return update.terminal && !update.expectsFill;
+}
+
+/**
+ * Did the venue say this order TRADED?
+ *
+ * `expectsFill` is set when size changed hands, which is the venue stating the
+ * order executed — the mt 25 carrying the price and fee is merely still in
+ * flight. It is the exact counterpart of venueRefusedOrder, and the two are not
+ * exhaustive: an order can be open on the book, having neither traded nor been
+ * refused, and both answer false for it.
+ *
+ * Worth more than "we sent this recently". An order that is only recent might
+ * still do anything; an order the venue says traded has already done it, and
+ * the only thing missing is our record of the price. That distinction is why
+ * this is recorded on the CotaOrder row rather than inferred from a clock.
+ */
+export function venueConfirmedFill(update: OrderUpdate | null): boolean {
+  if (!update) return false;
+  return update.expectsFill;
 }
 
 export function parseOrderUpdate(frame: unknown): OrderUpdate[] {

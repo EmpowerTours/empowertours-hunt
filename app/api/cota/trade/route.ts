@@ -12,7 +12,7 @@ import {
   venuePreflight,
   VENUE_REFUSAL_DETAIL,
 } from "@/lib/cota/venue/preflight";
-import { venueRefusedOrder } from "@/lib/cota/venue/frames";
+import { venueConfirmedFill, venueRefusedOrder } from "@/lib/cota/venue/frames";
 import { type MarkedMarket } from "@/lib/cota/venue/account-state";
 import { readDayState } from "@/lib/cota/day-state";
 import type { Unexplained } from "@/lib/cota/venue/adopt";
@@ -270,6 +270,13 @@ export async function POST(req: Request) {
           direction: directionOfOrderType(plan.orderType),
           sizeUnits: plan.sizeUnits,
           orderId: agentOrderId,
+          // Record the venue's own verdict now, while we have it. An order it
+          // says TRADED stays adoptable however long it takes us to read the
+          // account again; without this the row expires on the age cap and a
+          // hunter who comes back half an hour later is sent to a manual
+          // reconcile for a fill the venue confirmed at the time.
+          venueConfirmedFill: venueConfirmedFill(result.update),
+          venueStatus: result.update?.statusName ?? null,
         });
       } catch (e) {
         console.error("[cota/trade] pending order record failed", e);

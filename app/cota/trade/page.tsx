@@ -66,6 +66,8 @@ const T = {
     placing: "Colocando…",
     placed: "¡Orden ejecutada! ✓",
     placeAccepted: "Aceptada (aún sin llenar)",
+    placeFilledPending:
+      "Ejecutada ✓ — Perpl confirmó la operación. El precio llega un instante después, así que se anota en tu registro en la próxima lectura.",
     placeRejected: "Tu correa rechazó esto",
     placeFailed: "Falló la colocación",
     fwdFix: "Activar trading en Perpl",
@@ -120,6 +122,8 @@ const T = {
     placing: "Placing…",
     placed: "Order filled! ✓",
     placeAccepted: "Accepted (not filled yet)",
+    placeFilledPending:
+      "Filled ✓ — Perpl confirmed the trade. The price frame arrives a moment later, so it lands in your ledger on the next read.",
     placeRejected: "Your leash rejected this",
     placeFailed: "Placement failed",
     fwdFix: "Switch trading on at Perpl",
@@ -412,6 +416,8 @@ export default function TradePage() {
           reasonName?: string;
           filledScaled?: number;
           originalScaled?: number;
+          /** Size changed hands; the mt 25 with the price is still in flight. */
+          expectsFill?: boolean;
         } | null;
       };
       if (!res.ok) {
@@ -434,11 +440,18 @@ export default function TradePage() {
         // "Accepted (not filled yet)" on its own is what every silent failure
         // looked like. When the venue said what became of the order, say that
         // instead — its own status and reason, unparaphrased.
+        //
+        // And when what it said is that the order TRADED, do not lead with "not
+        // filled yet". `expectsFill` means size changed hands and only the price
+        // frame is still in flight; the two halves of
+        // "Accepted (not filled yet) — Filled: TakerOrderFilled" contradicted
+        // each other, and the half that was right was the venue's.
         const v = body.venue;
+        const head = v?.expectsFill ? t.placeFilledPending : t.placeAccepted;
         setPlaceMsg(
           v?.statusName
-            ? `${t.placeAccepted} — ${v.statusName}: ${v.reasonName ?? "?"}`
-            : t.placeAccepted,
+            ? `${head} — ${v.statusName}: ${v.reasonName ?? "?"}`
+            : head,
         );
         setPlacePhase("done");
       } else {
@@ -676,10 +689,7 @@ export default function TradePage() {
                     {t.revokeNote}
                   </p>
                   <div className="flex gap-2">
-                    <Button
-                      onClick={() => void revoke()}
-                      disabled={revokeBusy}
-                    >
+                    <Button onClick={() => void revoke()} disabled={revokeBusy}>
                       {revokeBusy ? t.revoking : t.revokeConfirm}
                     </Button>
                     <Button

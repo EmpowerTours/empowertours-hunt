@@ -100,6 +100,9 @@ export async function recordPlacedOrder(
     direction: 1 | -1;
     sizeUnits: number;
     orderId: number;
+    /** The venue said it traded — see CotaOrder.venueFilledAt. */
+    venueConfirmedFill?: boolean;
+    venueStatus?: string | null;
   },
 ): Promise<void> {
   await prisma.cotaOrder.create({
@@ -110,6 +113,8 @@ export async function recordPlacedOrder(
       direction: o.direction,
       sizeUnits: o.sizeUnits,
       orderId: o.orderId,
+      venueFilledAt: o.venueConfirmedFill ? new Date() : null,
+      venueStatus: o.venueStatus ?? null,
     },
   });
 }
@@ -136,6 +141,7 @@ export async function loadPendingOrders(
     sizeUnits: r.sizeUnits,
     orderId: r.orderId,
     placedAtMs: r.placedAt.getTime(),
+    venueConfirmedFill: r.venueFilledAt !== null,
   }));
 }
 

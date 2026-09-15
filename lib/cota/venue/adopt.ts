@@ -67,6 +67,17 @@ export interface PendingOrder {
   sizeUnits: number;
   orderId: number;
   placedAtMs: number;
+  /**
+   * The venue said this order TRADED (`expectsFill` on its mt 24), so the fill
+   * has already happened and only our record of the price is missing.
+   *
+   * It exempts the row from the age cap. The cap guards against a row that
+   * might never have done anything being used to explain a position much later;
+   * a confirmed fill is not that row. Without this, a hunter who reads the
+   * account half an hour after their order filled is sent to a manual reconcile
+   * for a fill the venue told us about at the time.
+   */
+  venueConfirmedFill: boolean;
 }
 
 export interface Unexplained {
@@ -260,7 +271,11 @@ export function planAdoption(args: {
           o.direction === direction &&
           o.sizeUnits + EPS >= Math.abs(delta) &&
           o.placedAtMs <= nowMs &&
-          (!requireRecent || nowMs - o.placedAtMs <= PENDING_MAX_AGE_MS),
+          // The venue's own confirmation outranks the clock: an order it said
+          // traded has already traded, however long ago we last looked.
+          (!requireRecent ||
+            o.venueConfirmedFill ||
+            nowMs - o.placedAtMs <= PENDING_MAX_AGE_MS),
       );
 
     let orderId = 0;

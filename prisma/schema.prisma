@@ -320,6 +320,22 @@ model CotaOrder {
   /// closed set this schema should pretend to know.
   deadReason String?
 
+  /// Set when the venue itself said this order TRADED — `expectsFill` on its mt
+  /// 24, meaning size changed hands and only the price frame is still in flight.
+  ///
+  /// This is EVIDENCE where the pending-order age cap is a heuristic. A row is
+  /// normally allowed to explain a position only for a short while, so a stale
+  /// row cannot be used to adopt something it never opened. But an order the
+  /// venue has confirmed traded is not a guess about the future: it has already
+  /// happened, and the only thing missing is our record of the price. Such a row
+  /// stays adoptable however long it takes us to read again, which is what stops
+  /// a hunter who waits half an hour being sent to a manual reconcile for a fill
+  /// the venue told us about at the time.
+  venueFilledAt DateTime?
+
+  /// The venue's status name for this order, for whoever reads the row later.
+  venueStatus String?
+
   placedAt  DateTime @default(now())
   createdAt DateTime @default(now())
 

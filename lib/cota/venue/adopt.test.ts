@@ -40,6 +40,7 @@ function pendingBuy(over: Partial<PendingOrder> = {}): PendingOrder {
     sizeUnits: 214,
     orderId: 77,
     placedAtMs: NOW - 60_000,
+    venueConfirmedFill: false,
     ...over,
   };
 }
@@ -236,6 +237,7 @@ describe("planAdoption — the hunter path attributes, it does not relabel", () 
     sizeUnits: 131,
     orderId: 2018906983,
     placedAtMs: Date.UTC(2026, 8, 15, 5, 32, 19),
+    venueConfirmedFill: false,
   };
   const EIGHT_HOURS_LATER = Date.UTC(2026, 8, 15, 13, 30, 0);
 
@@ -531,5 +533,63 @@ describe("foldFills — fees follow the open run", () => {
     ]);
     expect(positions[0].signedSize).toBeCloseTo(-50, 9);
     expect(positions[0].feesUsd).toBeCloseTo(0.02, 12);
+  });
+});
+
+describe("a fill the venue confirmed does not expire", () => {
+  // The trap this closes: the order filled, the venue said so on mt 24, and the
+  // fill frame arrived after the socket closed. If the hunter does not come back
+  // within PENDING_MAX_AGE_MS, the row stops being able to explain the position
+  // and they are sent to a manual reconcile — for a fill the venue told us about
+  // at the time. Recency is a heuristic; the venue's verdict is evidence.
+  const LONG_AFTER = NOW + PENDING_MAX_AGE_MS * 20;
+
+  it("adopts automatically however long ago it was placed", () => {
+    const plan = planAdoption({
+      fold: [],
+      venue: [live5273()],
+      marks,
+      pending: [pendingBuy({ venueConfirmedFill: true })],
+      nowMs: LONG_AFTER,
+      trust: "pending",
+    });
+    expect(plan.unexplained).toEqual([]);
+    expect(plan.fills).toHaveLength(1);
+    expect(plan.resolvedOrderIds).toEqual(["ord_1"]);
+  });
+
+  it("an UNCONFIRMED row of the same age still expires", () => {
+    // The exemption must come from the verdict, not from having loosened the
+    // cap for everyone.
+    const plan = planAdoption({
+      fold: [],
+      venue: [live5273()],
+      marks,
+      pending: [pendingBuy({ venueConfirmedFill: false })],
+      nowMs: LONG_AFTER,
+      trust: "pending",
+    });
+    expect(plan.fills).toEqual([]);
+    expect(plan.unexplained[0].reason).toBe("no_pending_order");
+  });
+
+  it("confirmation does not excuse a mismatched market, side or size", () => {
+    // It exempts the row from the CLOCK and nothing else. A confirmed fill on
+    // the other side is still not an explanation for this position.
+    for (const over of [
+      { direction: -1 as const },
+      { marketId: 99 },
+      { sizeUnits: 1 },
+    ]) {
+      const plan = planAdoption({
+        fold: [],
+        venue: [live5273()],
+        marks,
+        pending: [pendingBuy({ venueConfirmedFill: true, ...over })],
+        nowMs: LONG_AFTER,
+        trust: "pending",
+      });
+      expect(plan.fills).toEqual([]);
+    }
   });
 });
