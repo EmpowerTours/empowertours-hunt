@@ -155,3 +155,33 @@ describe("planClose — the side comes from the position, never the caller", () 
     expect(p.decision).toEqual({ ok: false, reason: "nothing_to_reduce" });
   });
 });
+
+describe("a share of the position is resolved against what is OPEN", () => {
+  // The route turns `fraction` into units against the size it just read. These
+  // pin the arithmetic that replaced: the browser holds a position up to a poll
+  // old, and half of a stale size is not half of the real one.
+  const resolve = (held: number, fraction?: number, sizeUnits?: number) =>
+    fraction !== undefined && fraction < 1 ? held * fraction : sizeUnits;
+
+  it("half of 576 is 288, and half of a grown 700 is 350 — not 288", () => {
+    expect(resolve(576, 0.5)).toBe(288);
+    expect(resolve(700, 0.5)).toBe(350);
+  });
+
+  it("fraction 1 falls through to the full-close path, sending no size", () => {
+    expect(resolve(576, 1)).toBeUndefined();
+  });
+
+  it("a resolved share still goes through planClose's clamp and grid", () => {
+    const p = planClose({
+      market: MON_MARKET,
+      openSignedSize: 577,
+      requestedUnits: resolve(577, 0.5),
+      markPriceUsd: 0.02148,
+    });
+    // 288.5 floors to 288 on a whole-unit grid, and is not treated as full.
+    expect(p.sizeUnits).toBe(288);
+    expect(p.full).toBe(false);
+    expect(p.decision.ok).toBe(true);
+  });
+});

@@ -119,11 +119,28 @@ export async function GET(req: Request) {
   }
 }
 
-const Input = z.object({
-  market: z.string().min(1).max(16),
-  /** Units to close. Omit to close the whole position. */
-  sizeUnits: z.number().positive().finite().optional(),
-});
+const Input = z
+  .object({
+    market: z.string().min(1).max(16),
+    /** Units to close. Omit to close the whole position. */
+    sizeUnits: z.number().positive().finite().optional(),
+    /**
+     * A share of whatever is open, 0 < f <= 1, resolved HERE against the
+     * position this request reads — not against one the browser read earlier.
+     *
+     * "Close half" is a statement about the position, not about a number of
+     * units, and the page holds a copy that is up to a poll interval old. If a
+     * fill lands or a liquidation trims the position in that window, half of
+     * the stale size is not half of the real one. Sending the intent instead of
+     * the arithmetic removes the window entirely.
+     */
+    fraction: z.number().positive().lte(1).optional(),
+  })
+  // Two ways to say the same thing invite a caller to say both and mean
+  // neither.
+  .refine((v) => !(v.sizeUnits !== undefined && v.fraction !== undefined), {
+    message: "send sizeUnits or fraction, not both",
+  });
 
 export async function POST(req: Request) {
   try {
@@ -170,10 +187,19 @@ export async function POST(req: Request) {
     const frame = read.positions.find((p) => p.marketId === market.id);
     const openSignedSize = frame ? signedSizeFromFrame(frame, marks) : 0;
 
+    // A fraction is resolved against the size just read, so "half" always means
+    // half of what is actually open. fraction 1 falls through to undefined —
+    // the full-close path, which sends no size at all.
+    const held = Math.abs(openSignedSize);
+    const requestedUnits =
+      parsed.data.fraction !== undefined && parsed.data.fraction < 1
+        ? held * parsed.data.fraction
+        : parsed.data.sizeUnits;
+
     const plan = planClose({
       market,
       openSignedSize,
-      requestedUnits: parsed.data.sizeUnits,
+      requestedUnits,
       markPriceUsd: markUsd,
     });
     if (!plan.decision.ok) {

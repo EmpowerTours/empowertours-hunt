@@ -559,16 +559,16 @@ export default function TradePage() {
     setCloseBusy(true);
     setCloseMsg(null);
     try {
-      const held = Math.abs(position.signedSize);
       const res = await fetch("/api/cota/close", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           market,
-          // Full close sends no size at all, so the server closes exactly what
-          // the venue reports rather than a number this page computed from a
-          // read that may already be stale.
-          ...(fraction === 1 ? {} : { sizeUnits: held * fraction }),
+          // The INTENT, never a unit count. This page's copy of the position
+          // is up to a poll old, so half of it may not be half of what is open
+          // by the time the request lands. The server resolves the share
+          // against the position it reads in the same breath as acting on it.
+          ...(fraction === 1 ? {} : { fraction }),
         }),
       });
       const body = (await res.json()) as {
