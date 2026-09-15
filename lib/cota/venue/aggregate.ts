@@ -198,3 +198,25 @@ export function buildAggregateState(args: {
       : null,
   };
 }
+
+/**
+ * Entry price in USD including the venue's fractional residue.
+ *
+ * `ep` is the entry rounded to price_decimals and `epr` is a Q16 fraction of the
+ * last place (Perpl's type reference: "epr?: number (Q16 fractional residue)").
+ * Including it costs nothing and drops a small one-directional bias: on account
+ * 5273 the true entry is 0.022531778 against an `ep` of 0.022531, which is
+ * 0.35 bps — $0.00045 across the position, immaterial to any decision. `ep`
+ * alone always rounds DOWN, so a long's entry is always understated by a little;
+ * that bias is easier to never introduce than to notice later.
+ *
+ * Returns null when the frame carried no `ep`, the same as entryUsdFromFrame.
+ */
+export function entryUsdWithResidue(
+  f: OpenPositionFrame,
+  priceDecimals: number,
+): number | null {
+  if (f.entryPriceScaled === null) return null;
+  const residue = (f.entryResidueQ16 ?? 0) / 65536;
+  return (f.entryPriceScaled + residue) / 10 ** priceDecimals;
+}

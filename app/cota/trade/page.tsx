@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
@@ -81,6 +81,20 @@ const T = {
     reconcileNothing:
       "No hubo nada que adoptar. Si el bloqueo sigue, la posición ya no existe en la casa y no hay precio honesto que registrar.",
     reconcileFailed: "No se pudo adoptar",
+    posTitle: "Tu posición",
+    posNone: "Sin posición abierta.",
+    posSide: { long: "Largo", short: "Corto" },
+    posEntry: "Entrada",
+    posMark: "Precio",
+    posPnl: "Sin realizar",
+    closeAll: "Cerrar todo",
+    closeHalf: "Cerrar la mitad",
+    closing: "Cerrando…",
+    closeAtLoss:
+      "Esto realiza una pérdida. Cerrar siempre está permitido — la correa nunca te encierra — pero la pérdida se vuelve real al tocar.",
+    closeDone: "Cerrada ✓",
+    closeAccepted: "Aceptada — se anota en la próxima lectura.",
+    closeFailed: "No se pudo cerrar",
     revoke: "Revocar esta Cota",
     revokeConfirm: "Confirmar: revocar",
     revokeCancel: "Cancelar",
@@ -137,6 +151,20 @@ const T = {
     reconcileNothing:
       "There was nothing to adopt. If it stays blocked, the venue no longer reports that position and there is no honest price to record.",
     reconcileFailed: "Could not adopt",
+    posTitle: "Your position",
+    posNone: "No open position.",
+    posSide: { long: "Long", short: "Short" },
+    posEntry: "Entry",
+    posMark: "Mark",
+    posPnl: "Unrealised",
+    closeAll: "Close all",
+    closeHalf: "Close half",
+    closing: "Closing…",
+    closeAtLoss:
+      "This realises a loss. Closing is always allowed — the leash never locks you in — but the loss becomes real when you tap.",
+    closeDone: "Closed ✓",
+    closeAccepted: "Accepted — it lands in your ledger on the next read.",
+    closeFailed: "Could not close",
     revoke: "Revoke this Cota",
     revokeConfirm: "Confirm: revoke",
     revokeCancel: "Cancel",
@@ -191,6 +219,19 @@ export default function TradePage() {
   // never saw. Only offered when the server says it is adoptable — a position
   // the venue no longer prices cannot be, and pretending otherwise would send
   // the hunter to a button that can only fail.
+  // The open position, read from the venue (not the ledger, which can be a read
+  // behind). It is what the Close controls act on and what decides their side.
+  const [position, setPosition] = useState<{
+    side: "long" | "short";
+    signedSize: number;
+    entryUsd: number | null;
+    leverageX: number;
+    notionalUsd: number;
+    unrealisedUsd: number | null;
+  } | null>(null);
+  const [posMark, setPosMark] = useState<number | null>(null);
+  const [closeBusy, setCloseBusy] = useState(false);
+  const [closeMsg, setCloseMsg] = useState<string | null>(null);
   const [unreconciled, setUnreconciled] = useState(false);
   // Revoking is irreversible, so it takes two taps: the first arms it, the
   // second does it. A hunter must not be able to end their own authorisation
@@ -474,6 +515,95 @@ export default function TradePage() {
     }
   }
 
+  const refreshPosition = useCallback(async () => {
+    if (!market) return;
+    try {
+      const res = await fetch(
+        `/api/cota/close?market=${encodeURIComponent(market)}`,
+      );
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        position?: typeof position;
+        markUsd?: number;
+      };
+      setPosition(body.position ?? null);
+      setPosMark(body.markUsd ?? null);
+    } catch {
+      // A position we could not read is shown as unknown, never as flat:
+      // rendering "no position" on a failed fetch would tell a hunter they are
+      // out when they are not.
+    }
+  }, [market]);
+
+  // Polled, not read once: the mark moves, and an unrealised PnL that is stale
+  // is worse than none — it is the number a hunter decides to close on. The
+  // `live` flag stops a reply from a market they have switched away from
+  // landing on the new one.
+  useEffect(() => {
+    let live = true;
+    const tick = () => {
+      if (live) void refreshPosition();
+    };
+    tick();
+    const id = setInterval(tick, 10000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [refreshPosition]);
+
+  // Reduce or close. Deliberately not routed through the leash preview above:
+  // the preview gates OPENS, and a reduce is not gated. See mayReduce.
+  async function close(fraction: 1 | 0.5) {
+    if (!market || !position) return;
+    setCloseBusy(true);
+    setCloseMsg(null);
+    try {
+      const held = Math.abs(position.signedSize);
+      const res = await fetch("/api/cota/close", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          market,
+          // Full close sends no size at all, so the server closes exactly what
+          // the venue reports rather than a number this page computed from a
+          // read that may already be stale.
+          ...(fraction === 1 ? {} : { sizeUnits: held * fraction }),
+        }),
+      });
+      const body = (await res.json()) as {
+        allowed?: boolean;
+        reason?: string;
+        filled?: boolean;
+        accepted?: boolean;
+        error?: string;
+        venue?: { statusName?: string; reasonName?: string } | null;
+      };
+      if (!res.ok) {
+        setCloseMsg(body.error ?? t.closeFailed);
+      } else if (body.allowed === false) {
+        setCloseMsg(
+          (body.reason ? refusalText(body.reason, lang) : null) ??
+            t.closeFailed,
+        );
+      } else if (body.filled) {
+        setCloseMsg(t.closeDone);
+      } else {
+        const v = body.venue;
+        setCloseMsg(
+          v?.statusName
+            ? `${t.closeAccepted} — ${v.statusName}: ${v.reasonName ?? "?"}`
+            : t.closeAccepted,
+        );
+      }
+    } catch {
+      setCloseMsg(t.closeFailed);
+    } finally {
+      setCloseBusy(false);
+      void refreshPosition();
+    }
+  }
+
   return (
     <main className="text-ink mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
       <a href="/cota" className="text-ink-dim w-fit text-sm hover:underline">
@@ -645,6 +775,77 @@ export default function TradePage() {
               <Note tone="stop">{refusalText(decision.reason, lang)}</Note>
             )}
             <p className="text-ink-faint text-[11px]">{t.freshNote}</p>
+          </Panel>
+
+          <Panel className="space-y-2">
+            <p className="text-ink-dim text-xs tracking-wide uppercase">
+              {t.posTitle}
+            </p>
+            {position === null ? (
+              <p className="text-ink-faint text-sm">{t.posNone}</p>
+            ) : (
+              <>
+                <div className="text-ink flex items-baseline justify-between">
+                  <span className="font-semibold">
+                    {t.posSide[position.side]} {Math.abs(position.signedSize)}{" "}
+                    {market}
+                  </span>
+                  <span className="font-mono text-sm">
+                    {position.leverageX}x
+                  </span>
+                </div>
+                <div className="text-ink-dim flex justify-between text-xs">
+                  <span>{t.posEntry}</span>
+                  <span className="font-mono">
+                    {position.entryUsd?.toFixed(6) ?? "—"}
+                  </span>
+                </div>
+                <div className="text-ink-dim flex justify-between text-xs">
+                  <span>{t.posMark}</span>
+                  <span className="font-mono">
+                    {posMark?.toFixed(6) ?? "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-ink-dim">{t.posPnl}</span>
+                  <span
+                    className={`font-mono ${
+                      (position.unrealisedUsd ?? 0) < 0
+                        ? "text-alert"
+                        : "text-[#4ade80]"
+                    }`}
+                  >
+                    {position.unrealisedUsd === null
+                      ? "—"
+                      : `${position.unrealisedUsd >= 0 ? "+" : ""}${position.unrealisedUsd.toFixed(4)}`}
+                  </span>
+                </div>
+                {(position.unrealisedUsd ?? 0) < 0 && (
+                  <Note tone="warn">{t.closeAtLoss}</Note>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    onClick={() => void close(1)}
+                    disabled={closeBusy}
+                    className="flex-1"
+                  >
+                    {closeBusy ? t.closing : t.closeAll}
+                  </Button>
+                  <Button
+                    onClick={() => void close(0.5)}
+                    disabled={closeBusy}
+                    className="flex-1"
+                  >
+                    {t.closeHalf}
+                  </Button>
+                </div>
+                {closeMsg && (
+                  <p className="text-ink-dim text-center text-[12px]">
+                    {closeMsg}
+                  </p>
+                )}
+              </>
+            )}
           </Panel>
 
           <Button

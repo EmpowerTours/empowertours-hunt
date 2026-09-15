@@ -107,6 +107,22 @@ export interface OpenPositionFrame {
   entryPriceScaled: number | null;
   /** `fee`: fee charged on this position so far, AUSD 6dp. Null if omitted. */
   feeScaled: number | null;
+  /**
+   * `epr`: the fractional remainder of the entry price, Q16 — a sixteenth-bit
+   * fixed-point fraction of one unit of the last price decimal. Perpl's type
+   * reference calls it "Q16 fractional residue".
+   *
+   * `ep` alone is the entry ROUNDED DOWN to price_decimals, so ignoring this
+   * systematically understates a long's entry. The size of that error is small:
+   * on 5273 the true entry is 0.022531778 against an `ep` of 0.022531, which is
+   * 0.35 bps, or $0.00045 across the whole 576-unit position. It is kept not
+   * because it changes any decision but because the venue sends it and there is
+   * no reason to discard precision that arrives for free — and because a
+   * reconstruction that drops it drifts from the venue's own number in one
+   * direction, which is the kind of small bias that is easier to never
+   * introduce than to find later.
+   */
+  entryResidueQ16: number | null;
 }
 
 /**
@@ -201,6 +217,7 @@ export function parsePositions(frame: unknown): OpenPositionFrame[] {
       leverageX100: Number(pos.lv ?? 0),
       entryPriceScaled: numOrNull(pos.ep),
       feeScaled: numOrNull(pos.fee),
+      entryResidueQ16: numOrNull(pos.epr),
     });
   }
   return out;

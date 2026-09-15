@@ -71,6 +71,17 @@ const TEXT: Record<RefusalReason, Record<Lang, string>> = {
     en: "Your account holds positions this agent didn't open, so today's loss can't be verified. Trading stops until they're closed or reconciled.",
     es: "Tu cuenta tiene posiciones que este agente no abrió, así que no se puede verificar la pérdida de hoy. Se detiene hasta cerrarlas o reconciliarlas.",
   },
+  // Reduce refusals. Both are arithmetic, not the leash — a reduce is never
+  // refused for hitting a ceiling, so the text must not imply the hunter is
+  // being held back by their own limits.
+  nothing_to_reduce: {
+    en: "There is no open position on this market to reduce.",
+    es: "No hay posición abierta en este mercado que reducir.",
+  },
+  reduce_exceeds_position: {
+    en: "That is larger than the position you hold. Closing more than you have would open a position the other way, which has to go through your leash as a new trade.",
+    es: "Eso es más grande que la posición que tienes. Cerrar más de lo que tienes abriría una posición al revés, y eso tiene que pasar por tu correa como una operación nueva.",
+  },
   size_zero: {
     en: "That size is too small to buy one unit at the current price.",
     es: "Ese tamaño es muy pequeño para comprar una unidad al precio actual.",

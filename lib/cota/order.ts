@@ -9,6 +9,7 @@
 
 import {
   mayOpen,
+  mayReduce,
   type Decision,
   type DayState,
   type EnforcedBound,
@@ -148,6 +149,72 @@ export function planOpen(args: {
   };
   const decision = mayOpen(bound, state, order, nowSeconds);
   return { orderType, sizeUnits, notionalUsd, order, decision };
+}
+
+export interface ClosePlan {
+  orderType: typeof T_CLOSE_LONG | typeof T_CLOSE_SHORT;
+  /** Units to close, floored to the market's size grid. */
+  sizeUnits: number;
+  /** Notional the close will trade, at the current mark. */
+  notionalUsd: number;
+  /** Whether this is the whole position. */
+  full: boolean;
+  decision: Decision;
+}
+
+/**
+ * Plan a REDUCE or CLOSE against the position the venue reports.
+ *
+ * The side is not a parameter and must not be: closing a long is a sell and
+ * closing a short is a buy, and the only thing that decides which is the sign of
+ * what is actually held. A caller that could pass a side could close the wrong
+ * way, which does not reduce anything — it doubles the position.
+ *
+ * `requestedUnits` omitted means the whole position, which is what a Close
+ * button sends. The size is floored to the market's grid like planOpen, then
+ * clamped to what is held, because flooring must never turn "close everything"
+ * into a dust position left behind: if the floor lands within one grid step of
+ * the full size, this closes the full size.
+ *
+ * Gated by mayReduce, which is arithmetic only — no ceiling, no expiry. See its
+ * note for why a leash must never be able to trap someone in a position.
+ */
+export function planClose(args: {
+  market: Market;
+  /** Signed size open at the venue: > 0 long, < 0 short. */
+  openSignedSize: number;
+  /** Units to close. Omit for the whole position. */
+  requestedUnits?: number;
+  markPriceUsd: number;
+}): ClosePlan {
+  const { market, openSignedSize, markPriceUsd } = args;
+  const held = Math.abs(openSignedSize);
+  const orderType = openSignedSize < 0 ? T_CLOSE_SHORT : T_CLOSE_LONG;
+
+  const scale = 10 ** market.sizeDecimals;
+  const step = 1 / scale;
+  let sizeUnits: number;
+  if (args.requestedUnits === undefined) {
+    sizeUnits = held;
+  } else {
+    const floored = Math.floor(args.requestedUnits * scale) / scale;
+    // Within one grid step of everything is everything. Flooring a full close
+    // into a residue would leave a position the hunter believes they closed,
+    // and they would only find out from a funding charge.
+    sizeUnits = floored >= held - step ? held : floored;
+  }
+  if (sizeUnits > held) sizeUnits = held;
+
+  return {
+    orderType,
+    sizeUnits,
+    notionalUsd: sizeUnits * markPriceUsd,
+    full: held > 0 && Math.abs(sizeUnits - held) < step / 2,
+    decision: mayReduce(
+      { market: market.symbol, signedSize: openSignedSize },
+      sizeUnits,
+    ),
+  };
 }
 
 /**

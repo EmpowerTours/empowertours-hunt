@@ -28,6 +28,7 @@ function live5273(over: Partial<OpenPositionFrame> = {}): OpenPositionFrame {
     leverageX100: 200,
     entryPriceScaled: 23308,
     feeScaled: 4440,
+    entryResidueQ16: null,
     ...over,
   };
 }

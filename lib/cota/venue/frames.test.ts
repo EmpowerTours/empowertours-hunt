@@ -147,7 +147,13 @@ describe("parseFills", () => {
   });
 
   it("never reads a fee as a float (the $880-on-a-$0.99-trade bug)", () => {
-    const [fill] = parseFills({ oid: 1, s: 116, p: 25832, f: "599", bfa: "599" });
+    const [fill] = parseFills({
+      oid: 1,
+      s: 116,
+      p: 25832,
+      f: "599",
+      bfa: "599",
+    });
     // Kept a string; scaling is the caller's, with the collateral decimals.
     expect(fill?.feeBaseUnits).toBe("599");
     expect(typeof fill?.feeBaseUnits).toBe("string");
@@ -206,6 +212,9 @@ describe("parsePositions — the entry price the frame was said not to have", ()
     expect(p.leverageX100).toBe(200);
     expect(p.entryPriceScaled).toBe(23308);
     expect(p.feeScaled).toBe(4440);
+    // The 09-14 frame carried no `epr`: that first fill's entry landed exactly
+    // on the price grid, so there was no residue to send.
+    expect(p.entryResidueQ16).toBeNull();
   });
 
   it("agrees with the venue's own traded volume", () => {
@@ -224,6 +233,7 @@ describe("parsePositions — the entry price the frame was said not to have", ()
     });
     expect(p.entryPriceScaled).toBeNull();
     expect(p.feeScaled).toBeNull();
+    expect(p.entryResidueQ16).toBeNull();
   });
 });
 
@@ -272,9 +282,9 @@ describe("nextRequestId — a counter seeded from lfr, never the clock", () => {
   });
 
   it("prefers lfr when the venue is ahead of what we remember", () => {
-    expect(nextRequestId({ ...acc(AFTER_FIRST_FILL), lastRequestId: 40 }, 9)).toBe(
-      41,
-    );
+    expect(
+      nextRequestId({ ...acc(AFTER_FIRST_FILL), lastRequestId: 40 }, 9),
+    ).toBe(41);
   });
 
   it("always advances, so two orders never share an rq", () => {
@@ -390,7 +400,15 @@ describe("parseFills — the envelope that dropped every real fill", () => {
   // false and the trade route's recordFill never fired in production. Both
   // ledger fills got in through adoption instead, which is why a real fill
   // surfaced to the hunter as "positions this agent didn't open".
-  const ENTRY = { oid: 2, acc: 5273, mkt: 10, t: 1, p: 23159, s: 131, f: "4440" };
+  const ENTRY = {
+    oid: 2,
+    acc: 5273,
+    mkt: 10,
+    t: 1,
+    p: 23159,
+    s: 131,
+    f: "4440",
+  };
 
   it("unwraps d[] and finds the order id on the entry", () => {
     const fills = parseFills({ mt: 25, d: [ENTRY] });
@@ -454,5 +472,51 @@ describe("venueRefusedOrder — nothing happened, so nothing is owed", () => {
     // drop a fill that lands a moment later, which is the bug that started all
     // of this.
     expect(venueRefusedOrder(null)).toBe(false);
+  });
+});
+
+describe("parsePositions — the Q16 entry residue", () => {
+  // The same position on 2026-09-15, after two more fills blended the entry off
+  // the price grid. `ep` is the entry rounded DOWN to price_decimals and `epr`
+  // is the fraction of the last place that was cut — so a reader using `ep`
+  // alone systematically understates a long's entry.
+  const WITH_RESIDUE = {
+    mt: 26,
+    d: [
+      {
+        mkt: 10,
+        acc: 5273,
+        pid: 6870209921025,
+        st: 1,
+        sd: 1,
+        s: 576,
+        ep: 22531,
+        epr: 50972,
+        c: "7043594",
+        fee: "11553",
+        lv: 200,
+      },
+    ],
+  };
+
+  it("reads epr off the frame", () => {
+    const [p] = parsePositions(WITH_RESIDUE);
+    expect(p.entryPriceScaled).toBe(22531);
+    expect(p.entryResidueQ16).toBe(50972);
+  });
+
+  it("the residue is small and always in the same direction", () => {
+    const [p] = parsePositions(WITH_RESIDUE);
+    const naive = (p.entryPriceScaled ?? 0) / 1e6;
+    const exact =
+      ((p.entryPriceScaled ?? 0) + (p.entryResidueQ16 ?? 0) / 65536) / 1e6;
+    expect(exact).toBeGreaterThan(naive);
+    // 0.35 bps — immaterial to a decision, which is worth pinning so nobody
+    // later justifies work on it by assuming it is larger than it is. What
+    // matters is the SIGN: `ep` rounds down, so the naive read always
+    // understates a long's entry, and that bias never averages out.
+    const bps = ((exact - naive) / exact) * 10_000;
+    expect(bps).toBeGreaterThan(0.3);
+    expect(bps).toBeLessThan(0.4);
   });
 });

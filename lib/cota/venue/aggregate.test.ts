@@ -31,6 +31,7 @@ const POS_5273: OpenPositionFrame = {
   leverageX100: 200,
   entryPriceScaled: 23308,
   feeScaled: 4440,
+  entryResidueQ16: null,
 };
 
 function vpos(p: Partial<OpenPositionFrame>): OpenPositionFrame {
@@ -42,6 +43,7 @@ function vpos(p: Partial<OpenPositionFrame>): OpenPositionFrame {
     leverageX100: 100,
     entryPriceScaled: null,
     feeScaled: null,
+    entryResidueQ16: null,
     ...p,
   };
 }

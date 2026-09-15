@@ -42,7 +42,11 @@ export type DenyReason =
   | "notional_exceeded"
   | "leverage_exceeded"
   | "trade_count_exceeded"
-  | "daily_loss_reached";
+  | "daily_loss_reached"
+  // Reduce-only reasons. They describe the POSITION, not the leash, because a
+  // reduce is not gated on the leash — see mayReduce.
+  | "nothing_to_reduce"
+  | "reduce_exceeds_position";
 
 export type Decision = { ok: true } | { ok: false; reason: DenyReason };
 
@@ -252,4 +256,54 @@ export function utcDayKey(at: Date): string {
  */
 export function explainDenial(reason: DenyReason): string {
   return denialTextEn(reason);
+}
+
+/** Sizes descale through floats; below this a position is flat. */
+const REDUCE_EPS = 1e-9;
+
+/** What the venue reports open on one market, signed: > 0 long, < 0 short. */
+export interface OpenSize {
+  market: string;
+  signedSize: number;
+}
+
+/**
+ * May this reduce go to the venue?
+ *
+ * ## It is deliberately NOT gated on the leash
+ *
+ * Every other check in this file exists to bound what the agent may do to a
+ * hunter's account. This one is the opposite case, and mustHalt already says so
+ * in words: "Reducing and closing stay permitted always, because software that
+ * could not reduce risk once a limit was breached would be the opposite of a
+ * safety mechanism." Until now that sentence described behaviour no code
+ * implemented.
+ *
+ * So there is no notional ceiling here, no leverage check, no daily-loss stop,
+ * no trades-per-day count, and no expiry or revocation check. Every one of them,
+ * applied to a reduce, converts a safety limit into a trap: the hunter who most
+ * needs to cut risk is exactly the hunter who has hit their ceiling, spent their
+ * trades, or let their Cota lapse. A leash that locks someone into a position
+ * is worse than no leash, because they took the position believing they could
+ * get out.
+ *
+ * The authorisation for a reduce comes from the hunter being signed in and
+ * asking, not from the Cota. The Cota bounds the agent; this is the person.
+ *
+ * What is left is arithmetic, and it is the part that actually matters: you
+ * cannot reduce a position you do not hold, and you cannot reduce by more than
+ * you hold. Closing more than the open size is a FLIP — it opens new exposure on
+ * the other side — and new exposure belongs back under mayOpen where the
+ * ceilings apply. That boundary is the whole reason this function is strict
+ * about size while being permissive about everything else.
+ */
+export function mayReduce(open: OpenSize, requestedUnits: number): Decision {
+  const held = Math.abs(open.signedSize);
+  if (held <= REDUCE_EPS) return deny("nothing_to_reduce");
+  if (requestedUnits <= REDUCE_EPS) return deny("nothing_to_reduce");
+  // Strictly greater: closing exactly the open size is a full close, which is
+  // the most common reduce there is and must not be mistaken for a flip.
+  if (requestedUnits > held + REDUCE_EPS)
+    return deny("reduce_exceeds_position");
+  return ALLOW;
 }

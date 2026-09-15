@@ -32,6 +32,7 @@ describe("parsePositions — mt 26/27, open only", () => {
         leverageX100: 500,
         entryPriceScaled: null,
         feeScaled: null,
+        entryResidueQ16: null,
       },
     ]);
   });
@@ -79,6 +80,7 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
           leverageX100: 100,
           entryPriceScaled: null,
           feeScaled: null,
+          entryResidueQ16: null,
         },
       ],
       marks,
@@ -98,6 +100,7 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
           leverageX100: 100,
           entryPriceScaled: null,
           feeScaled: null,
+          entryResidueQ16: null,
         },
       ],
       marks,
@@ -112,6 +115,7 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
           leverageX100: 100,
           entryPriceScaled: null,
           feeScaled: null,
+          entryResidueQ16: null,
         },
       ],
       marks,
@@ -130,6 +134,7 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
           leverageX100: 100,
           entryPriceScaled: null,
           feeScaled: null,
+          entryResidueQ16: null,
         }, // $2.50
         {
           pid: 2,
@@ -139,6 +144,7 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
           leverageX100: 100,
           entryPriceScaled: null,
           feeScaled: null,
+          entryResidueQ16: null,
         }, // 5.00 units × $2 = $10
       ],
       marks,
@@ -158,6 +164,7 @@ describe("openNotionalUsdE6 — Σ |size| × mark", () => {
             leverageX100: 100,
             entryPriceScaled: null,
             feeScaled: null,
+            entryResidueQ16: null,
           },
         ],
         marks,
