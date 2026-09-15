@@ -7,6 +7,10 @@ import { MON_MARKET, planOpen, type Market } from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
 import { readMark } from "@/lib/cota/venue/market-data";
 import type { AccountSnapshot } from "@/lib/cota/venue/frames";
+import {
+  venuePreflight,
+  VENUE_REFUSAL_DETAIL,
+} from "@/lib/cota/venue/preflight";
 import { type MarkedMarket } from "@/lib/cota/venue/account-state";
 import { readDayState } from "@/lib/cota/day-state";
 import type { Unexplained } from "@/lib/cota/venue/adopt";
@@ -142,23 +146,19 @@ export async function POST(req: Request) {
       });
     }
 
-    // Forwarding preflight. `fw` on the account frame is whether the venue will
-    // forward an order to the chain on this account's behalf; with it off the
-    // gateway returns code 0 and the chain silently refuses, which reads to a
-    // hunter as "Accepted (not filled yet)" forever. A fresh Perpl account
-    // defaults to fw:false, so this is the FIRST thing a new hunter hits — name
-    // it instead of sending an order that cannot fill.
-    //
-    // A null account is not treated as a refusal: the venue named no account, a
-    // condition placeOrder already reports on its own, and guessing here would
-    // block a hunter on a frame we failed to read rather than on a real flag.
-    if (venueAccount && !venueAccount.forwardingAllowed) {
+    // Venue preflight. Every reason the venue will refuse to fill, asked before
+    // anything is sent, because all of them present identically: the gateway
+    // acks with code 0, the chain does nothing, and the hunter reads "Accepted
+    // (not filled yet)" forever. Three separate bugs have come out of this one
+    // frame; venuePreflight is the single place that reads it. A null account is
+    // not a refusal — see the note there.
+    const venueRefusal = venuePreflight(venueAccount);
+    if (venueRefusal) {
       return NextResponse.json({
         allowed: false,
-        reason: "forwarding_disabled",
-        detail:
-          "this Perpl account has order forwarding disabled (fw:false), so the venue accepts orders it will never execute; nothing was sent",
-        accountId: venueAccount.accountId,
+        reason: venueRefusal,
+        detail: VENUE_REFUSAL_DETAIL[venueRefusal],
+        accountId: venueAccount?.accountId,
         markUsd,
       });
     }

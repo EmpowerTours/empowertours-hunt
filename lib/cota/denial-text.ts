@@ -18,7 +18,9 @@ export type ExecRefusal =
   | "state_unavailable"
   | "loss_unverifiable"
   | "size_zero"
-  | "forwarding_disabled";
+  | "forwarding_disabled"
+  | "account_frozen"
+  | "no_collateral";
 
 export type RefusalReason = DenyReason | ExecRefusal;
 
@@ -82,6 +84,14 @@ const TEXT: Record<RefusalReason, Record<Lang, string>> = {
   forwarding_disabled: {
     en: "Order forwarding is off on your Perpl account, so the venue can't execute an order from this app. Nothing was sent and nothing was spent, and your Cota is fine. Switch it on below — it's one transaction from your own wallet.",
     es: "El reenvío de órdenes está apagado en tu cuenta de Perpl, así que la casa no puede ejecutar una orden desde esta app. No se envió nada ni se gastó nada, y tu Cota está bien. Actívalo abajo: es una transacción desde tu propia billetera.",
+  },
+  account_frozen: {
+    en: "Your Perpl account is frozen at the venue, so it can't trade at all. Nothing was sent and nothing was spent. This one is the venue's to lift, not ours.",
+    es: "Tu cuenta de Perpl está congelada en la casa, así que no puede operar. No se envió nada ni se gastó nada. Esto lo tiene que levantar la casa, no nosotros.",
+  },
+  no_collateral: {
+    en: "Your Perpl account has no free collateral, so any order would be accepted and never filled. Nothing was sent. Deposit, or close a position that's holding your margin.",
+    es: "Tu cuenta de Perpl no tiene colateral libre, así que cualquier orden se aceptaría sin ejecutarse. No se envió nada. Deposita, o cierra una posición que esté reteniendo tu margen.",
   },
 };
 
