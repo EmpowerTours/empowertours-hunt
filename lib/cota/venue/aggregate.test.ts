@@ -71,7 +71,9 @@ describe("signedSizeFromFrame", () => {
 
 describe("positionsReconcile", () => {
   it("true when fold and venue agree on every market's signed size", () => {
-    const fold = [{ marketId: 10, signedSize: 100, entryUsd: 0.05 }];
+    const fold = [
+      { marketId: 10, signedSize: 100, entryUsd: 0.05, feesUsd: 0 },
+    ];
     expect(
       positionsReconcile(fold, [vpos({ side: 1, sizeScaled: 100 })], marks),
     ).toBe(true);
@@ -84,7 +86,7 @@ describe("positionsReconcile", () => {
   });
 
   it("false when sizes disagree", () => {
-    const fold = [{ marketId: 10, signedSize: 50, entryUsd: 0.05 }];
+    const fold = [{ marketId: 10, signedSize: 50, entryUsd: 0.05, feesUsd: 0 }];
     expect(positionsReconcile(fold, [vpos({ sizeScaled: 100 })], marks)).toBe(
       false,
     );
@@ -136,15 +138,18 @@ describe("entryUsdFromFrame — the ep the frame was said not to have", () => {
 
   it("is null when the frame omits ep, not zero", () => {
     // Zero would price a position as a total loss and quietly blow the ceiling.
-    expect(entryUsdFromFrame(vpos({ entryPriceScaled: null }), marks)).toBeNull();
+    expect(
+      entryUsdFromFrame(vpos({ entryPriceScaled: null }), marks),
+    ).toBeNull();
   });
 });
 
 describe("unrealisedFromVenueUsd — priced from the venue, not our fold", () => {
   it("is zero at the entry price", () => {
-    expect(
-      unrealisedFromVenueUsd([POS_5273], marksAt(0.023308)),
-    ).toBeCloseTo(0, 9);
+    expect(unrealisedFromVenueUsd([POS_5273], marksAt(0.023308))).toBeCloseTo(
+      0,
+      9,
+    );
   });
 
   it("a long below entry is a loss", () => {
@@ -181,26 +186,34 @@ describe("positionsReconcile — the price dimension, not just the size", () => 
   it("false when sizes agree but the entry prices disagree", () => {
     // THE CASE THE SIZE-ONLY CHECK LET THROUGH: a ledger holding the right
     // quantity at the wrong price yields the right notional and a wrong loss.
-    const fold = [{ marketId: 10, signedSize: 100, entryUsd: 0.05 }];
+    const fold = [
+      { marketId: 10, signedSize: 100, entryUsd: 0.05, feesUsd: 0 },
+    ];
     const venue = [vpos({ sizeScaled: 100, entryPriceScaled: 50_100 })];
     expect(positionsReconcile(fold, venue, marks)).toBe(false);
   });
 
   it("true when the entries agree within the venue's own rounding", () => {
-    const fold = [{ marketId: 10, signedSize: 100, entryUsd: 0.05 }];
+    const fold = [
+      { marketId: 10, signedSize: 100, entryUsd: 0.05, feesUsd: 0 },
+    ];
     const venue = [vpos({ sizeScaled: 100, entryPriceScaled: 50_002 })];
     expect(positionsReconcile(fold, venue, marks)).toBe(true);
   });
 
   it("a frame with no ep is not a mismatch — unrealised is what refuses", () => {
-    const fold = [{ marketId: 10, signedSize: 100, entryUsd: 0.05 }];
+    const fold = [
+      { marketId: 10, signedSize: 100, entryUsd: 0.05, feesUsd: 0 },
+    ];
     expect(
       positionsReconcile(fold, [vpos({ entryPriceScaled: null })], marks),
     ).toBe(true);
   });
 
   it("reconciles the real 5273 frame against the fold that opened it", () => {
-    const fold = [{ marketId: 10, signedSize: 214, entryUsd: 0.023308 }];
+    const fold = [
+      { marketId: 10, signedSize: 214, entryUsd: 0.023308, feesUsd: 0 },
+    ];
     expect(positionsReconcile(fold, [POS_5273], marks)).toBe(true);
   });
 });

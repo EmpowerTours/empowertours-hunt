@@ -24,14 +24,13 @@ function fill(p: Partial<LedgerFill>): LedgerFill {
   };
 }
 
-
 describe("foldFills — positions + realised", () => {
   it("opens a long, no close: one position at the fill price, only fee realised", () => {
     const { positions, realized } = foldFills([
       fill({ direction: 1, sizeUnits: 100, priceUsd: 0.02, feeUsd: 0.01 }),
     ]);
     expect(positions).toEqual([
-      { marketId: 10, signedSize: 100, entryUsd: 0.02 },
+      { marketId: 10, signedSize: 100, entryUsd: 0.02, feesUsd: 0.01 },
     ]);
     expect(realized).toEqual([
       { marketId: 10, realizedUsd: -0.01, timestampMs: T0 },

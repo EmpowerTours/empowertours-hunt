@@ -144,6 +144,32 @@ export function impliedMarginalUsd(args: {
 }
 
 /**
+ * The share of a position's fees that is not on the books yet.
+ *
+ * The venue's `fee` on the position frame accumulates over the position's open
+ * run, exactly as OpenPos.feesUsd does on our side (5273: 4440 after the first
+ * fill, 7113 after the second). So what the missing fill cost in fees is the
+ * difference, not the total.
+ *
+ * Clamped at zero, and that direction is deliberate. A negative remainder means
+ * the ledger already holds at least the fees the venue says it charged — there
+ * is nothing further to attribute, and the excess is already counted against the
+ * day. Clamping cannot under-report the loss; it can only decline to add more.
+ * That is the safe direction for a ceiling, and unlike a bad entry price an
+ * over-counted fee does not corrupt the reconcile.
+ */
+export function remainingFeeUsd(
+  positionFeeUsd: number,
+  alreadyBookedUsd: number,
+): number {
+  if (!Number.isFinite(positionFeeUsd) || positionFeeUsd <= 0) return 0;
+  if (!Number.isFinite(alreadyBookedUsd) || alreadyBookedUsd <= 0) {
+    return positionFeeUsd;
+  }
+  return Math.max(0, positionFeeUsd - alreadyBookedUsd);
+}
+
+/**
  * What it would take to make the ledger agree with the venue.
  *
  * `trust: "pending"` (the automatic path) adopts only deltas a pending order of
@@ -268,11 +294,15 @@ export function planAdoption(args: {
       direction,
       sizeUnits: Math.abs(delta),
       priceUsd,
-      // The whole fee the venue has charged this position, not a pro-rated
-      // share. A fee is a loss, and over-attributing one makes the daily-loss
-      // ceiling bind sooner; under-attributing would let it bind later than the
-      // hunter agreed. When in doubt on a loss guard, take the larger number.
-      feeUsd: (frame.feeScaled ?? 0) / 1_000_000,
+      // The fees the venue has charged this position MINUS what the ledger has
+      // already booked against the run that is still open. See
+      // remainingFeeUsd — attributing the whole figure every time was the same
+      // whole-position-for-a-delta mistake the price had, and it compounded:
+      // 5273 ended up claiming 0.011553 in fees against the venue's 0.007113.
+      feeUsd: remainingFeeUsd(
+        (frame.feeScaled ?? 0) / 1_000_000,
+        held?.feesUsd ?? 0,
+      ),
       timestampMs: nowMs,
       orderId,
     });

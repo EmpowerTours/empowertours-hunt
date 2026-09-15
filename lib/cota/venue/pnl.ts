@@ -43,6 +43,17 @@ export interface OpenPos {
   signedSize: number;
   /** VWAP entry price in USD of the currently-open size. */
   entryUsd: number;
+  /**
+   * Fees in USD the ledger has recorded against the CURRENTLY OPEN run — reset
+   * when the position goes flat, restarted when it flips through zero.
+   *
+   * It exists to be differenced against the venue's `fee` on the position frame,
+   * which accumulates the same way (5273: 4440 after the first fill, 7113 after
+   * the second). Adoption needs to know what share of that total is already on
+   * the books, or it attributes the whole position's fees to one delta and the
+   * loss figure drifts up on every adoption.
+   */
+  feesUsd: number;
 }
 
 export interface RealizedEvent {
@@ -67,11 +78,18 @@ export function foldFills(fills: LedgerFill[]): {
   realized: RealizedEvent[];
 } {
   const ordered = [...fills].sort((a, b) => a.timestampMs - b.timestampMs);
-  const pos = new Map<number, { signedSize: number; entryUsd: number }>();
+  const pos = new Map<
+    number,
+    { signedSize: number; entryUsd: number; feesUsd: number }
+  >();
   const realized: RealizedEvent[] = [];
 
   for (const f of ordered) {
-    const st = pos.get(f.marketId) ?? { signedSize: 0, entryUsd: 0 };
+    const st = pos.get(f.marketId) ?? {
+      signedSize: 0,
+      entryUsd: 0,
+      feesUsd: 0,
+    };
     const delta = f.direction * f.sizeUnits;
     let closePnl = 0;
 
@@ -84,6 +102,7 @@ export function foldFills(fills: LedgerFill[]): {
           ? f.priceUsd
           : (absOld * st.entryUsd + absAdd * f.priceUsd) / (absOld + absAdd);
       st.signedSize += delta;
+      st.feesUsd += f.feeUsd;
     } else {
       // Opposing fill — realise on the closed portion.
       const sideSign = st.signedSize > 0 ? 1 : -1;
@@ -93,11 +112,18 @@ export function foldFills(fills: LedgerFill[]): {
       if (Math.abs(st.signedSize) < EPS) {
         st.signedSize = 0;
         st.entryUsd = 0;
+        st.feesUsd = 0;
       } else if (Math.sign(st.signedSize) !== sideSign) {
-        // Flipped through zero — the remainder is a new position at this price.
+        // Flipped through zero — the remainder is a new position at this price,
+        // and this fill's fee is the fee that opened it. The run it closed is
+        // gone, and so is the fee total that belonged to it.
         st.entryUsd = f.priceUsd;
+        st.feesUsd = f.feeUsd;
+      } else {
+        // Partial reduce: entry unchanged, and the fee was still charged
+        // against this same open position, which is how the venue counts it.
+        st.feesUsd += f.feeUsd;
       }
-      // Partial reduce (same sign): entry unchanged.
     }
 
     realized.push({
@@ -115,6 +141,7 @@ export function foldFills(fills: LedgerFill[]): {
       marketId,
       signedSize: s.signedSize,
       entryUsd: s.entryUsd,
+      feesUsd: s.feesUsd,
     })),
     realized,
   };

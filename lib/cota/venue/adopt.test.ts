@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   impliedMarginalUsd,
   planAdoption,
+  remainingFeeUsd,
   PENDING_MAX_AGE_MS,
   type PendingOrder,
 } from "./adopt";
@@ -86,7 +87,7 @@ describe("planAdoption — the agent's own order", () => {
 
   it("adopts only the part the ledger is short by", () => {
     const fold: OpenPos[] = [
-      { marketId: 10, signedSize: 100, entryUsd: 0.0231 },
+      { marketId: 10, signedSize: 100, entryUsd: 0.0231, feesUsd: 0 },
     ];
     const plan = planAdoption({
       fold,
@@ -192,7 +193,7 @@ describe("planAdoption — what it must refuse", () => {
   it("will NOT adopt size the ledger holds and the venue does not", () => {
     // A close or a liquidation. The price left with the position.
     const plan = planAdoption({
-      fold: [{ marketId: 10, signedSize: 214, entryUsd: 0.023308 }],
+      fold: [{ marketId: 10, signedSize: 214, entryUsd: 0.023308, feesUsd: 0 }],
       venue: [],
       marks,
       pending: [],
@@ -377,7 +378,7 @@ describe("adoption pricing — the fold must reproduce the venue's ep", () => {
 
   it("surfaces an unusable price as unexplained, not as a fill", () => {
     const plan = planAdoption({
-      fold: [{ marketId: 10, signedSize: 344, entryUsd: 0.05 }],
+      fold: [{ marketId: 10, signedSize: 344, entryUsd: 0.05, feesUsd: 0 }],
       venue: [live5273({ sizeScaled: 345, entryPriceScaled: 23159 })],
       marks,
       pending: [pendingBuy({ sizeUnits: 1 })],
@@ -429,5 +430,106 @@ describe("adoption round-trip — a second adoption must reconcile too", () => {
 
     const after = foldFills([first, ...plan.fills]).positions;
     expect(positionsReconcile(after, venue, marks)).toBe(true);
+  });
+});
+
+describe("adoption fees — the venue's figure is cumulative, not per fill", () => {
+  it("attributes only what the ledger has not booked yet", () => {
+    // 5273 exactly: the venue charged 0.007113 across the position, the ledger
+    // already holds 0.004440 from the first fill.
+    expect(remainingFeeUsd(0.007113, 0.00444)).toBeCloseTo(0.002673, 12);
+  });
+
+  it("attributes the whole figure when the ledger holds nothing", () => {
+    expect(remainingFeeUsd(0.007113, 0)).toBeCloseTo(0.007113, 12);
+  });
+
+  it("clamps at zero rather than crediting a fee back", () => {
+    // The ledger already holds more than the venue says it charged. There is
+    // nothing further to attribute, and the excess is already counted against
+    // the day — clamping declines to add, it never subtracts.
+    expect(remainingFeeUsd(0.007113, 0.02)).toBe(0);
+  });
+
+  it("treats an absent or nonsense position fee as nothing to attribute", () => {
+    expect(remainingFeeUsd(0, 0.00444)).toBe(0);
+    expect(remainingFeeUsd(Number.NaN, 0.00444)).toBe(0);
+  });
+
+  it("adopting onto an existing position books the DIFFERENCE, not the total", () => {
+    // The regression: this used to write 0.007113 on top of the 0.004440
+    // already there, so 5273 claimed 0.011553 against the venue's 0.007113.
+    const first: LedgerFill = {
+      marketId: 10,
+      direction: 1,
+      sizeUnits: 214,
+      priceUsd: 0.023308,
+      feeUsd: 0.00444,
+      timestampMs: NOW - 3_600_000,
+      orderId: 0,
+    };
+    const plan = planAdoption({
+      fold: foldFills([first]).positions,
+      venue: [
+        live5273({ sizeScaled: 345, entryPriceScaled: 23159, feeScaled: 7113 }),
+      ],
+      marks,
+      pending: [pendingBuy({ sizeUnits: 131 })],
+      nowMs: NOW,
+      trust: "pending",
+    });
+    expect(plan.fills[0].feeUsd).toBeCloseTo(0.002673, 12);
+
+    const totalFees = [first, ...plan.fills].reduce((a, f) => a + f.feeUsd, 0);
+    expect(totalFees).toBeCloseTo(0.007113, 12); // === the venue's own tf
+  });
+});
+
+describe("foldFills — fees follow the open run", () => {
+  const f = (p: Partial<LedgerFill>): LedgerFill => ({
+    marketId: 10,
+    direction: 1,
+    sizeUnits: 100,
+    priceUsd: 0.02,
+    feeUsd: 0,
+    timestampMs: NOW,
+    orderId: 1,
+    ...p,
+  });
+
+  it("accumulates across adds", () => {
+    const { positions } = foldFills([
+      f({ feeUsd: 0.01, timestampMs: NOW }),
+      f({ feeUsd: 0.02, timestampMs: NOW + 1 }),
+    ]);
+    expect(positions[0].feesUsd).toBeCloseTo(0.03, 12);
+  });
+
+  it("accumulates across a partial reduce — the venue charges the same position", () => {
+    const { positions } = foldFills([
+      f({ feeUsd: 0.01, timestampMs: NOW }),
+      f({ direction: -1, sizeUnits: 40, feeUsd: 0.02, timestampMs: NOW + 1 }),
+    ]);
+    expect(positions[0].signedSize).toBeCloseTo(60, 9);
+    expect(positions[0].feesUsd).toBeCloseTo(0.03, 12);
+  });
+
+  it("forgets the run's fees once the position is flat", () => {
+    const { positions } = foldFills([
+      f({ feeUsd: 0.01, timestampMs: NOW }),
+      f({ direction: -1, feeUsd: 0.02, timestampMs: NOW + 1 }),
+      f({ feeUsd: 0.005, timestampMs: NOW + 2 }),
+    ]);
+    // A new run: only its own fee, not the closed run's.
+    expect(positions[0].feesUsd).toBeCloseTo(0.005, 12);
+  });
+
+  it("restarts on a flip through zero", () => {
+    const { positions } = foldFills([
+      f({ feeUsd: 0.01, timestampMs: NOW }),
+      f({ direction: -1, sizeUnits: 150, feeUsd: 0.02, timestampMs: NOW + 1 }),
+    ]);
+    expect(positions[0].signedSize).toBeCloseTo(-50, 9);
+    expect(positions[0].feesUsd).toBeCloseTo(0.02, 12);
   });
 });
