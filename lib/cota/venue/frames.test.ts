@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   nextRequestId,
   parseOrderUpdate,
+  venueRefusedOrder,
   parseFills,
   parseOrderStatus,
   parsePositions,
@@ -420,5 +421,38 @@ describe("parseFills — the envelope that dropped every real fill", () => {
   it("is empty for a frame carrying no fills", () => {
     expect(parseFills({ mt: 25, d: [] })).toEqual([]);
     expect(parseFills({ mt: 19, as: [] })).toEqual([]);
+  });
+});
+
+describe("venueRefusedOrder — nothing happened, so nothing is owed", () => {
+  const upd = (st: number, sr = 0) =>
+    parseOrderUpdate({ mt: 24, d: [{ rq: 1, st, sr }] })[0];
+
+  it("the stale-rq refusal is a refusal", () => {
+    // Eight of these on account 5273 in one evening. Each incurred no fee,
+    // opened no position and carried no risk — none of them was a trade.
+    expect(venueRefusedOrder(upd(7, 32))).toBe(true);
+  });
+
+  it("Canceled and Expired are refusals too", () => {
+    expect(venueRefusedOrder(upd(5))).toBe(true);
+    expect(venueRefusedOrder(upd(6))).toBe(true);
+  });
+
+  it("a FILL is not a refusal", () => {
+    expect(venueRefusedOrder(upd(4, 43))).toBe(false);
+    expect(venueRefusedOrder(upd(10))).toBe(false);
+  });
+
+  it("a live order is not a refusal", () => {
+    expect(venueRefusedOrder(upd(2))).toBe(false);
+    expect(venueRefusedOrder(upd(3))).toBe(false);
+  });
+
+  it("SILENCE IS NOT REFUSAL — no verdict means unknown, not no", () => {
+    // Treating a missing update as a refusal would skip the pending row and
+    // drop a fill that lands a moment later, which is the bug that started all
+    // of this.
+    expect(venueRefusedOrder(null)).toBe(false);
   });
 });

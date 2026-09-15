@@ -35,6 +35,7 @@ import {
   countOrdersToday,
   type LedgerFill,
   type OpenPos,
+  type PlacedOrder,
 } from "./pnl";
 import type { OpenPositionFrame } from "./frames";
 
@@ -169,16 +170,22 @@ export function positionsReconcile(
  */
 export function buildAggregateState(args: {
   fills: LedgerFill[];
+  /**
+   * Orders this agent sent and the venue accepted today, filled or not. Without
+   * them the trades-per-day ceiling only sees fills and lags the orders it is
+   * supposed to be limiting.
+   */
+  placedOrders: PlacedOrder[];
   venuePositions: OpenPositionFrame[];
   marks: Map<number, MarkedMarket>;
   nowMs: number;
 }): AggregateState {
-  const { fills, venuePositions, marks, nowMs } = args;
+  const { fills, placedOrders, venuePositions, marks, nowMs } = args;
   const { positions } = foldFills(fills);
   const reconciled = positionsReconcile(positions, venuePositions, marks);
   return {
     openNotionalUsdE6: openNotionalUsdE6(venuePositions, marks),
-    tradesToday: countOrdersToday(fills, nowMs),
+    tradesToday: countOrdersToday(fills, placedOrders, nowMs),
     // Unrealised from the venue's `ep`, realised from our fold — and the whole
     // number withheld unless the two sources agree about what is open and what
     // it cost.

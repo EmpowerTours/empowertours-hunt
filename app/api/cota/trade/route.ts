@@ -12,6 +12,7 @@ import {
   venuePreflight,
   VENUE_REFUSAL_DETAIL,
 } from "@/lib/cota/venue/preflight";
+import { venueRefusedOrder } from "@/lib/cota/venue/frames";
 import { type MarkedMarket } from "@/lib/cota/venue/account-state";
 import { readDayState } from "@/lib/cota/day-state";
 import type { Unexplained } from "@/lib/cota/venue/adopt";
@@ -248,10 +249,19 @@ export async function POST(req: Request) {
       } catch (e) {
         console.error("[cota/trade] fill record failed", e);
       }
-    } else if (result.accepted) {
-      // Accepted, not filled — the chain fills after the gateway acks and this
-      // socket is already closing. Without this row the fill that lands in a
-      // moment is invisible to the ledger forever, and every later order refuses
+    } else if (result.accepted && !venueRefusedOrder(result.update)) {
+      // Accepted, not filled, and the venue has NOT refused it — the chain fills
+      // after the gateway acks and this socket is already closing. A row is only
+      // written when a fill might still arrive: an order the venue terminally
+      // refused (OrderDescIdTooLow, OrderForwardingNotAllowed, AccountFrozen)
+      // has nothing pending, and a row for it is a phantom that counts against
+      // the trades-per-day ceiling and lingers as something that could "explain"
+      // a position it never opened. Account 5273 accumulated eight of those in
+      // one evening. Silence is not refusal, so an order with no verdict yet
+      // still gets its row.
+      //
+      // Without this row the fill that lands in a moment is invisible to the
+      // ledger forever, and every later order refuses
       // (account 5273, 2026-09-14: 214 MON open, ledger empty). With it, the
       // next read adopts the fill at the venue's own entry price.
       try {

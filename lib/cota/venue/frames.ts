@@ -440,6 +440,22 @@ export interface OrderUpdate {
  * dropped: a name this build has not seen is still the venue's answer, and
  * swallowing it would put us back to "accepted, nothing arrived".
  */
+/**
+ * Did the venue refuse this order outright, so that nothing can still happen?
+ *
+ * True only for a verdict that is both final and traded nothing: Canceled,
+ * Expired, Failed. Such an order incurred no fee, opened no position and
+ * carried no risk — there is nothing pending and no fill is coming.
+ *
+ * A missing update is NOT a refusal. No verdict arrived before we stopped
+ * waiting, so the outcome is unknown and a fill may still land; treating
+ * silence as refusal would drop a real fill on the floor.
+ */
+export function venueRefusedOrder(update: OrderUpdate | null): boolean {
+  if (!update) return false;
+  return update.terminal && !update.expectsFill;
+}
+
 export function parseOrderUpdate(frame: unknown): OrderUpdate[] {
   const f = frame as { mt?: number; d?: unknown[] };
   if (f?.mt !== 24 || !Array.isArray(f.d)) return [];

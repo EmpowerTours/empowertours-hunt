@@ -22,9 +22,10 @@ import { readAccountPositions } from "./venue/account-read";
 import { buildAggregateState } from "./venue/aggregate";
 import { toDayState, type MarkedMarket } from "./venue/account-state";
 import { planAdoption, type Unexplained } from "./venue/adopt";
-import { foldFills } from "./venue/pnl";
+import { foldFills, utcDayStartMs } from "./venue/pnl";
 import {
   loadFills,
+  loadOrdersPlacedSince,
   loadPendingOrders,
   recordFills,
   resolveOrders,
@@ -58,8 +59,17 @@ export async function readDayState(args: {
   });
 
   let fills = await loadFills(playerId, account);
+  // Every order sent today, filled or not. The trades-per-day ceiling counts
+  // orders SENT, so a burst of accepted-but-unfilled orders can no longer each
+  // see a near-zero count and pass.
+  const placedOrders = await loadOrdersPlacedSince(
+    playerId,
+    account,
+    utcDayStartMs(nowMs),
+  );
   let agg = buildAggregateState({
     fills,
+    placedOrders,
     venuePositions: read.positions,
     marks,
     nowMs,
@@ -89,6 +99,7 @@ export async function readDayState(args: {
       fills = await loadFills(playerId, account);
       agg = buildAggregateState({
         fills,
+        placedOrders,
         venuePositions: read.positions,
         marks,
         nowMs,

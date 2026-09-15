@@ -99,6 +99,7 @@ describe("buildAggregateState", () => {
   it("reconciled down day: open notional from venue, loss from fills", () => {
     // fills: long 100 @ 0.05; venue holds long 100; mark 0.02 → unrealised −3.0
     const s = buildAggregateState({
+      placedOrders: [],
       fills: [ledgerFill({ priceUsd: 0.05 })],
       venuePositions: [
         vpos({ side: 1, sizeScaled: 100, entryPriceScaled: 50_000 }),
@@ -115,6 +116,7 @@ describe("buildAggregateState", () => {
 
   it("mismatch → loss null → DayState null → caller fails closed", () => {
     const s = buildAggregateState({
+      placedOrders: [],
       fills: [], // ledger empty
       venuePositions: [vpos({ side: 1, sizeScaled: 100 })], // but venue holds a position
       marks,
@@ -207,6 +209,7 @@ describe("buildAggregateState — both halves, one refusal", () => {
   it("combines venue unrealised with ledger realised", () => {
     // 214 long at 0.023308, mark 0.02 → unrealised −0.707912; fee 0.1 realised.
     const s = buildAggregateState({
+      placedOrders: [],
       fills: [
         ledgerFill({
           sizeUnits: 214,
@@ -226,6 +229,7 @@ describe("buildAggregateState — both halves, one refusal", () => {
     // stop it rather than be treated as an entry of zero.
     expect(() =>
       buildAggregateState({
+        placedOrders: [],
         fills: [ledgerFill({ sizeUnits: 100, priceUsd: 0.05 })],
         venuePositions: [vpos({ sizeScaled: 100, entryPriceScaled: null })],
         marks,

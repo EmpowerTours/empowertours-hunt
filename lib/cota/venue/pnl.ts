@@ -120,8 +120,15 @@ export function foldFills(fills: LedgerFill[]): {
   };
 }
 
-/** Start of the UTC day containing `ms`. */
-function utcDayStart(ms: number): number {
+/**
+ * Start of the UTC day containing `ms`.
+ *
+ * Exported so the query that loads today's orders uses the SAME boundary the
+ * count applies. Two definitions of "today" would let the loader and the
+ * counter disagree about which orders exist, which is how a ceiling quietly
+ * stops matching its own input.
+ */
+export function utcDayStartMs(ms: number): number {
   const d = new Date(ms);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
@@ -131,17 +138,49 @@ export function realizedTodayUsd(
   realized: RealizedEvent[],
   nowMs: number,
 ): number {
-  const dayStart = utcDayStart(nowMs);
+  const dayStart = utcDayStartMs(nowMs);
   return realized
     .filter((r) => r.timestampMs >= dayStart)
     .reduce((s, r) => s + r.realizedUsd, 0);
 }
 
-/** Distinct orders placed inside the current UTC day. */
-export function countOrdersToday(fills: LedgerFill[], nowMs: number): number {
-  const dayStart = utcDayStart(nowMs);
+/** An order this agent sent and the venue accepted, filled or not yet. */
+export interface PlacedOrder {
+  orderId: number;
+  placedAtMs: number;
+}
+
+/**
+ * Distinct orders this agent placed inside the current UTC day — the number the
+ * signed `maxTradesPerDay` is measured against.
+ *
+ * It counts FILLS and PLACED ORDERS together, and that second half is the whole
+ * point. Counting fills alone let the ceiling lag reality by however long the
+ * venue took to fill: an order that was sent, accepted and gated did not count
+ * until its fill came back, so N orders in quick succession each saw
+ * `tradesToday` near zero and each passed. On 2026-09-15 account 5273 sent nine
+ * orders against two recorded fills, so the counter read two. A ceiling the user
+ * signed, that is in enforce.ts and in the UI, and that never bound — the same
+ * failure as the hardcoded `rq` collapsing this very count to 1, one layer up.
+ *
+ * The union deduplicates for free because an adopted fill is recorded under the
+ * `orderId` of the pending order it settles (verified against account 5273:
+ * fill and CotaOrder both carry 293302356). So a placed order that later fills
+ * is one trade, not two.
+ *
+ * A trade counts from the moment it is SENT, not from when it succeeds. An
+ * order the venue refused still consumed an attempt the hunter authorised, and
+ * the alternative — free retries — is what a rate ceiling exists to stop.
+ */
+export function countOrdersToday(
+  fills: LedgerFill[],
+  placed: PlacedOrder[],
+  nowMs: number,
+): number {
+  const dayStart = utcDayStartMs(nowMs);
   const ids = new Set<number>();
   for (const f of fills) if (f.timestampMs >= dayStart) ids.add(f.orderId);
+  for (const o of placed) if (o.placedAtMs >= dayStart) ids.add(o.orderId);
   return ids.size;
 }
 

@@ -4,7 +4,7 @@
 // accounts' positions together.
 
 import { prisma } from "@/lib/db/prisma";
-import type { LedgerFill } from "./venue/pnl";
+import type { LedgerFill, PlacedOrder } from "./venue/pnl";
 import type { PendingOrder } from "./venue/adopt";
 import { randomInt } from "node:crypto";
 
@@ -127,6 +127,33 @@ export async function loadPendingOrders(
     marketId: r.marketId,
     direction: r.direction === -1 ? -1 : 1,
     sizeUnits: r.sizeUnits,
+    orderId: r.orderId,
+    placedAtMs: r.placedAt.getTime(),
+  }));
+}
+
+/**
+ * Orders this agent SENT since `sinceMs`, resolved or not — the input the
+ * trades-per-day ceiling was missing.
+ *
+ * Deliberately not filtered by `resolvedAt`: a resolved order is one that
+ * filled, and it still consumed a trade. Filtering it out would make the
+ * ceiling fall again every time a fill was adopted.
+ */
+export async function loadOrdersPlacedSince(
+  playerId: string,
+  account: string,
+  sinceMs: number,
+): Promise<PlacedOrder[]> {
+  const rows = await prisma.cotaOrder.findMany({
+    where: {
+      playerId,
+      account: account.toLowerCase(),
+      placedAt: { gte: new Date(sinceMs) },
+    },
+    select: { orderId: true, placedAt: true },
+  });
+  return rows.map((r) => ({
     orderId: r.orderId,
     placedAtMs: r.placedAt.getTime(),
   }));

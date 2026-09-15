@@ -109,7 +109,7 @@ describe("realizedTodayUsd / countOrdersToday — UTC day boundary", () => {
       fill({ orderId: 2, timestampMs: T0 + 500 }), // same order, second fill
       fill({ orderId: 3, timestampMs: T0 + 1000 }),
     ];
-    expect(countOrdersToday(fills, T0 + 2000)).toBe(2); // orders 2 and 3
+    expect(countOrdersToday(fills, [], T0 + 2000)).toBe(2); // orders 2 and 3
   });
 });
 
@@ -142,5 +142,49 @@ describe("lossTodayUsdE6 — the number the daily-loss stop gates on", () => {
   it("yesterday's realised loss is not today's", () => {
     const fills = [fill({ priceUsd: 0.02, feeUsd: 9, timestampMs: YESTERDAY })];
     expect(lossTodayUsdE6(fills, 0, T0)).toBe(0n);
+  });
+});
+
+describe("countOrdersToday — a trade counts when it is SENT", () => {
+  const placed = (orderId: number, placedAtMs = T0) => ({
+    orderId,
+    placedAtMs,
+  });
+
+  it("counts an order that was sent and has not filled", () => {
+    // THE REGRESSION. Counting fills alone, account 5273 sent nine orders
+    // against two fills on 2026-09-15 and the ceiling read two. Every order was
+    // gated against a count that did not include the orders already sent.
+    expect(countOrdersToday([], [placed(1), placed(2), placed(3)], T0)).toBe(3);
+  });
+
+  it("does not double-count an order that later filled", () => {
+    // An adopted fill is recorded under the pending order's own orderId, so the
+    // union dedupes. Verified against 5273: fill and CotaOrder both carry
+    // 293302356.
+    const fills = [fill({ orderId: 7, timestampMs: T0 })];
+    expect(countOrdersToday(fills, [placed(7)], T0)).toBe(1);
+  });
+
+  it("counts a fill with no placed row, and a placed row with no fill", () => {
+    const fills = [fill({ orderId: 7, timestampMs: T0 })];
+    expect(countOrdersToday(fills, [placed(8)], T0)).toBe(2);
+  });
+
+  it("ignores orders placed before today", () => {
+    expect(countOrdersToday([], [placed(1, YESTERDAY)], T0)).toBe(0);
+  });
+
+  it("is never lower than the fills-only count it replaced", () => {
+    // The property that matters: adding placed orders can only tighten the
+    // ceiling, never loosen it.
+    const fills = [
+      fill({ orderId: 1, timestampMs: T0 }),
+      fill({ orderId: 2, timestampMs: T0 }),
+    ];
+    const withPlaced = countOrdersToday(fills, [placed(3), placed(4)], T0);
+    const fillsOnly = countOrdersToday(fills, [], T0);
+    expect(withPlaced).toBeGreaterThanOrEqual(fillsOnly);
+    expect(withPlaced).toBe(4);
   });
 });
