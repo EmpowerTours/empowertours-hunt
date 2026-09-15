@@ -367,6 +367,15 @@ export const ORDER_STATUS_REASON: Record<number, string> = {
   45: "UnableToCancelOrder",
   46: "UnmatchedLotRemainsInFillOrKill",
   47: "UnspecifiedCollateral",
+  // 48-52 are not in Mandate's table. Taken from Perpl's own bundle, where the
+  // reason->message map is keyed by the enum identifier: bqe=48, vqe=49,
+  // dbe=50, wqe=51, fbe=52, each verified against both its numeric assignment
+  // and its title. Named in this file's style rather than by their UI titles.
+  48: "PriceNotSpecified",
+  49: "SizeNotSpecified",
+  50: "WrongAccount",
+  51: "WrongNetwork",
+  52: "WrongMarket",
 };
 
 export interface OrderUpdate {

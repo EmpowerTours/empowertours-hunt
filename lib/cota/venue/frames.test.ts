@@ -364,3 +364,20 @@ describe("parseOrderUpdate — the frame that says what became of the order", ()
     expect(parseOrderUpdate(upd([{ st: 4 }]))).toEqual([]);
   });
 });
+
+describe("ORDER_STATUS_REASON — the codes past Mandate's table", () => {
+  it("names 48-52, verified from the venue's own reason map", () => {
+    const upd = (sr: number) =>
+      parseOrderUpdate({ mt: 24, d: [{ rq: 1, st: 7, sr }] })[0].reasonName;
+    expect(upd(48)).toBe("PriceNotSpecified");
+    expect(upd(49)).toBe("SizeNotSpecified");
+    expect(upd(50)).toBe("WrongAccount");
+    expect(upd(51)).toBe("WrongNetwork");
+    expect(upd(52)).toBe("WrongMarket");
+  });
+
+  it("still renders a code past the table rather than dropping it", () => {
+    const upd = parseOrderUpdate({ mt: 24, d: [{ rq: 1, st: 7, sr: 53 }] })[0];
+    expect(upd.reasonName).toBe("reason 53");
+  });
+});

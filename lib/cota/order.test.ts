@@ -9,7 +9,9 @@ import {
   bpsToBf,
   toPrice,
   toSize,
-} from "./order";
+  TIF_GTC,
+  TIF_IOC,
+  TIF_POST_ONLY,} from "./order";
 
 const NOW = 1_760_000_000n;
 const bound: EnforcedBound = {
@@ -111,6 +113,11 @@ describe("planOpen — sizing feeds the leash gate", () => {
 
 describe("orderFrame — matches the live wire frame", () => {
   it("builds the exact frame that filled on mainnet", () => {
+    // HISTORICAL TRACE. This frame, fl:0 and all, was accepted and filled on
+    // account 5103. It is kept verbatim as evidence of what the venue takes —
+    // so `flags` is passed explicitly rather than relying on the default, which
+    // is now IOC for a market order to stop a residual resting past the leash
+    // check. Do not "fix" the fl:0 here: it is a record, not a preference.
     const frame = orderFrame({
       sn: 1,
       rq: 1,
@@ -120,6 +127,7 @@ describe("orderFrame — matches the live wire frame", () => {
       sizeUnits: 113,
       leverageX: 1,
       feeBps: 2,
+      flags: TIF_GTC,
     });
     expect(frame).toEqual({
       mt: 22,
@@ -135,5 +143,40 @@ describe("orderFrame — matches the live wire frame", () => {
       lb: 0,
       bf: 20,
     });
+  });
+});
+
+describe("orderFrame — time in force", () => {
+  const base = {
+    sn: 1,
+    rq: 1,
+    market: MON_MARKET,
+    accountId: 5273,
+    orderType: T_OPEN_LONG,
+    sizeUnits: 131,
+    leverageX: 2,
+    feeBps: 2,
+  };
+
+  it("a market order is IOC, like the venue's own builder", () => {
+    // Perpl's bundle: orderType === market ? fl |= sq, and sq is 4.
+    expect(orderFrame(base).fl).toBe(TIF_IOC);
+    expect(orderFrame({ ...base, priceUsd: 0 }).fl).toBe(TIF_IOC);
+  });
+
+  it("a limit order is GTC", () => {
+    expect(orderFrame({ ...base, priceUsd: 0.023 }).fl).toBe(TIF_GTC);
+  });
+
+  it("never leaves a market residual resting by default", () => {
+    // The regression that matters: fl 0 on a market order lets the unfilled
+    // remainder sit on the book and fill after the leash was evaluated.
+    expect(orderFrame(base).fl).not.toBe(TIF_GTC);
+  });
+
+  it("an explicit flags argument still wins", () => {
+    expect(orderFrame({ ...base, flags: TIF_POST_ONLY }).fl).toBe(
+      TIF_POST_ONLY,
+    );
   });
 });

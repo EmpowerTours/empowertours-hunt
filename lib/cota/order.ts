@@ -27,6 +27,15 @@ export const MT_POSITIONS_SNAPSHOT = 26;
 export const MT_POSITIONS_UPDATE = 27;
 
 // Order types (src/venue.py).
+/**
+ * Time-in-force bits for the wire's `fl` field, verified against Perpl's own
+ * bundle (`Pye=0, Aye=1, Mye=2, sq=4` in app.perpl.xyz/assets/index-*.js).
+ */
+export const TIF_GTC = 0;
+export const TIF_POST_ONLY = 1;
+export const TIF_FOK = 2;
+export const TIF_IOC = 4;
+
 export const T_OPEN_LONG = 1;
 export const T_OPEN_SHORT = 2;
 export const T_CLOSE_LONG = 3;
@@ -146,6 +155,11 @@ export function planOpen(args: {
  * market order carries price 0; `lb` 0 lets the venue use the market's own
  * window. No builder_id — the venue takes it from the authenticating key.
  */
+/** No limit price (or an explicit zero) is how this wire says "market". */
+function isMarketOrder(priceUsd: number | undefined): boolean {
+  return priceUsd === undefined || priceUsd === 0;
+}
+
 export function orderFrame(args: {
   sn: number;
   rq: number;
@@ -157,6 +171,8 @@ export function orderFrame(args: {
   feeBps: number;
   priceUsd?: number;
   lastExecBlock?: number;
+  /** Time-in-force bits. Defaults to IOC for a market order, GTC for a limit. */
+  flags?: number;
 }): Record<string, number> {
   return {
     mt: MT_ORDER_REQUEST,
@@ -167,7 +183,17 @@ export function orderFrame(args: {
     t: args.orderType,
     p: toPrice(args.market, args.priceUsd ?? 0),
     s: toSize(args.market, args.sizeUnits),
-    fl: 0,
+    // A market order is IOC, which is what Perpl's own client sends: its WS
+    // builder does `orderType === market ? fl |= sq(4)`. We sent 0 (GTC).
+    //
+    // It is not why anything failed — a GTC market order is accepted and fills,
+    // on Mandate's account 5103 and twice on 5273. It matters because of what
+    // happens to a residual. GTC leaves the unfilled remainder RESTING on the
+    // book, where it can fill minutes later, long after the leash was evaluated
+    // for it — an ungated fill against a ceiling nobody re-checked. IOC cancels
+    // the remainder instead, so an order either happens now, under the gate
+    // that just ran, or not at all.
+    fl: args.flags ?? (isMarketOrder(args.priceUsd) ? TIF_IOC : TIF_GTC),
     lv: Math.round(args.leverageX * 100),
     lb: args.lastExecBlock ?? 0,
     bf: bpsToBf(args.feeBps),
