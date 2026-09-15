@@ -217,3 +217,83 @@ describe("planAdoption — the hunter's explicit say-so", () => {
     expect(plan.fills[0].orderId).toBe(0);
   });
 });
+
+describe("planAdoption — the hunter path attributes, it does not relabel", () => {
+  // Account 5273, 2026-09-15: order 2018906983 filled 131 and its fill was
+  // never recorded, so eight hours later the hunter has to adopt it. Leaving it
+  // under orderId 0 counted that one trade twice — once as the still-open
+  // pending row, once as the 0 — against a ceiling of five.
+  const PENDING = {
+    id: "row-1",
+    marketId: 10,
+    direction: 1 as const,
+    sizeUnits: 131,
+    orderId: 2018906983,
+    placedAtMs: Date.UTC(2026, 8, 15, 5, 32, 19),
+  };
+  const EIGHT_HOURS_LATER = Date.UTC(2026, 8, 15, 13, 30, 0);
+
+  const venueHolds131 = [
+    live5273({ sizeScaled: 131, entryPriceScaled: 23159 }),
+  ];
+
+  it("writes the fill against the order that actually filled", () => {
+    const plan = planAdoption({
+      fold: [],
+      venue: venueHolds131,
+      marks,
+      pending: [PENDING],
+      nowMs: EIGHT_HOURS_LATER,
+      trust: "hunter",
+    });
+    expect(plan.fills).toHaveLength(1);
+    expect(plan.fills[0].orderId).toBe(2018906983);
+    expect(plan.resolvedOrderIds).toEqual(["row-1"]);
+  });
+
+  it("matches a row older than the automatic window — attribution, not authorisation", () => {
+    // The age cap stops a stale row AUTHORISING a silent adoption. Here a
+    // person already decided; the row only says which order to credit.
+    const plan = planAdoption({
+      fold: [],
+      venue: venueHolds131,
+      marks,
+      pending: [PENDING],
+      nowMs: EIGHT_HOURS_LATER,
+      trust: "hunter",
+    });
+    expect(EIGHT_HOURS_LATER - PENDING.placedAtMs).toBeGreaterThan(
+      PENDING_MAX_AGE_MS,
+    );
+    expect(plan.fills[0].orderId).toBe(2018906983);
+  });
+
+  it("still adopts with nothing to attribute it to", () => {
+    const plan = planAdoption({
+      fold: [],
+      venue: venueHolds131,
+      marks,
+      pending: [],
+      nowMs: EIGHT_HOURS_LATER,
+      trust: "hunter",
+    });
+    expect(plan.fills).toHaveLength(1);
+    expect(plan.fills[0].orderId).toBe(0);
+    expect(plan.resolvedOrderIds).toEqual([]);
+  });
+
+  it("the AUTOMATIC path still refuses a stale row", () => {
+    // The guard that must not move: unmatched-because-old comes back
+    // unexplained so a hunter decides, rather than being adopted silently.
+    const plan = planAdoption({
+      fold: [],
+      venue: venueHolds131,
+      marks,
+      pending: [PENDING],
+      nowMs: EIGHT_HOURS_LATER,
+      trust: "pending",
+    });
+    expect(plan.fills).toEqual([]);
+    expect(plan.unexplained[0].reason).toBe("no_pending_order");
+  });
+});

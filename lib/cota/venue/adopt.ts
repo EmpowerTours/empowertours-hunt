@@ -146,16 +146,27 @@ export function planAdoption(args: {
     if (!mm) throw new Error(`no market for held market ${marketId}`);
     const priceUsd = frame.entryPriceScaled / 10 ** mm.market.priceDecimals;
 
-    let orderId = 0;
-    if (trust === "pending") {
-      const match = pending.find(
+    // Which of this agent's orders, if any, accounts for the delta.
+    //
+    // The AGE CAP applies only to the automatic path, and the difference is
+    // authorisation versus attribution. Automatically adopting on the strength
+    // of a stale row is the silent adoption this module exists to prevent, so
+    // there it must be recent. On the hunter's explicit path the decision has
+    // already been made by a person, and matching only decides which order to
+    // WRITE THE FILL AGAINST — it authorises nothing, so an older row is fine.
+    const candidate = (requireRecent: boolean) =>
+      pending.find(
         (o) =>
           o.marketId === marketId &&
           o.direction === direction &&
           o.sizeUnits + EPS >= Math.abs(delta) &&
           o.placedAtMs <= nowMs &&
-          nowMs - o.placedAtMs <= PENDING_MAX_AGE_MS,
+          (!requireRecent || nowMs - o.placedAtMs <= PENDING_MAX_AGE_MS),
       );
+
+    let orderId = 0;
+    if (trust === "pending") {
+      const match = candidate(true);
       if (!match) {
         unexplained.push({
           marketId,
@@ -166,6 +177,17 @@ export function planAdoption(args: {
       }
       orderId = match.orderId;
       resolvedOrderIds.push(match.id);
+    } else {
+      // Hunter path: adopt regardless, but attribute honestly when one of this
+      // agent's own orders explains it. Leaving orderId 0 here made every
+      // hunter adoption collapse to one id for the trades-per-day ceiling, and
+      // left the order that actually filled sitting open forever — the same
+      // fill counted twice, once as the pending row and once as the 0.
+      const match = candidate(false);
+      if (match) {
+        orderId = match.orderId;
+        resolvedOrderIds.push(match.id);
+      }
     }
 
     fills.push({

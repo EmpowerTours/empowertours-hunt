@@ -8,7 +8,12 @@ import { readAccountPositions } from "@/lib/cota/venue/account-read";
 import { planAdoption } from "@/lib/cota/venue/adopt";
 import { foldFills } from "@/lib/cota/venue/pnl";
 import type { MarkedMarket } from "@/lib/cota/venue/account-state";
-import { loadFills, recordFills, resolveOrders } from "@/lib/cota/ledger";
+import {
+  loadFills,
+  loadPendingOrders,
+  recordFills,
+  resolveOrders,
+} from "@/lib/cota/ledger";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/reconcile — adopt a position the ledger has no fills for, on
@@ -72,7 +77,12 @@ export async function POST(req: Request) {
         fold: foldFills(fills).positions,
         venue: read.positions,
         marks,
-        pending: [],
+        // Passed for ATTRIBUTION, not authorisation: trust "hunter" adopts
+        // whatever the venue prices, and these only decide which of this
+        // agent's orders the fill is written against. Without them every
+        // hunter adoption landed under orderId 0 and the order that really
+        // filled stayed open forever.
+        pending: await loadPendingOrders(player.id, cred.account),
         nowMs: Date.now(),
         trust: "hunter",
       });
