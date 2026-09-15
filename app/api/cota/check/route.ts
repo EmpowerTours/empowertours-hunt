@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { postOnlyResponse } from "@/lib/cota/post-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { mayOpen, mustHalt, type EnforcedBound } from "@/lib/cota/enforce";
@@ -175,4 +176,15 @@ export async function POST(req: Request) {
       { status: 500 },
     );
   }
+}
+
+/**
+ * The gate judges a state supplied in the body, so there is nothing for a GET
+ * to check.
+ */
+export function GET(): NextResponse {
+  return postOnlyResponse(
+    "/api/cota/check",
+    "This is the leash gate the agent calls with a state to judge; it takes a POST body.",
+  );
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { postOnlyResponse } from "@/lib/cota/post-only";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { loadPerpKey } from "@/lib/cota/keystore";
 import { MON_MARKET } from "@/lib/cota/order";
@@ -116,4 +117,15 @@ export async function POST(req: Request) {
     console.error("[cota/reconcile] failed", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });
   }
+}
+
+/**
+ * Adopting a position is a decision, and a GET is never one — it is a link, a
+ * prefetch or a pasted URL. Answer it with directions instead of a download.
+ */
+export function GET(): NextResponse {
+  return postOnlyResponse(
+    "/api/cota/reconcile",
+    "Adopting a position the agent cannot vouch for is a decision a hunter takes deliberately — use the “Adopt the position and continue” button that appears on /cota/trade after an order is refused.",
+  );
 }

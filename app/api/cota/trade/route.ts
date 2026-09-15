@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { postOnlyResponse } from "@/lib/cota/post-only";
 import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
@@ -283,4 +284,14 @@ export async function POST(req: Request) {
     console.error("[cota/trade] failed", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });
   }
+}
+
+/**
+ * An order is never placed on a GET. Say where the button is.
+ */
+export function GET(): NextResponse {
+  return postOnlyResponse(
+    "/api/cota/trade",
+    "Place an order from /cota/trade.",
+  );
 }

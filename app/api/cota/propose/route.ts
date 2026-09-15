@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { postOnlyResponse } from "@/lib/cota/post-only";
 import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
@@ -107,4 +108,14 @@ export async function POST(req: Request) {
     console.error("[cota/propose] failed", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });
   }
+}
+
+/**
+ * A proposal costs an agent call; a GET does not get to spend one.
+ */
+export function GET(): NextResponse {
+  return postOnlyResponse(
+    "/api/cota/propose",
+    "Ask the agent for a proposal from /cota/trade.",
+  );
 }
