@@ -79,6 +79,14 @@ const T = {
     reconcileNothing:
       "No hubo nada que adoptar. Si el bloqueo sigue, la posición ya no existe en la casa y no hay precio honesto que registrar.",
     reconcileFailed: "No se pudo adoptar",
+    revoke: "Revocar esta Cota",
+    revokeConfirm: "Confirmar: revocar",
+    revokeCancel: "Cancelar",
+    revokeNote:
+      "Revocar detiene TODA orden nueva de inmediato y no se puede deshacer — para volver a operar tendrás que firmar una Cota nueva. Lo que ya esté abierto sigue abierto: qué hacer con esa posición lo decides tú.",
+    revoking: "Revocando…",
+    revoked: "Cota revocada. No se abrirá nada nuevo.",
+    revokeFailed: "No se pudo revocar",
     suggest: "Sugerir con Kimi",
     suggesting: "Kimi pensando…",
     kimiHold: "Kimi sugiere esperar",
@@ -125,6 +133,14 @@ const T = {
     reconcileNothing:
       "There was nothing to adopt. If it stays blocked, the venue no longer reports that position and there is no honest price to record.",
     reconcileFailed: "Could not adopt",
+    revoke: "Revoke this Cota",
+    revokeConfirm: "Confirm: revoke",
+    revokeCancel: "Cancel",
+    revokeNote:
+      "Revoking stops ALL new orders immediately and cannot be undone — you'd need to sign a new Cota to trade again. Anything already open stays open: what to do with that position is your call.",
+    revoking: "Revoking…",
+    revoked: "Cota revoked. Nothing new will open.",
+    revokeFailed: "Could not revoke",
     suggest: "Suggest with Kimi",
     suggesting: "Kimi thinking…",
     kimiHold: "Kimi suggests holding",
@@ -172,6 +188,11 @@ export default function TradePage() {
   // the venue no longer prices cannot be, and pretending otherwise would send
   // the hunter to a button that can only fail.
   const [unreconciled, setUnreconciled] = useState(false);
+  // Revoking is irreversible, so it takes two taps: the first arms it, the
+  // second does it. A hunter must not be able to end their own authorisation
+  // with a mis-tap.
+  const [revokeArmed, setRevokeArmed] = useState(false);
+  const [revokeBusy, setRevokeBusy] = useState(false);
   const [reconBusy, setReconBusy] = useState(false);
 
   useEffect(() => {
@@ -322,6 +343,38 @@ export default function TradePage() {
       setPlaceMsg(t.reconcileFailed);
     } finally {
       setReconBusy(false);
+    }
+  }
+
+  // Withdraw the leash. Stops anything new from opening; the open position and
+  // the enrolled key are both left alone, because closing a position to tidy up
+  // an authorisation would be deciding for the hunter at the market's price.
+  async function revoke() {
+    if (!cota?.digest) return;
+    setRevokeBusy(true);
+    try {
+      const res = await fetch("/api/cota/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ digest: cota.digest }),
+      });
+      const body = (await res.json()) as { revoked?: boolean; error?: string };
+      if (!res.ok || !body.revoked) {
+        setPlaceMsg(`${t.revokeFailed}: ${body.error ?? ""}`.trim());
+        return;
+      }
+      setRevokeArmed(false);
+      setPlaceMsg(t.revoked);
+      setPlacePhase("idle");
+      // The leash the page was holding is no longer active, and the server will
+      // not find it either. Drop it rather than keep offering a Place button
+      // whose order can only be refused.
+      setCota(null);
+      setMarket(null);
+    } catch {
+      setPlaceMsg(t.revokeFailed);
+    } finally {
+      setRevokeBusy(false);
     }
   }
 
@@ -613,6 +666,40 @@ export default function TradePage() {
             <Button onClick={() => void enableForwarding()} disabled={fwdBusy}>
               {fwdBusy ? t.fwdFixing : t.fwdFix}
             </Button>
+          )}
+          {/* Withdrawing the leash. Two taps, because it cannot be undone. */}
+          {cota && (
+            <div className="mt-6 border-t border-white/10 pt-4">
+              {revokeArmed ? (
+                <>
+                  <p className="text-ink-dim mb-2 text-[12px]">
+                    {t.revokeNote}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => void revoke()}
+                      disabled={revokeBusy}
+                    >
+                      {revokeBusy ? t.revoking : t.revokeConfirm}
+                    </Button>
+                    <Button
+                      onClick={() => setRevokeArmed(false)}
+                      disabled={revokeBusy}
+                    >
+                      {t.revokeCancel}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRevokeArmed(true)}
+                  className="text-ink-dim text-[12px] underline underline-offset-2"
+                >
+                  {t.revoke}
+                </button>
+              )}
+            </div>
           )}
         </>
       )}
