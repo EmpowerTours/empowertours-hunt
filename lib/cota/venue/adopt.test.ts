@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { planAdoption, PENDING_MAX_AGE_MS, type PendingOrder } from "./adopt";
+import {
+  impliedMarginalUsd,
+  planAdoption,
+  PENDING_MAX_AGE_MS,
+  type PendingOrder,
+} from "./adopt";
 import { positionsReconcile } from "./aggregate";
 import { foldFills, type LedgerFill, type OpenPos } from "./pnl";
 import type { OpenPositionFrame } from "./frames";
@@ -295,5 +300,134 @@ describe("planAdoption — the hunter path attributes, it does not relabel", () 
     });
     expect(plan.fills).toEqual([]);
     expect(plan.unexplained[0].reason).toBe("no_pending_order");
+  });
+});
+
+describe("adoption pricing — the fold must reproduce the venue's ep", () => {
+  // The exact production state of account 5273 on 2026-09-15, which is what
+  // broke: 214 already on the books, the venue holding 345 at a blended ep, and
+  // a 131 fill missing from the ledger.
+  const VENUE_SIZE = 345;
+  const VENUE_EP = 0.023159;
+  const HELD_SIZE = 214;
+  const HELD_ENTRY = 0.023308;
+  const DELTA = VENUE_SIZE - HELD_SIZE;
+
+  it("prices the delta so the ledger averages back to ep", () => {
+    const implied = impliedMarginalUsd({
+      venueSize: VENUE_SIZE,
+      venueEntryUsd: VENUE_EP,
+      foldSize: HELD_SIZE,
+      foldEntryUsd: HELD_ENTRY,
+      delta: DELTA,
+    });
+    expect(implied).not.toBeNull();
+    // Recording it at `ep` — what this code used to do — puts the fold 39.9 bps
+    // away from the venue and past aggregate.ts's 10 bps check.
+    const vwapIfPricedAtEp =
+      (HELD_SIZE * HELD_ENTRY + DELTA * VENUE_EP) / VENUE_SIZE;
+    expect(
+      (Math.abs(vwapIfPricedAtEp - VENUE_EP) / VENUE_EP) * 10_000,
+    ).toBeGreaterThan(10);
+
+    // Recording it at the implied marginal reproduces ep exactly.
+    const vwapIfPricedImplied =
+      (HELD_SIZE * HELD_ENTRY + DELTA * (implied as number)) / VENUE_SIZE;
+    expect(vwapIfPricedImplied).toBeCloseTo(VENUE_EP, 12);
+  });
+
+  it("is unchanged from ep when the ledger holds nothing", () => {
+    expect(
+      impliedMarginalUsd({
+        venueSize: 214,
+        venueEntryUsd: 0.023308,
+        foldSize: 0,
+        foldEntryUsd: 0,
+        delta: 214,
+      }),
+    ).toBeCloseTo(0.023308, 12);
+  });
+
+  it("refuses rather than return a price at or below zero", () => {
+    // The ledger claims to have paid more than the whole position cost. That is
+    // not a rounding step, and a negative or zero entry written here would be
+    // believed by every later loss read.
+    expect(
+      impliedMarginalUsd({
+        venueSize: 345,
+        venueEntryUsd: 0.023159,
+        foldSize: 344,
+        foldEntryUsd: 0.05,
+        delta: 1,
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses a non-finite result", () => {
+    expect(
+      impliedMarginalUsd({
+        venueSize: 345,
+        venueEntryUsd: 0.023159,
+        foldSize: 0,
+        foldEntryUsd: 0,
+        delta: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("surfaces an unusable price as unexplained, not as a fill", () => {
+    const plan = planAdoption({
+      fold: [{ marketId: 10, signedSize: 344, entryUsd: 0.05 }],
+      venue: [live5273({ sizeScaled: 345, entryPriceScaled: 23159 })],
+      marks,
+      pending: [pendingBuy({ sizeUnits: 1 })],
+      nowMs: NOW,
+      trust: "pending",
+    });
+    expect(plan.fills).toEqual([]);
+    expect(plan.unexplained[0].reason).toBe("no_entry_price");
+  });
+});
+
+describe("adoption round-trip — a second adoption must reconcile too", () => {
+  // The regression in full. The first adoption always reconciled; the SECOND one
+  // did not, and nothing tested it, so production went out blocked with no
+  // button to press. This walks the real 5273 sequence end to end through the
+  // real reconcile check.
+  it("leaves the ledger reconciling after adopting onto an existing position", () => {
+    const first: LedgerFill = {
+      marketId: 10,
+      direction: 1,
+      sizeUnits: 214,
+      priceUsd: 0.023308,
+      feeUsd: 0.00444,
+      timestampMs: NOW - 3_600_000,
+      orderId: 0,
+    };
+    const venue = [
+      live5273({ sizeScaled: 345, entryPriceScaled: 23159, feeScaled: 7113 }),
+    ];
+
+    // Where it stood: 214 on the books, 345 at the venue.
+    expect(positionsReconcile(foldFills([first]).positions, venue, marks)).toBe(
+      false,
+    );
+
+    const plan = planAdoption({
+      fold: foldFills([first]).positions,
+      venue,
+      marks,
+      pending: [pendingBuy({ sizeUnits: 131 })],
+      nowMs: NOW,
+      trust: "pending",
+    });
+    expect(plan.fills).toHaveLength(1);
+    expect(plan.fills[0].sizeUnits).toBeCloseTo(131, 9);
+    // NOT the venue's ep — that is the whole-position VWAP, and recording it
+    // here is what put the ledger 39.9 bps out.
+    expect(plan.fills[0].priceUsd).not.toBeCloseTo(0.023159, 6);
+
+    const after = foldFills([first, ...plan.fills]).positions;
+    expect(positionsReconcile(after, venue, marks)).toBe(true);
   });
 });

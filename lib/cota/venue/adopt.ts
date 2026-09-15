@@ -11,11 +11,21 @@
 // loosen it. The fix is to record the missing fill. The question is at what
 // price, and on whose say-so:
 //
-//   PRICE — the venue's own `ep` on the position frame, never a mark, never a
-//   guess. A position with no `ep` cannot be adopted at all; it is reported as
+//   PRICE — derived from the venue's own `ep`, never a mark, never a guess. A
+//   position with no `ep` cannot be adopted at all; it is reported as
 //   unexplained and the caller keeps failing closed. Pricing an adoption at
-//   anything but the venue's entry would put a fabricated number straight into
-//   the daily-loss ceiling the hunter signed.
+//   anything but the venue's numbers would put a fabricated figure straight
+//   into the daily-loss ceiling the hunter signed.
+//
+//   And `ep` is NOT the price to record. `ep` is the VWAP of the WHOLE position;
+//   what is missing from the ledger is one fill inside it. Writing the delta at
+//   `ep` is only correct when the ledger held nothing, which is why the first
+//   adoption looked right and the second broke: account 5273 went 214 @ 0.023308
+//   on the books, 345 @ ep 0.023159 at the venue, and the 131 adopted at `ep`
+//   left the fold averaging 0.0232514 — 39.9 bps off the venue, past
+//   aggregate.ts's 10 bps entry check, loss null, hunter blocked with no button
+//   to press. Adoption and the entry-price reconcile were each right and jointly
+//   broken. impliedMarginalUsd is the fix; see it for the arithmetic.
 //
 //   SAY-SO — a delta the agent's OWN pending order accounts for may be adopted
 //   automatically: the agent authorised that order under the leash and watched
@@ -93,6 +103,47 @@ function deltaByMarket(
 }
 
 /**
+ * The price the missing fill must have had for the ledger to average out to the
+ * venue's `ep`.
+ *
+ *     implied = (venueSize × venueEp − foldSize × foldEntry) / delta
+ *
+ * The venue's `ep` is the VWAP of everything open, so `venueSize × venueEp` is
+ * what the whole position cost. Subtract what the ledger already accounts for
+ * and the remainder is what the unrecorded fill cost; divide by its size for a
+ * price. Record that, and the fold reproduces `ep` exactly — which is the
+ * property aggregate.ts's entry-price check is testing for.
+ *
+ * With an empty ledger this reduces to `venueEp`, so a first adoption is
+ * unchanged.
+ *
+ * It is a RECONSTRUCTION, not the fill price the venue charged. Both inputs
+ * arrive rounded to price_decimals, so it lands a few units of the last decimal
+ * off the truth: for 5273 this yields 0.0229156 where the venue's own traded
+ * volume implies 0.0229130. Immaterial against a dollar-scale ceiling, and it
+ * beats the alternative of a number that is wrong by 40 bps in a known
+ * direction. It is not a substitute for recording the fill when we see it.
+ *
+ * Returns null when the arithmetic does not produce a usable price — a
+ * non-finite result, or one at or below zero. That means the two sides disagree
+ * about something more than a rounding step, and the caller must refuse rather
+ * than write a nonsense entry and then believe it.
+ */
+export function impliedMarginalUsd(args: {
+  venueSize: number;
+  venueEntryUsd: number;
+  foldSize: number;
+  foldEntryUsd: number;
+  delta: number;
+}): number | null {
+  const { venueSize, venueEntryUsd, foldSize, foldEntryUsd, delta } = args;
+  if (delta === 0) return null;
+  const implied = (venueSize * venueEntryUsd - foldSize * foldEntryUsd) / delta;
+  if (!Number.isFinite(implied) || implied <= 0) return null;
+  return implied;
+}
+
+/**
  * What it would take to make the ledger agree with the venue.
  *
  * `trust: "pending"` (the automatic path) adopts only deltas a pending order of
@@ -114,6 +165,7 @@ export function planAdoption(args: {
 }): AdoptionPlan {
   const { fold, venue, marks, pending, nowMs, trust } = args;
   const frames = new Map(venue.map((v) => [v.marketId, v]));
+  const foldByMarket = new Map(fold.map((p) => [p.marketId, p]));
   const fills: LedgerFill[] = [];
   const resolvedOrderIds: string[] = [];
   const unexplained: Unexplained[] = [];
@@ -144,7 +196,28 @@ export function planAdoption(args: {
     const direction: 1 | -1 = delta > 0 ? 1 : -1;
     const mm = marks.get(marketId);
     if (!mm) throw new Error(`no market for held market ${marketId}`);
-    const priceUsd = frame.entryPriceScaled / 10 ** mm.market.priceDecimals;
+
+    const venueEntryUsd =
+      frame.entryPriceScaled / 10 ** mm.market.priceDecimals;
+    const held = foldByMarket.get(marketId);
+    const priceUsd = impliedMarginalUsd({
+      venueSize: signedSizeFromFrame(frame, marks),
+      venueEntryUsd,
+      foldSize: held?.signedSize ?? 0,
+      foldEntryUsd: held?.entryUsd ?? 0,
+      delta,
+    });
+    if (priceUsd === null) {
+      // The two sides disagree by more than a rounding step. There is no honest
+      // price to record, so this is the same answer as a frame with no `ep`:
+      // refuse, and let the caller keep failing closed.
+      unexplained.push({
+        marketId,
+        deltaUnits: delta,
+        reason: "no_entry_price",
+      });
+      continue;
+    }
 
     // Which of this agent's orders, if any, accounts for the delta.
     //
