@@ -112,28 +112,43 @@ export interface OpenPositionFrame {
 /**
  * The `rq` to send on the next order for this account.
  *
- * `rq` is the venue's IDEMPOTENCY KEY and must be strictly increasing per
- * account. This client sent a literal 1 on every order, on a fresh socket every
- * time, which is why account 5273 filled exactly once and then stopped: the
- * first order met `lfr:0`, was forwarded, and advanced `lfr` to 1 — and every
- * order after it re-sent `rq:1`, which is no longer greater than what the venue
- * has already executed. The gateway still acks with code 0 and the chain does
- * nothing, so it presents as "accepted, not filled" forever. Exactly the same
- * symptom as fw:false, and exactly as silent.
+ * `rq` is the venue's idempotency key. On-chain it is the order's
+ * `orderDescId`, and the contract refuses anything that does not exceed the
+ * account's last one — emitting `OrderDescIdTooLow(uint256 lastOrderDescId)`,
+ * which then reads back to us on an mt 24 as reason 32.
  *
- * Both terms matter. `lastRequestId + 1` is what makes it greater than what this
- * account has actually executed. The clock is what Mandate seeds from
- * (venue_client.py:95) so a reconnect can never reuse a value the venue already
- * ran; taking the max keeps that property without depending on the frame being
- * fresh.
+ * ## There are two id spaces and only one of them is a clock
  *
- * Known limit: two orders placed within the same account before the first has
- * been forwarded will read the same `lfr` and, if issued in the same
- * millisecond, the same `rq`. Hunters place one at a time and the clock breaks
- * the tie in practice; a queue would be the real answer if that stops being true.
+ * Read out of Perpl's own bundle (`app.perpl.xyz/assets/index-*.js`,
+ * `generateRequestId`), which is the authority here:
+ *
+ *     if (account.fw) {                       // forwarding ON
+ *       n = Math.max(lastRequestId, account.lfr) + 1;
+ *     } else {                                // forwarding OFF, legacy
+ *       n = now > lastLegacyRequestId ? now : lastLegacyRequestId + 1;
+ *     }
+ *
+ * With forwarding ON — the only state this client ever trades in, because it
+ * refuses fw:false outright — the id is a small COUNTER seeded from `lfr`. The
+ * millisecond clock belongs to the legacy path alone, and the app keeps the two
+ * high-water marks in separate fields (`lastRequestId` vs
+ * `lastLegacyRequestId`) precisely because they are separate spaces.
+ *
+ * This function previously returned `max(lfr + 1, Date.now())`, fusing the two,
+ * which in practice always took the clock — and a clock value is not in the
+ * forwarded space, so account 5273 got OrderDescIdTooLow on every order after
+ * its first. That is what the mt 24 handler finally named.
+ *
+ * `lastSeen` is the caller's own high-water mark for this account, the
+ * equivalent of the app's in-memory `lastRequestId`. It matters because `lfr`
+ * on a freshly-read frame can lag an order this process just sent, and without
+ * it two orders in quick succession would reuse a value.
  */
-export function nextRequestId(account: AccountSnapshot, nowMs: number): number {
-  return Math.max(account.lastRequestId + 1, nowMs);
+export function nextRequestId(
+  account: AccountSnapshot,
+  lastSeen = 0,
+): number {
+  return Math.max(lastSeen, account.lastRequestId) + 1;
 }
 
 /**

@@ -36,6 +36,17 @@ import {
 const WS_BASE = process.env.PERPL_WS_URL ?? "wss://app.perpl.xyz";
 const TRADING_WS_PATH = "/ws/v1/trading";
 
+/**
+ * The highest `rq` this process has sent per account — the equivalent of the
+ * Perpl app's in-memory `lastRequestId`.
+ *
+ * `lfr` on a freshly-read frame can lag an order this process sent moments ago,
+ * so `lfr + 1` alone would hand back a value already spent. Holding the mark
+ * here is what the app does too. It is per-process and that is enough: a
+ * restart re-reads `lfr`, which by then reflects what the venue forwarded.
+ */
+const lastRequestIdByAccount = new Map<number, number>();
+
 export interface PlaceOrderArgs {
   apiKey: string;
   /** Ed25519 signing secret, hex — the enrolled key. */
@@ -68,6 +79,12 @@ export interface PlaceOrderResult {
   code: number;
   error: string | null;
   fill: Fill | null;
+  /**
+   * The `rq` this order went out under, or null if none was sent. Logged on a
+   * non-fill: an OrderDescIdTooLow is only interpretable next to the value we
+   * sent and the `lfr` we read it from.
+   */
+  requestId: number | null;
   /**
    * The venue's own verdict on this order, off an mt 24, or null if none arrived
    * before we stopped waiting.
@@ -115,6 +132,7 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
       error: null,
       fill: null,
       update: null,
+      requestId: null,
     };
     let orderSn = -1;
     let orderRq = -1;
@@ -196,10 +214,16 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
           return finish();
         }
         orderSn = 1;
-        // NOT 1. `rq` is the venue's per-account idempotency key and must be
-        // strictly greater than the last one it forwarded, or the order is
-        // acked and never executed. See nextRequestId.
-        orderRq = nextRequestId(result.account, Date.now());
+        // `rq` is the venue's idempotency key — on-chain, the order's
+        // orderDescId — and must exceed the account's last or the contract
+        // refuses it with OrderDescIdTooLow. A COUNTER seeded from `lfr`, not a
+        // clock: see nextRequestId for why the clock is the fw:false path only.
+        orderRq = nextRequestId(
+          result.account,
+          lastRequestIdByAccount.get(result.account.accountId) ?? 0,
+        );
+        lastRequestIdByAccount.set(result.account.accountId, orderRq);
+        result.requestId = orderRq;
         sent = true;
         result.sentToVenue = true;
         ws.send(

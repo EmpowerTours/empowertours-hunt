@@ -282,6 +282,13 @@ export async function POST(req: Request) {
           code: result.code,
           error: result.error,
           venue: result.update,
+          // An OrderDescIdTooLow means nothing without these: the rq we sent
+          // and the lfr we derived it from.
+          requestId: result.requestId,
+          lfr: result.account?.lastRequestId ?? null,
+          accountId: result.account?.accountId ?? null,
+          fw: result.account?.forwardingAllowed ?? null,
+          available: result.account?.available ?? null,
         }),
       );
     }

@@ -225,11 +225,10 @@ describe("parsePositions — the entry price the frame was said not to have", ()
   });
 });
 
-describe("nextRequestId — the idempotency key that stopped the executor", () => {
-  // Both frames are real, captured from account 5273 on 2026-09-14 either side
-  // of the only order it has ever filled. `lfr` advanced 0 -> 1 when that order
-  // was forwarded; the client kept sending rq:1 afterwards, which is no longer
-  // greater than what the venue had executed, and nothing filled again.
+describe("nextRequestId — a counter seeded from lfr, never the clock", () => {
+  // Real mt 19 frames from account 5273, captured 2026-09-14 either side of the
+  // only order it has ever filled. `lfr` is the venue's last forwarded request
+  // id; the Perpl app maps it to lastRequestId (`Math.max(lastRequestId, lfr)`).
   const BEFORE_FIRST_FILL = {
     mt: 19,
     as: [
@@ -242,40 +241,48 @@ describe("nextRequestId — the idempotency key that stopped the executor", () =
       { id: 5273, fr: false, fw: true, ft: 0, lfr: 1, b: "8112235", lb: "0" },
     ],
   };
+  const acc = (f: unknown) => parseWalletSnapshot(f)[0];
 
   it("parses lfr off the account frame", () => {
-    expect(parseWalletSnapshot(BEFORE_FIRST_FILL)[0].lastRequestId).toBe(0);
-    expect(parseWalletSnapshot(AFTER_FIRST_FILL)[0].lastRequestId).toBe(1);
+    expect(acc(BEFORE_FIRST_FILL).lastRequestId).toBe(0);
+    expect(acc(AFTER_FIRST_FILL).lastRequestId).toBe(1);
   });
 
-  it("is strictly greater than what the venue has already forwarded", () => {
-    for (const frame of [BEFORE_FIRST_FILL, AFTER_FIRST_FILL]) {
-      const acc = parseWalletSnapshot(frame)[0];
-      expect(nextRequestId(acc, Date.now())).toBeGreaterThan(acc.lastRequestId);
+  it("is exactly lfr + 1 with no prior send", () => {
+    expect(nextRequestId(acc(BEFORE_FIRST_FILL))).toBe(1);
+    expect(nextRequestId(acc(AFTER_FIRST_FILL))).toBe(2);
+  });
+
+  it("IS NOT A CLOCK — this is what broke account 5273", () => {
+    // The old implementation returned max(lfr + 1, Date.now()), which always
+    // took the clock. A millisecond value is not in the forwarded id space, so
+    // the contract refused every order with OrderDescIdTooLow. The clock is the
+    // fw:false legacy path only, per Perpl's own generateRequestId.
+    const rq = nextRequestId(acc(AFTER_FIRST_FILL));
+    expect(rq).toBeLessThan(1_000_000);
+    expect(rq).not.toBe(Date.now());
+  });
+
+  it("clears a value this process already sent, when lfr still lags it", () => {
+    // The frame is read fresh per order, so lfr can be behind an order sent
+    // moments ago; lfr + 1 alone would reuse a spent value.
+    expect(nextRequestId(acc(AFTER_FIRST_FILL), 9)).toBe(10);
+  });
+
+  it("prefers lfr when the venue is ahead of what we remember", () => {
+    expect(nextRequestId({ ...acc(AFTER_FIRST_FILL), lastRequestId: 40 }, 9)).toBe(
+      41,
+    );
+  });
+
+  it("always advances, so two orders never share an rq", () => {
+    const a = acc(AFTER_FIRST_FILL);
+    let seen = 0;
+    for (let i = 0; i < 5; i++) {
+      const rq = nextRequestId(a, seen);
+      expect(rq).toBeGreaterThan(seen);
+      seen = rq;
     }
-  });
-
-  it("never returns the literal 1 that stalled account 5273", () => {
-    // The regression in one line: after the first fill, lfr is 1, and a client
-    // that answers 1 here places orders the chain will not execute.
-    const acc = parseWalletSnapshot(AFTER_FIRST_FILL)[0];
-    expect(nextRequestId(acc, Date.now())).not.toBe(1);
-  });
-
-  it("stays ahead of a stale frame by using the clock", () => {
-    // A frame that under-reports lfr (read before an in-flight order forwarded)
-    // must not drag the next rq back down to something already executed.
-    const acc = parseWalletSnapshot(BEFORE_FIRST_FILL)[0];
-    const now = 1_789_425_372_000;
-    expect(nextRequestId(acc, now)).toBe(now);
-  });
-
-  it("still clears lfr when the clock is behind it", () => {
-    const acc = {
-      ...parseWalletSnapshot(AFTER_FIRST_FILL)[0],
-      lastRequestId: 9e12,
-    };
-    expect(nextRequestId(acc, 1_000)).toBe(9e12 + 1);
   });
 });
 
