@@ -1,12 +1,16 @@
 // Turning Perpl's live account into the DayState the leash is checked against.
 //
 // enforce.ts gates on three aggregate numbers: tradesToday, openNotionalUsdE6,
-// lossTodayUsdE6. This module builds the two that Perpl's frames actually
-// support (open notional from positions × mark; trades today from fills) and is
-// deliberately HONEST about the third: the venue's position frames carry no
-// entry price or PnL (src/account_status.py), so loss cannot be read from them.
-// That number is left null — never silently zero — so a caller enforcing the
-// daily-loss stop fails closed instead of running with the ceiling disabled.
+// lossTodayUsdE6. This module builds open notional (positions × mark) and holds
+// the AggregateState shape; loss is assembled in aggregate.ts.
+//
+// This file used to say the venue's frames carry no entry price or PnL, citing
+// src/account_status.py. That was never a survey of what the venue sends — only
+// of what Mandate parsed — and it is false: the position frame carries `ep`. So
+// unrealised PnL is read from the venue and realised-today folded from our
+// fills. What survives unchanged is the contract around NOT KNOWING: loss stays
+// `bigint | null`, null is never zero, and a caller enforcing the daily-loss
+// stop fails closed rather than run with the ceiling silently disabled.
 
 import type { Market } from "../order";
 import type { DayState } from "../enforce";
@@ -54,12 +58,15 @@ export interface AggregateState {
   openNotionalUsdE6: bigint;
   tradesToday: number;
   /**
-   * Loss so far today in USD-E6, or null when it could not be read. NULL IS NOT
-   * ZERO. Perpl's position frames carry no entry/PnL, so until the loss read is
-   * solved (fills-VWAP reconstruction, or a venue equity field found via
-   * Mandate's capture_position_frames diagnostic) this stays null, and a caller
-   * enforcing the daily-loss stop MUST refuse on null rather than pass zero —
-   * zero silently disables the ceiling the user signed.
+   * Loss so far today in USD-E6, or null when it could not be vouched for.
+   * NULL IS NOT ZERO.
+   *
+   * It is null when our fill ledger does not reconcile with the venue's
+   * positions in size AND entry price: the venue gives no per-day realised PnL,
+   * so that half comes from our fills, and a ledger that disagrees with the
+   * venue is missing closes that realised a loss today. A caller enforcing the
+   * daily-loss stop MUST refuse on null rather than pass zero — zero silently
+   * disables the ceiling the user signed.
    */
   lossTodayUsdE6: bigint | null;
 }

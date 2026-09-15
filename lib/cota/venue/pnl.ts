@@ -1,18 +1,25 @@
-// Fills-VWAP PnL reconstruction — the daily-loss read Perpl's frames can't give.
+// Fills-VWAP reconstruction — the REALISED half of the daily-loss read.
 //
-// Perpl's position frames carry size but no entry price or PnL (see
-// reference: account-state.ts), so loss can't be read from them. But Cota
-// PLACES every order, so it sees each fill (mt 25, with price and fee) and knows
-// the order's direction (the T_* type it sent). Fold those fills and you
-// recover, from data we own: the open position's VWAP entry, realised PnL, and —
-// with a mark — unrealised PnL. That is everything the daily-loss ceiling needs.
+// This module was built on the premise that Perpl's position frames carry no
+// entry price, so everything — entry, realised, unrealised — had to be
+// reconstructed from our own fills. The premise was wrong: the frame carries
+// `ep`, verified to the microdollar against the venue's own totals (see
+// parsePositions in frames.ts).
 //
-// Pure and deterministic: fills in, numbers out. No socket, no DB. The live
-// layer records fills into a ledger and calls this; reconciliation against the
-// venue's position snapshot (for size the venue may have liquidated) is the
-// caller's job.
+// So the split is now by WHO KNOWS THE ANSWER. The venue knows what is open and
+// what it was entered at, so UNREALISED PnL is computed from its `ep` in
+// aggregate.ts — authoritative, and immune to drift in our reconstruction. Only
+// REALISED PnL for the current day is something the venue does not give per day,
+// and that stays here, folded from the fills we recorded.
+//
+// The fold's VWAP entry survives for one job it is still the only source for:
+// cross-checking our ledger against the venue's `ep`. Size agreeing is not the
+// ledger being right, and that second dimension is what catches a ledger that is
+// wrong about the price rather than the quantity.
+//
+// Pure and deterministic: fills in, numbers out. No socket, no DB.
 
-import { USD_SCALE, type MarkedMarket } from "./account-state";
+import { USD_SCALE } from "./account-state";
 
 export interface LedgerFill {
   marketId: number;
@@ -113,24 +120,6 @@ export function foldFills(fills: LedgerFill[]): {
   };
 }
 
-/** Unrealised PnL in USD across open positions. Throws on a missing mark. */
-export function unrealisedUsd(
-  positions: OpenPos[],
-  marksByMarketId: Map<number, MarkedMarket>,
-): number {
-  let u = 0;
-  for (const p of positions) {
-    const mm = marksByMarketId.get(p.marketId);
-    if (!mm) {
-      throw new Error(
-        `no mark for held market ${p.marketId}; cannot price PnL`,
-      );
-    }
-    u += p.signedSize * (mm.markUsd - p.entryUsd);
-  }
-  return u;
-}
-
 /** Start of the UTC day containing `ms`. */
 function utcDayStart(ms: number): number {
   const d = new Date(ms);
@@ -162,18 +151,22 @@ export function countOrdersToday(fills: LedgerFill[], nowMs: number): number {
  * not it was closed; matches enforce.ts and Mandate's account_state_from). A day
  * that is up reports zero, never negative — no free headroom. Rounded to the
  * nearest micro-dollar; sub-cent rounding is immaterial to a dollar-scale
- * ceiling, and the real conservatism (never skip a held market) lives in the
- * mark lookups that throw.
+ * ceiling.
+ *
+ * `unrealisedNowUsd` is PASSED IN, not derived here, because the venue is the
+ * authority on it: it comes from the position frame's `ep` via
+ * aggregate.ts::unrealisedFromVenueUsd. Deriving it from the fold as well would
+ * be a second way to compute the number the leash gates on, and the two would
+ * drift — the same failure as the duplicated boundFromRow, where a UI could
+ * preview "allowed" on an order the server refuses.
  */
 export function lossTodayUsdE6(
   fills: LedgerFill[],
-  marksByMarketId: Map<number, MarkedMarket>,
+  unrealisedNowUsd: number,
   nowMs: number,
 ): bigint {
-  const { positions, realized } = foldFills(fills);
-  const net =
-    realizedTodayUsd(realized, nowMs) +
-    unrealisedUsd(positions, marksByMarketId);
+  const { realized } = foldFills(fills);
+  const net = realizedTodayUsd(realized, nowMs) + unrealisedNowUsd;
   const loss = net < 0 ? -net : 0;
   return BigInt(Math.round(loss * USD_SCALE));
 }

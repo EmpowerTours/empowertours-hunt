@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   foldFills,
-  unrealisedUsd,
   realizedTodayUsd,
   countOrdersToday,
   lossTodayUsdE6,
   type LedgerFill,
 } from "./pnl";
-import { MON_MARKET, type Market } from "../order";
-import { USD_SCALE, type MarkedMarket } from "./account-state";
+import { USD_SCALE } from "./account-state";
 
 const T0 = Date.UTC(2026, 8, 10, 20, 0, 0); // 2026-09-10 20:00 UTC — "now"
 const YESTERDAY = Date.UTC(2026, 8, 9, 20, 0, 0);
@@ -26,8 +24,6 @@ function fill(p: Partial<LedgerFill>): LedgerFill {
   };
 }
 
-const marks = (markUsd: number, market: Market = MON_MARKET) =>
-  new Map<number, MarkedMarket>([[market.id, { market, markUsd }]]);
 
 describe("foldFills — positions + realised", () => {
   it("opens a long, no close: one position at the fill price, only fee realised", () => {
@@ -97,25 +93,6 @@ describe("foldFills — positions + realised", () => {
   });
 });
 
-describe("unrealisedUsd", () => {
-  it("long gains as the mark rises", () => {
-    const { positions } = foldFills([fill({ priceUsd: 0.02 })]);
-    expect(unrealisedUsd(positions, marks(0.025))).toBeCloseTo(0.5, 9); // 100×0.005
-  });
-
-  it("short gains as the mark falls", () => {
-    const { positions } = foldFills([fill({ direction: -1, priceUsd: 0.05 })]);
-    expect(unrealisedUsd(positions, marks(0.04))).toBeCloseTo(1.0, 9); // −100×(0.04−0.05)
-  });
-
-  it("throws on a held market with no mark", () => {
-    const { positions } = foldFills([fill({ marketId: 99 })]);
-    expect(() => unrealisedUsd(positions, marks(0.02))).toThrow(
-      /no mark for held market 99/,
-    );
-  });
-});
-
 describe("realizedTodayUsd / countOrdersToday — UTC day boundary", () => {
   it("counts realised inside the current UTC day only", () => {
     const events = [
@@ -137,22 +114,33 @@ describe("realizedTodayUsd / countOrdersToday — UTC day boundary", () => {
 });
 
 describe("lossTodayUsdE6 — the number the daily-loss stop gates on", () => {
+  // Unrealised is PASSED IN now: the venue's `ep` is the authority on it, so
+  // this function no longer rebuilds it from the fold. These cases pin the
+  // combination — realised today from the fills, unrealised from the caller.
   it("reports a down day as a positive E6 magnitude (unrealised loss)", () => {
-    // long 100 @ 0.05, mark now 0.02 → unrealised −3.0
     const fills = [fill({ direction: 1, sizeUnits: 100, priceUsd: 0.05 })];
-    expect(lossTodayUsdE6(fills, marks(0.02), T0)).toBe(BigInt(3 * USD_SCALE));
+    expect(lossTodayUsdE6(fills, -3.0, T0)).toBe(BigInt(3 * USD_SCALE));
   });
 
   it("reports zero on an up day — no negative headroom", () => {
     const fills = [fill({ direction: 1, sizeUnits: 100, priceUsd: 0.02 })];
-    expect(lossTodayUsdE6(fills, marks(0.05), T0)).toBe(0n); // unrealised +3.0
+    expect(lossTodayUsdE6(fills, 3.0, T0)).toBe(0n);
   });
 
   it("fees alone push a flat day into loss", () => {
     const fills = [fill({ priceUsd: 0.02, feeUsd: 0.5 })];
-    // flat mark → unrealised 0, realised today −0.5
-    expect(lossTodayUsdE6(fills, marks(0.02), T0)).toBe(
-      BigInt(0.5 * USD_SCALE),
-    );
+    expect(lossTodayUsdE6(fills, 0, T0)).toBe(BigInt(0.5 * USD_SCALE));
+  });
+
+  it("an unrealised gain can be cancelled by realised fees", () => {
+    // The two halves come from different sources; this is the case that breaks
+    // if one of them is ever dropped on the floor.
+    const fills = [fill({ priceUsd: 0.02, feeUsd: 2.5 })];
+    expect(lossTodayUsdE6(fills, 1.0, T0)).toBe(BigInt(1.5 * USD_SCALE));
+  });
+
+  it("yesterday's realised loss is not today's", () => {
+    const fills = [fill({ priceUsd: 0.02, feeUsd: 9, timestampMs: YESTERDAY })];
+    expect(lossTodayUsdE6(fills, 0, T0)).toBe(0n);
   });
 });
