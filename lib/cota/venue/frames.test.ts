@@ -316,6 +316,31 @@ describe("parseOrderUpdate — the frame that says what became of the order", ()
     expect(parseOrderUpdate(upd([{ rq: 1, st: 3 }]))[0].terminal).toBe(false);
   });
 
+  it("a FILLED order still expects its fill frame — this cost a real fill", () => {
+    // Account 5273, 2026-09-15 05:32Z: the venue said Filled/TakerOrderFilled,
+    // 131 of 131, on an mt 24. The client finished on it, the mt 25 arrived
+    // after the socket closed, `filled` stayed false and the ledger diverged
+    // from the venue. Terminal is not the same question as "stop listening".
+    const filled = parseOrderUpdate(
+      upd([{ rq: 2, st: 4, sr: 43, fs: 131, os: 131 }]),
+    )[0];
+    expect(filled.terminal).toBe(true);
+    expect(filled.expectsFill).toBe(true);
+  });
+
+  it("a failed order expects NO fill, so waiting longer is pointless", () => {
+    for (const st of [5, 6, 7]) {
+      const u = parseOrderUpdate(upd([{ rq: 1, st }]))[0];
+      expect(u.terminal).toBe(true);
+      expect(u.expectsFill).toBe(false);
+    }
+  });
+
+  it("the stale-rq failure must not be mistaken for a fill", () => {
+    const u = parseOrderUpdate(upd([{ rq: 1, st: 7, sr: 32 }]))[0];
+    expect(u.expectsFill).toBe(false);
+  });
+
   it("renders a code this build has never seen instead of dropping it", () => {
     // An unknown name is still the venue's answer; swallowing it puts us back
     // to "accepted, nothing arrived".

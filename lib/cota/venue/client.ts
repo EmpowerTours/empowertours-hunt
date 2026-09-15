@@ -257,14 +257,16 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
         return;
       }
 
-      // The venue's verdict on our order. Keep the latest one; finish only when
-      // it is terminal, because Open and PartiallyFilled can still become a
-      // fill and finishing on them would throw away the outcome we came for.
+      // The venue's verdict on our order. Keep the latest one, and finish only
+      // when the order is done AND nothing traded — a status that says size
+      // filled means the mt 25 with the price and fee is still coming, and
+      // hanging up on it loses the fill. The fill timer started on the ack
+      // bounds that wait, so this just declines to cut it short.
       if (mt === MT_ORDER_UPDATE) {
         for (const u of parseOrderUpdate(msg)) {
           if (u.orderRq !== orderRq) continue;
           result.update = u;
-          if (u.terminal) return finish();
+          if (u.terminal && !u.expectsFill) return finish();
         }
         return;
       }

@@ -295,10 +295,28 @@ export const ORDER_STATUS: Record<number, string> = {
 };
 
 /**
- * Statuses after which no fill is coming. `Open` is NOT one of them — a resting
- * order is still live — and neither is PartiallyFilled, which can still grow.
+ * Statuses after which the order will not change again. `Open` is not one —
+ * a resting order is still live — and neither is PartiallyFilled, which can
+ * still grow.
  */
 const TERMINAL_STATUS = new Set([4, 5, 6, 7, 10]);
+
+/**
+ * Statuses that mean size actually traded, so a fill frame (mt 25) carrying the
+ * price and fee is still on its way.
+ *
+ * This distinction is the whole point of splitting it out. Treating every
+ * terminal status as "stop listening" hung up on the fill frame of an order
+ * that had just filled in full: the venue said Filled/TakerOrderFilled on an
+ * mt 24, the client finished on it, and mt 25 arrived after the socket closed.
+ * So `filled` stayed false, the route recorded a pending order instead of a
+ * fill, and the ledger disagreed with the venue until the next request adopted
+ * it — which surfaced to the hunter as "positions this agent didn't open".
+ *
+ * Canceled, Expired and Failed are the ones where nothing traded and waiting
+ * longer is pointless.
+ */
+const FILLING_STATUS = new Set([3, 4, 10]);
 
 export const ORDER_STATUS_REASON: Record<number, string> = {
   0: "Unspecified",
@@ -364,8 +382,13 @@ export interface OrderUpdate {
   filledScaled: number;
   /** Originally requested size, scaled. */
   originalScaled: number;
-  /** True when no fill can still arrive for this order. */
+  /** True when the order will not change again. */
   terminal: boolean;
+  /**
+   * True when size traded, so an mt 25 fill frame with the price and fee is
+   * still coming. A caller must NOT stop listening on one of these.
+   */
+  expectsFill: boolean;
 }
 
 /**
@@ -397,6 +420,7 @@ export function parseOrderUpdate(frame: unknown): OrderUpdate[] {
       filledScaled: Number(o.fs ?? 0),
       originalScaled: Number(o.os ?? 0),
       terminal: TERMINAL_STATUS.has(status),
+      expectsFill: FILLING_STATUS.has(status),
     });
   }
   return out;
