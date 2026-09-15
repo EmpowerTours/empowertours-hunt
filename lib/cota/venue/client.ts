@@ -20,14 +20,18 @@ import {
   parseFill,
   parseOrderStatus,
   parseOrderUpdate,
-  MT_ORDER_UPDATE,
   type OrderUpdate,
   parseWalletSnapshot,
   signinCanonicalBytes,
   type AccountSnapshot,
   type Fill,
 } from "./frames";
-import { MT_API_KEY_SIGNIN, orderFrame, type Market } from "../order";
+import {
+  MT_API_KEY_SIGNIN,
+  MT_ORDER_UPDATE,
+  orderFrame,
+  type Market,
+} from "../order";
 
 const WS_BASE = process.env.PERPL_WS_URL ?? "wss://app.perpl.xyz";
 const TRADING_WS_PATH = "/ws/v1/trading";

@@ -265,8 +265,6 @@ export function parseFill(frame: unknown): Fill | null {
 // first live order.
 // ---------------------------------------------------------------------------
 
-export const MT_ORDER_UPDATE = 24;
-
 export const ORDER_STATUS: Record<number, string> = {
   0: "Unspecified",
   1: "Pending",
@@ -359,13 +357,16 @@ export interface OrderUpdate {
  * Parse an order update (mt 24): `{d:[{rq, st, sr, fs, os}]}`. Returns every
  * update in the frame; the caller matches on `orderRq`.
  *
+ * The mt is a literal here, like every other one in this file: these codecs are
+ * a dependency-free leaf, and the canonical mt table lives in ../order.
+ *
  * An unknown code is rendered as `status <n>` / `reason <n>` rather than
  * dropped: a name this build has not seen is still the venue's answer, and
  * swallowing it would put us back to "accepted, nothing arrived".
  */
 export function parseOrderUpdate(frame: unknown): OrderUpdate[] {
   const f = frame as { mt?: number; d?: unknown[] };
-  if (f?.mt !== MT_ORDER_UPDATE || !Array.isArray(f.d)) return [];
+  if (f?.mt !== 24 || !Array.isArray(f.d)) return [];
   const out: OrderUpdate[] = [];
   for (const raw of f.d) {
     const o = raw as Record<string, unknown>;
