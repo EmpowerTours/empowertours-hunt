@@ -16,6 +16,7 @@ import WebSocket from "ws";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes, type Hex } from "viem";
 import {
+  nextRequestId,
   parseFill,
   parseOrderStatus,
   parseWalletSnapshot,
@@ -176,7 +177,10 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
           return finish();
         }
         orderSn = 1;
-        orderRq = 1;
+        // NOT 1. `rq` is the venue's per-account idempotency key and must be
+        // strictly greater than the last one it forwarded, or the order is
+        // acked and never executed. See nextRequestId.
+        orderRq = nextRequestId(result.account, Date.now());
         sent = true;
         result.sentToVenue = true;
         ws.send(

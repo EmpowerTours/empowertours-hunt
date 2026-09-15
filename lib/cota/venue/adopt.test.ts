@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planAdoption, type PendingOrder } from "./adopt";
+import { planAdoption, PENDING_MAX_AGE_MS, type PendingOrder } from "./adopt";
 import { positionsReconcile } from "./aggregate";
 import { foldFills, type LedgerFill, type OpenPos } from "./pnl";
 import type { OpenPositionFrame } from "./frames";
@@ -137,6 +137,34 @@ describe("planAdoption — what it must refuse", () => {
     });
     expect(plan.fills).toEqual([]);
     expect(plan.unexplained[0].reason).toBe("no_pending_order");
+  });
+
+  it("will not let a STALE pending order explain a position", () => {
+    // An order the venue acked and never forwarded leaves a row nothing
+    // resolves. Account 5273 has two. Left unbounded, one of them would silently
+    // adopt whatever the hunter opens by hand next month.
+    const plan = planAdoption({
+      fold: [],
+      venue: [live5273()],
+      marks,
+      pending: [pendingBuy({ placedAtMs: NOW - PENDING_MAX_AGE_MS - 1 })],
+      nowMs: NOW,
+      trust: "pending",
+    });
+    expect(plan.fills).toEqual([]);
+    expect(plan.unexplained[0].reason).toBe("no_pending_order");
+  });
+
+  it("still matches an order right at the edge of the window", () => {
+    const plan = planAdoption({
+      fold: [],
+      venue: [live5273()],
+      marks,
+      pending: [pendingBuy({ placedAtMs: NOW - PENDING_MAX_AGE_MS })],
+      nowMs: NOW,
+      trust: "pending",
+    });
+    expect(plan.fills).toHaveLength(1);
   });
 
   it("will NOT adopt a position the venue gives no entry price for", () => {

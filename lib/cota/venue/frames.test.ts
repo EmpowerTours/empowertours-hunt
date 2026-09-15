@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  nextRequestId,
   parseFill,
   parseOrderStatus,
   parsePositions,
@@ -220,5 +221,59 @@ describe("parsePositions — the entry price the frame was said not to have", ()
     });
     expect(p.entryPriceScaled).toBeNull();
     expect(p.feeScaled).toBeNull();
+  });
+});
+
+describe("nextRequestId — the idempotency key that stopped the executor", () => {
+  // Both frames are real, captured from account 5273 on 2026-09-14 either side
+  // of the only order it has ever filled. `lfr` advanced 0 -> 1 when that order
+  // was forwarded; the client kept sending rq:1 afterwards, which is no longer
+  // greater than what the venue had executed, and nothing filled again.
+  const BEFORE_FIRST_FILL = {
+    mt: 19,
+    as: [
+      { id: 5273, fr: false, fw: true, ft: 0, lfr: 0, b: "10620689", lb: "0" },
+    ],
+  };
+  const AFTER_FIRST_FILL = {
+    mt: 19,
+    as: [
+      { id: 5273, fr: false, fw: true, ft: 0, lfr: 1, b: "8112235", lb: "0" },
+    ],
+  };
+
+  it("parses lfr off the account frame", () => {
+    expect(parseWalletSnapshot(BEFORE_FIRST_FILL)[0].lastRequestId).toBe(0);
+    expect(parseWalletSnapshot(AFTER_FIRST_FILL)[0].lastRequestId).toBe(1);
+  });
+
+  it("is strictly greater than what the venue has already forwarded", () => {
+    for (const frame of [BEFORE_FIRST_FILL, AFTER_FIRST_FILL]) {
+      const acc = parseWalletSnapshot(frame)[0];
+      expect(nextRequestId(acc, Date.now())).toBeGreaterThan(acc.lastRequestId);
+    }
+  });
+
+  it("never returns the literal 1 that stalled account 5273", () => {
+    // The regression in one line: after the first fill, lfr is 1, and a client
+    // that answers 1 here places orders the chain will not execute.
+    const acc = parseWalletSnapshot(AFTER_FIRST_FILL)[0];
+    expect(nextRequestId(acc, Date.now())).not.toBe(1);
+  });
+
+  it("stays ahead of a stale frame by using the clock", () => {
+    // A frame that under-reports lfr (read before an in-flight order forwarded)
+    // must not drag the next rq back down to something already executed.
+    const acc = parseWalletSnapshot(BEFORE_FIRST_FILL)[0];
+    const now = 1_789_425_372_000;
+    expect(nextRequestId(acc, now)).toBe(now);
+  });
+
+  it("still clears lfr when the clock is behind it", () => {
+    const acc = {
+      ...parseWalletSnapshot(AFTER_FIRST_FILL)[0],
+      lastRequestId: 9e12,
+    };
+    expect(nextRequestId(acc, 1_000)).toBe(9e12 + 1);
   });
 });

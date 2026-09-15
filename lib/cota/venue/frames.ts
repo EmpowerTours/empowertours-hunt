@@ -50,6 +50,12 @@ export interface AccountSnapshot {
    * names OrderForwardingNotAllowed.
    */
   forwardingAllowed: boolean;
+  /**
+   * `lfr`: the last request id the venue FORWARDED for this account. The next
+   * order's `rq` must be strictly greater — it is the venue's idempotency key,
+   * per account (mandate/src/venue_client.py:92). See nextRequestId.
+   */
+  lastRequestId: number;
   feeTier: number;
   /** balance - locked, the free collateral an order is checked against. */
   available: number;
@@ -74,6 +80,7 @@ export function parseWalletSnapshot(frame: unknown): AccountSnapshot[] {
       locked,
       frozen: a.fr === true,
       forwardingAllowed: a.fw !== false,
+      lastRequestId: Number(a.lfr ?? 0),
       feeTier: Number(a.ft ?? 0),
       available: balance - locked,
     };
@@ -100,6 +107,33 @@ export interface OpenPositionFrame {
   entryPriceScaled: number | null;
   /** `fee`: fee charged on this position so far, AUSD 6dp. Null if omitted. */
   feeScaled: number | null;
+}
+
+/**
+ * The `rq` to send on the next order for this account.
+ *
+ * `rq` is the venue's IDEMPOTENCY KEY and must be strictly increasing per
+ * account. This client sent a literal 1 on every order, on a fresh socket every
+ * time, which is why account 5273 filled exactly once and then stopped: the
+ * first order met `lfr:0`, was forwarded, and advanced `lfr` to 1 — and every
+ * order after it re-sent `rq:1`, which is no longer greater than what the venue
+ * has already executed. The gateway still acks with code 0 and the chain does
+ * nothing, so it presents as "accepted, not filled" forever. Exactly the same
+ * symptom as fw:false, and exactly as silent.
+ *
+ * Both terms matter. `lastRequestId + 1` is what makes it greater than what this
+ * account has actually executed. The clock is what Mandate seeds from
+ * (venue_client.py:95) so a reconnect can never reuse a value the venue already
+ * ran; taking the max keeps that property without depending on the frame being
+ * fresh.
+ *
+ * Known limit: two orders placed within the same account before the first has
+ * been forwarded will read the same `lfr` and, if issued in the same
+ * millisecond, the same `rq`. Hunters place one at a time and the clock breaks
+ * the tie in practice; a queue would be the real answer if that stops being true.
+ */
+export function nextRequestId(account: AccountSnapshot, nowMs: number): number {
+  return Math.max(account.lastRequestId + 1, nowMs);
 }
 
 /**

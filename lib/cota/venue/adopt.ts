@@ -35,6 +35,19 @@ import { signedSizeFromFrame } from "./aggregate";
 /** Sizes are floats through descaling; below this the two sides agree. */
 const EPS = 1e-6;
 
+/**
+ * How long an accepted-but-unfilled order stays able to explain a position.
+ *
+ * An order the venue acked and then never forwarded leaves a pending row that
+ * nothing will ever resolve — which is not hypothetical: account 5273 has two,
+ * from orders that carried a stale `rq`. A row like that must not sit around
+ * indefinitely waiting to "explain" a position the hunter opens by hand a week
+ * later, because that is exactly the silent adoption this module exists to
+ * prevent. A fill that is going to land lands in seconds; half an hour is
+ * generous and still bounded.
+ */
+export const PENDING_MAX_AGE_MS = 30 * 60 * 1000;
+
 /** An order this agent placed and the venue accepted, still unaccounted for. */
 export interface PendingOrder {
   id: string;
@@ -140,7 +153,8 @@ export function planAdoption(args: {
           o.marketId === marketId &&
           o.direction === direction &&
           o.sizeUnits + EPS >= Math.abs(delta) &&
-          o.placedAtMs <= nowMs,
+          o.placedAtMs <= nowMs &&
+          nowMs - o.placedAtMs <= PENDING_MAX_AGE_MS,
       );
       if (!match) {
         unexplained.push({
