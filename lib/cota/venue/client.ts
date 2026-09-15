@@ -17,7 +17,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes, type Hex } from "viem";
 import {
   nextRequestId,
-  parseFill,
+  parseFills,
   parseOrderStatus,
   parseOrderUpdate,
   type OrderUpdate,
@@ -271,10 +271,12 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
         return;
       }
 
-      // Fill for our order.
+      // Fill for our order. The frame is an envelope and `oid` is on each
+      // entry, so this iterates — reading oid off the envelope is what dropped
+      // every real fill. See parseFills.
       if (mt === 25 || msg.oid !== undefined) {
-        const fill = parseFill(msg);
-        if (fill && fill.orderRq === orderRq) {
+        for (const fill of parseFills(msg)) {
+          if (fill.orderRq !== orderRq) continue;
           result.fill = fill;
           result.filled = fill.sizeScaled > 0;
           return finish();

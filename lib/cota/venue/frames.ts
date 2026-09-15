@@ -251,10 +251,9 @@ export interface Fill {
  * into a claimed $880 fee on a $0.99 trade (see venue_mock's comment). Kept as
  * strings here; the caller scales with the collateral decimals.
  */
-export function parseFill(frame: unknown): Fill | null {
-  const f = frame as Record<string, unknown>;
-  if (f?.oid === undefined && f?.mt !== 25) return null;
-  const rq = f.oid ?? (f as { rq?: unknown }).rq;
+function fillFromEntry(entry: unknown): Fill | null {
+  const f = entry as Record<string, unknown>;
+  const rq = f?.oid ?? (f as { rq?: unknown })?.rq;
   if (rq === undefined) return null;
   return {
     orderRq: Number(rq),
@@ -263,6 +262,36 @@ export function parseFill(frame: unknown): Fill | null {
     feeBaseUnits: String(f.f ?? "0"),
     builderFeeBaseUnits: String(f.bfa ?? "0"),
   };
+}
+
+/**
+ * Parse a fills update (mt 25). The frame is an ENVELOPE — `{mt:25, d:[entry]}`
+ * — and `oid`, the order id a fill belongs to, lives on each ENTRY, not on the
+ * envelope.
+ *
+ * This is where a real fill was being dropped. The old `parseFill` read `oid`
+ * off the top level, so a genuine `{mt:25, d:[...]}` gave `rq === undefined` and
+ * it returned null EVERY time: `result.fill` stayed null, `filled` stayed false,
+ * and the trade route's `recordFill` never once fired in production. Both fills
+ * in the ledger got there through the adoption path instead, which is why a real
+ * fill kept surfacing as "positions this agent didn't open". Mandate unwraps it
+ * (`venue_client.py:210-215`: `for fill in msg.get("d", [])`, then
+ * `fill.get("oid")`); we did not.
+ *
+ * A bare entry is still accepted, because that is the shape the golden trace
+ * from account 5103's live fill was captured in and the shape the mock sends.
+ * Returns every fill in the frame; the caller matches on `orderRq`.
+ */
+export function parseFills(frame: unknown): Fill[] {
+  const f = frame as { mt?: number; d?: unknown[] };
+  if (Array.isArray(f?.d)) {
+    return f.d
+      .map(fillFromEntry)
+      .filter((x): x is Fill => x !== null);
+  }
+  // A bare entry: either the captured single-fill shape or the mock's.
+  const one = fillFromEntry(frame);
+  return one ? [one] : [];
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   nextRequestId,
   parseOrderUpdate,
-  parseFill,
+  parseFills,
   parseOrderStatus,
   parsePositions,
   parseWalletSnapshot,
@@ -119,7 +119,7 @@ describe("parseOrderStatus", () => {
   });
 });
 
-describe("parseFill", () => {
+describe("parseFills", () => {
   it("parses the real $3 fill, keeping fee/builder-fee as base-unit strings", () => {
     // The frame recorded for the live $3 MON long: 113 units @ 26411 (6dp),
     // fee 2657 base units, builder fee 597 base units — as STRINGS, not floats.
@@ -134,7 +134,8 @@ describe("parseFill", () => {
       f: "2657",
       bfa: "597",
     };
-    const fill = parseFill(frame);
+    // Captured as a bare entry, which is what lives inside the envelope's d[].
+    const [fill] = parseFills(frame);
     expect(fill).toEqual({
       orderRq: 42,
       sizeScaled: 113,
@@ -145,14 +146,14 @@ describe("parseFill", () => {
   });
 
   it("never reads a fee as a float (the $880-on-a-$0.99-trade bug)", () => {
-    const fill = parseFill({ oid: 1, s: 116, p: 25832, f: "599", bfa: "599" });
+    const [fill] = parseFills({ oid: 1, s: 116, p: 25832, f: "599", bfa: "599" });
     // Kept a string; scaling is the caller's, with the collateral decimals.
     expect(fill?.feeBaseUnits).toBe("599");
     expect(typeof fill?.feeBaseUnits).toBe("string");
   });
 
-  it("returns null when there is no order id to tie the fill back to", () => {
-    expect(parseFill({ mt: 99, s: 10 })).toBeNull();
+  it("returns nothing when there is no order id to tie a fill back to", () => {
+    expect(parseFills({ mt: 99, s: 10 })).toEqual([]);
   });
 });
 
@@ -379,5 +380,45 @@ describe("ORDER_STATUS_REASON — the codes past Mandate's table", () => {
   it("still renders a code past the table rather than dropping it", () => {
     const upd = parseOrderUpdate({ mt: 24, d: [{ rq: 1, st: 7, sr: 53 }] })[0];
     expect(upd.reasonName).toBe("reason 53");
+  });
+});
+
+describe("parseFills — the envelope that dropped every real fill", () => {
+  // THE BUG: mt 25 arrives as {mt:25, d:[entry]} and `oid` is on the ENTRY.
+  // Reading it off the envelope returned null every time, so `filled` stayed
+  // false and the trade route's recordFill never fired in production. Both
+  // ledger fills got in through adoption instead, which is why a real fill
+  // surfaced to the hunter as "positions this agent didn't open".
+  const ENTRY = { oid: 2, acc: 5273, mkt: 10, t: 1, p: 23159, s: 131, f: "4440" };
+
+  it("unwraps d[] and finds the order id on the entry", () => {
+    const fills = parseFills({ mt: 25, d: [ENTRY] });
+    expect(fills).toHaveLength(1);
+    expect(fills[0].orderRq).toBe(2);
+    expect(fills[0].sizeScaled).toBe(131);
+    expect(fills[0].priceScaled).toBe(23159);
+  });
+
+  it("returns every fill in one frame, for the caller to match on rq", () => {
+    const fills = parseFills({
+      mt: 25,
+      d: [ENTRY, { ...ENTRY, oid: 3, s: 7 }],
+    });
+    expect(fills.map((f) => f.orderRq)).toEqual([2, 3]);
+    expect(fills.map((f) => f.sizeScaled)).toEqual([131, 7]);
+  });
+
+  it("does NOT return an envelope-shaped null (the regression)", () => {
+    // Before the fix this whole frame parsed to null.
+    expect(parseFills({ mt: 25, d: [ENTRY] })[0]).not.toBeUndefined();
+  });
+
+  it("drops entries with no order id rather than inventing one", () => {
+    expect(parseFills({ mt: 25, d: [{ s: 1, p: 2 }] })).toEqual([]);
+  });
+
+  it("is empty for a frame carrying no fills", () => {
+    expect(parseFills({ mt: 25, d: [] })).toEqual([]);
+    expect(parseFills({ mt: 19, as: [] })).toEqual([]);
   });
 });
