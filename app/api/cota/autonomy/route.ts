@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
-import { AUTONOMY_MODES, parseAutonomy } from "@/lib/cota/autonomy";
+import { AUTONOMY_MODES, verifyStoredGrant } from "@/lib/cota/autonomy";
 import { governsLiveOrders } from "@/lib/cota/active-leash";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +29,14 @@ import { governsLiveOrders } from "@/lib/cota/active-leash";
 const Input = z.object({
   digest: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
   mode: z.enum(AUTONOMY_MODES),
+  /** Required for a grant, forbidden for "off" — see the note on withdrawal. */
+  signature: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{130,}$/)
+    .optional(),
+  nonce: z.string().min(8).max(128).optional(),
+  /** Unix SECONDS. The grant's own expiry, inside the signature. */
+  notAfter: z.number().int().positive().optional(),
 });
 
 export async function POST(req: Request) {
@@ -56,6 +64,16 @@ export async function POST(req: Request) {
 
     // Turning it OFF short-circuits every check below.
     if (mode !== "off") {
+      if (
+        !parsed.data.signature ||
+        !parsed.data.nonce ||
+        !parsed.data.notAfter
+      ) {
+        return NextResponse.json(
+          { error: "a grant must be signed: signature, nonce and notAfter" },
+          { status: 400 },
+        );
+      }
       if (!governsLiveOrders(cota)) {
         return NextResponse.json(
           {
@@ -71,21 +89,72 @@ export async function POST(req: Request) {
           { status: 409 },
         );
       }
+
+      // Verify with the SAME function the read path uses. Two verifiers would
+      // be two things to keep in step, and the one that matters is the reader —
+      // a grant that stores cleanly and fails on read is a grant that silently
+      // never works.
+      const check = await verifyStoredGrant({
+        stored: mode,
+        cotaDigest: digest,
+        signature: parsed.data.signature,
+        nonce: parsed.data.nonce,
+        notAfter: new Date(parsed.data.notAfter * 1000),
+        walletAddress: player.walletAddress,
+      });
+      if (check.mode === "off") {
+        return NextResponse.json(
+          { error: `signature rejected: ${check.reason ?? "invalid"}` },
+          { status: 400 },
+        );
+      }
     }
 
     const updated = await prisma.cota.update({
       where: { id: cota.id },
-      data: {
-        autonomy: mode === "off" ? null : mode,
-        autonomyAt: mode === "off" ? null : new Date(),
+      data:
+        mode === "off"
+          ? {
+              autonomy: null,
+              autonomyAt: null,
+              autonomySignature: null,
+              autonomyNonce: null,
+              autonomyNotAfter: null,
+            }
+          : {
+              autonomy: mode,
+              autonomyAt: new Date(),
+              autonomySignature: parsed.data.signature,
+              autonomyNonce: parsed.data.nonce,
+              autonomyNotAfter: new Date(parsed.data.notAfter! * 1000),
+            },
+      select: {
+        digest: true,
+        autonomy: true,
+        autonomyAt: true,
+        autonomySignature: true,
+        autonomyNonce: true,
+        autonomyNotAfter: true,
       },
-      select: { digest: true, autonomy: true, autonomyAt: true },
+    });
+
+    // Report what a READER would see, not what was written. If those ever
+    // disagree the hunter should find out now, not when the agent quietly
+    // declines to act.
+    const asRead = await verifyStoredGrant({
+      stored: updated.autonomy,
+      cotaDigest: updated.digest,
+      signature: updated.autonomySignature,
+      nonce: updated.autonomyNonce,
+      notAfter: updated.autonomyNotAfter,
+      walletAddress: player.walletAddress,
     });
 
     return NextResponse.json({
       digest: updated.digest,
-      mode: parseAutonomy(updated.autonomy),
+      mode: asRead.mode,
       since: updated.autonomyAt,
+      notAfter: updated.autonomyNotAfter,
     });
   } catch (err) {
     if (err instanceof AuthError) {
@@ -105,15 +174,31 @@ export async function GET(req: Request) {
     }
     const cota = await prisma.cota.findFirst({
       where: { digest, playerId: player.id },
-      select: { digest: true, autonomy: true, autonomyAt: true },
+      select: {
+        digest: true,
+        autonomy: true,
+        autonomyAt: true,
+        autonomySignature: true,
+        autonomyNonce: true,
+        autonomyNotAfter: true,
+      },
     });
     if (!cota) {
       return NextResponse.json({ error: "no such leash" }, { status: 404 });
     }
+    const asRead = await verifyStoredGrant({
+      stored: cota.autonomy,
+      cotaDigest: cota.digest,
+      signature: cota.autonomySignature,
+      nonce: cota.autonomyNonce,
+      notAfter: cota.autonomyNotAfter,
+      walletAddress: player.walletAddress,
+    });
     return NextResponse.json({
       digest: cota.digest,
-      mode: parseAutonomy(cota.autonomy),
+      mode: asRead.mode,
       since: cota.autonomyAt,
+      notAfter: cota.autonomyNotAfter,
     });
   } catch (err) {
     if (err instanceof AuthError) {

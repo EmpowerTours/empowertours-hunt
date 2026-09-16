@@ -1,3 +1,6 @@
+import { recoverTypedDataAddress } from "viem";
+import { autonomyTypedData } from "./typedData";
+
 // May the agent act with nobody watching, and how far.
 //
 // Every other gate in this system bounds SIZE — how much, how often, how much
@@ -12,10 +15,16 @@
 // requires consenting again instead of inheriting permission for a ceiling
 // nobody agreed to run unattended.
 //
-// It is NOT independently verifiable. The Cota is signed and anchored; this
-// grant is a server-side record against it, set through an authenticated
-// session. That is a real limitation and stating it here is cheaper than having
-// someone infer a guarantee the system does not make.
+// The grant is SIGNED, and the signature is re-checked on every read rather than
+// only when it is stored. That distinction is the whole security property:
+// verifying at write time alone would still leave database write access
+// sufficient to flip the mode and have the legitimate server trade on an
+// attacker's behalf inside the hunter's leash. Re-verifying on read means a
+// forged row fails to recover to the hunter's wallet and simply reads as "off".
+//
+// What it still is not: anchored. The Cota it names is on chain; this grant is
+// not, so its existence is not independently timestamped. Non-repudiation comes
+// from the signature, not from the chain, and nothing should claim more.
 
 /** Actions the agent can want to take without a hunter present. */
 export type AgentAction = "open" | "close";
@@ -58,6 +67,65 @@ export function agentMay(mode: AutonomyMode, action: AgentAction): boolean {
   if (mode === "full") return true;
   if (mode === "exit_only") return action === "close";
   return false;
+}
+
+/**
+ * Read a STORED grant, verifying the hunter actually signed it.
+ *
+ * Every failure is the same answer — "off" — and that is deliberate. A caller
+ * deciding whether an agent may act does not need to know whether the signature
+ * was forged, the row was half-written, the grant lapsed, or the mode was
+ * garbage; it needs to know it may not act. Reasons are returned alongside for
+ * logging, never for control flow.
+ *
+ * Checks, in the order they can fail cheaply:
+ *   - the mode parses to a real grant
+ *   - the grant has not expired on its own clock
+ *   - every field the signature covers is present
+ *   - the signature recovers to the hunter's own wallet
+ */
+export async function verifyStoredGrant(args: {
+  stored: string | null | undefined;
+  cotaDigest: string;
+  signature: string | null;
+  nonce: string | null;
+  notAfter: Date | null;
+  walletAddress: string;
+  nowMs?: number;
+}): Promise<{ mode: AutonomyMode; reason?: string }> {
+  const mode = parseAutonomy(args.stored);
+  if (mode === "off") return { mode: "off", reason: "no_grant" };
+
+  const now = args.nowMs ?? Date.now();
+  if (!args.notAfter || args.notAfter.getTime() <= now) {
+    return { mode: "off", reason: "expired" };
+  }
+  if (!args.signature || !args.nonce) {
+    return { mode: "off", reason: "unsigned" };
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(args.cotaDigest)) {
+    return { mode: "off", reason: "bad_digest" };
+  }
+
+  let recovered: string;
+  try {
+    recovered = await recoverTypedDataAddress({
+      ...autonomyTypedData({
+        cotaDigest: args.cotaDigest as `0x${string}`,
+        mode,
+        notAfter: BigInt(Math.floor(args.notAfter.getTime() / 1000)),
+        nonce: args.nonce,
+      }),
+      signature: args.signature as `0x${string}`,
+    });
+  } catch {
+    return { mode: "off", reason: "unrecoverable" };
+  }
+
+  if (recovered.toLowerCase() !== args.walletAddress.toLowerCase()) {
+    return { mode: "off", reason: "wrong_signer" };
+  }
+  return { mode };
 }
 
 /** Is this a mode a hunter may set? Used to validate input. */

@@ -111,3 +111,60 @@ export function cotaDigest(message: CotaMessage): `0x${string}` {
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Autonomy — permission for the agent to act on a Cota with nobody watching.
+//
+// A separate signature from the Cota, deliberately. The Cota says how much may
+// be risked; this says whether it may be risked unsupervised. Folding the second
+// into the first would make every hunter who wants a bounded agent also consent
+// to an unattended one, which is not the same promise.
+//
+// It names the Cota by DIGEST rather than restating its bounds. The bound is
+// already signed and anchored; repeating it here would create a second copy to
+// drift, and a grant that disagreed with the leash it points at would be
+// unresolvable. One statement, one reference.
+//
+// `notAfter` is on the grant and not inherited from the Cota so that permission
+// to run unattended can expire sooner than permission to trade. "Run it for a
+// week and let it lapse" should not require revoking the leash.
+// ---------------------------------------------------------------------------
+
+export const AUTONOMY_TYPES = {
+  Autonomy: [
+    { name: "cotaDigest", type: "bytes32" },
+    // "exit_only" | "full". Never "off" — withdrawing consent is not something
+    // a hunter should have to sign, and requiring a signature to stop would
+    // make the off switch fail exactly when a wallet is unreachable.
+    { name: "mode", type: "string" },
+    { name: "notAfter", type: "uint256" },
+    { name: "nonce", type: "string" },
+  ],
+} as const;
+
+export interface AutonomyMessage {
+  cotaDigest: `0x${string}`;
+  mode: string;
+  /** Unix SECONDS. */
+  notAfter: bigint;
+  nonce: string;
+}
+
+/** The exact typed-data payload both signer and verifier must build. */
+export function autonomyTypedData(message: AutonomyMessage) {
+  return {
+    domain: HUNT_DOMAIN,
+    types: AUTONOMY_TYPES,
+    primaryType: "Autonomy" as const,
+    message: {
+      cotaDigest: message.cotaDigest,
+      mode: message.mode,
+      notAfter: message.notAfter,
+      nonce: message.nonce,
+    },
+  };
+}
+
+export function autonomyDigest(message: AutonomyMessage): `0x${string}` {
+  return hashTypedData(autonomyTypedData(message));
+}

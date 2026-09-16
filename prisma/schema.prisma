@@ -1086,6 +1086,20 @@ model Cota {
   autonomy   String?
   autonomyAt DateTime?
 
+  /// The hunter's EIP-712 signature over the grant, and the exact fields it
+  /// covers. Without these the grant is just a column somebody could write.
+  ///
+  /// Re-verified on every READ, not only when stored. That is the entire point:
+  /// verifying at write time alone would still let anyone with database write
+  /// access flip the mode and have the legitimate server trade for them. Read
+  /// verification means a forged row simply fails to recover to the hunter's
+  /// wallet and reads as "off".
+  autonomySignature String?
+  autonomyNonce     String?   @unique
+  /// Unix SECONDS. Permission to run unattended may lapse sooner than
+  /// permission to trade, so this is the grant's own expiry, not the Cota's.
+  autonomyNotAfter  DateTime?
+
   createdAt DateTime @default(now())
 
   @@index([playerId, createdAt])
