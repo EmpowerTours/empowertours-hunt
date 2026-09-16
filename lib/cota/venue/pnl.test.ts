@@ -187,3 +187,31 @@ describe("countOrdersToday — a trade counts when it is SENT", () => {
     expect(withPlaced).toBe(4);
   });
 });
+
+describe("an adoption is not a trade", () => {
+  // A hunter-side reconcile writes a fill under orderId 0. Counting it spends
+  // one of their five daily trades on bookkeeping for a fill the venue had
+  // already executed — and it lands precisely when they are unblocking
+  // themselves from a refusal our own recording gap caused.
+  it("does not count a hand-adopted fill against the day", () => {
+    const adopted = fill({ orderId: 0, timestampMs: T0 });
+    expect(countOrdersToday([adopted], [], T0)).toBe(0);
+  });
+
+  it("still counts real orders alongside it", () => {
+    const rows = [
+      fill({ orderId: 0, timestampMs: T0 }),
+      fill({ orderId: 55, timestampMs: T0 }),
+    ];
+    expect(countOrdersToday(rows, [], T0)).toBe(1);
+  });
+
+  it("an AUTO-adopted fill still counts — it inherits its order's id", () => {
+    // Automatic adoption writes the pending order's own id, so the order it
+    // came from is counted exactly once whether or not we saw the fill.
+    const rows = [fill({ orderId: 293302356, timestampMs: T0 })];
+    expect(
+      countOrdersToday(rows, [{ orderId: 293302356, placedAtMs: T0 }], T0),
+    ).toBe(1);
+  });
+});

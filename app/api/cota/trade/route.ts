@@ -4,11 +4,7 @@ import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
 import { loadPerpKey } from "@/lib/cota/keystore";
-import {
-  executableMarket,
-  executableSymbols,
-  planOpen,
-} from "@/lib/cota/order";
+import { executableMarket, planOpen } from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
 import { readMark } from "@/lib/cota/venue/market-data";
 import type { AccountSnapshot } from "@/lib/cota/venue/frames";
@@ -28,6 +24,7 @@ import {
   newAgentOrderId,
 } from "@/lib/cota/ledger";
 import { boundFromRow } from "@/lib/cota/bound";
+import { liveLeashWhere } from "@/lib/cota/active-leash";
 import { explainDenial } from "@/lib/cota/enforce";
 
 // ---------------------------------------------------------------------------
@@ -86,16 +83,9 @@ export async function POST(req: Request) {
           where: { digest, playerId: player.id, revokedAt: null },
         })
       : await prisma.cota.findFirst({
-          where: {
-            playerId: player.id,
-            revokedAt: null,
-            // Not merely "names a market" — names one this executor can REACH.
-            // A leash naming only BTC authorises nothing here, and picking it as
-            // the active one because it happens to be newest would refuse every
-            // order with market_not_authorised while a usable leash sat behind
-            // it. Ten such leashes exist on the first account to use this.
-            markets: { hasSome: executableSymbols() },
-          },
+          // The rule lives in lib/cota/active-leash.ts, with the client-side
+          // predicate beside it and a test holding the two to the same answer.
+          where: liveLeashWhere(player.id),
           orderBy: { createdAt: "desc" },
         });
     if (!cota) {

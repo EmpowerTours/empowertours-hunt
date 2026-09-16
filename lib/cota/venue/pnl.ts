@@ -199,6 +199,17 @@ export interface PlacedOrder {
  * order the venue refused still consumed an attempt the hunter authorised, and
  * the alternative — free retries — is what a rate ceiling exists to stop.
  */
+/**
+ * The orderId an ADOPTED fill carries when no order of this agent's explains it
+ * — the hunter reconciled a position by hand.
+ *
+ * newAgentOrderId() never returns 0 (it draws from 1..2^31-1) and an
+ * automatically adopted fill inherits its pending order's id, so zero is
+ * unambiguous: it means "the venue already had this, and a person told us to
+ * write it down".
+ */
+export const ADOPTED_NOT_ORDERED = 0;
+
 export function countOrdersToday(
   fills: LedgerFill[],
   placed: PlacedOrder[],
@@ -206,7 +217,15 @@ export function countOrdersToday(
 ): number {
   const dayStart = utcDayStartMs(nowMs);
   const ids = new Set<number>();
-  for (const f of fills) if (f.timestampMs >= dayStart) ids.add(f.orderId);
+  for (const f of fills) {
+    if (f.timestampMs < dayStart) continue;
+    // An adoption is not a trade. It records a fill the venue had already
+    // executed, usually one this agent placed and failed to see — charging the
+    // hunter a slot for our bookkeeping would spend their allowance on our bug,
+    // and would do it at the exact moment they were unblocking themselves.
+    if (f.orderId === ADOPTED_NOT_ORDERED) continue;
+    ids.add(f.orderId);
+  }
   for (const o of placed) if (o.placedAtMs >= dayStart) ids.add(o.orderId);
   return ids.size;
 }
