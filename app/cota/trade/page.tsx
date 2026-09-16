@@ -12,6 +12,7 @@ import {
   setOrderForwarding,
 } from "@/lib/cota/forwarding";
 import { refusalText } from "@/lib/cota/denial-text";
+import { executableSymbols } from "@/lib/cota/order";
 import { mayOpen, type DayState, type ProposedOrder } from "@/lib/cota/enforce";
 import { leverageX100, usdE6 } from "@/lib/cota/scale";
 
@@ -251,12 +252,22 @@ export default function TradePage() {
           return;
         }
         const body = (await res.json()) as { cotas?: CotaRow[] };
+        // The SAME rule the trade route applies: newest unrevoked leash naming
+        // a market this executor can reach. Matching on "has any market" would
+        // let this page display and preview against a BTC leash while the
+        // server enforced a different one — the UI saying "allowed" for an
+        // order the server refuses is precisely the drift bound.ts exists to
+        // prevent, and it would arrive here instead.
+        const reachable = new Set(executableSymbols());
         const active = (body.cotas ?? []).find(
-          (c) => c.revokedAt === null && c.markets.length > 0,
+          (c) =>
+            c.revokedAt === null && c.markets.some((m) => reachable.has(m)),
         );
         if (live) {
           setCota(active ?? null);
-          setMarket(active?.markets[0] ?? null);
+          // And trade the reachable market it names, not merely its first: a
+          // leash naming ["BTC","MON"] is usable, but only for MON.
+          setMarket(active?.markets.find((m) => reachable.has(m)) ?? null);
         }
       } catch {
         if (live) setCota(null);

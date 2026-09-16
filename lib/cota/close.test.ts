@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { mayReduce } from "./enforce";
-import { planClose, T_CLOSE_LONG, T_CLOSE_SHORT } from "./order";
+import {
+  executableMarket,
+  executableSymbols,
+  filterExecutable,
+  planClose,
+  T_CLOSE_LONG,
+  T_CLOSE_SHORT,
+} from "./order";
 import { MON_MARKET } from "./order";
 
 // A market with a finer size grid, to exercise flooring.
@@ -183,5 +190,48 @@ describe("a share of the position is resolved against what is OPEN", () => {
     expect(p.sizeUnits).toBe(288);
     expect(p.full).toBe(false);
     expect(p.decision.ok).toBe(true);
+  });
+});
+
+describe("only markets the executor can reach are offered or acted on", () => {
+  // The failure this prevents, from the first account to use the signing page:
+  // ten leashes naming BTC and PUMP, every one signed, anchored on chain, and
+  // incapable of placing a single order. A bound that looks live and is not is
+  // worse than no bound, because the hunter believes they authorised something.
+  it("resolves a pinned market, case-insensitively", () => {
+    expect(executableMarket("MON")?.id).toBe(MON_MARKET.id);
+    expect(executableMarket("mon")?.id).toBe(MON_MARKET.id);
+  });
+
+  it("does not resolve a market the venue lists but we cannot price", () => {
+    for (const s of ["BTC", "PUMP", "ETH", "SOL"]) {
+      expect(executableMarket(s)).toBeUndefined();
+    }
+  });
+
+  it("drops unreachable markets from a venue catalogue", () => {
+    const venue = [
+      { market: "BTC", midUsdE6: 1n },
+      { market: "MON", midUsdE6: 2n },
+      { market: "PUMP", midUsdE6: 3n },
+    ];
+    expect(filterExecutable(venue).map((m) => m.market)).toEqual(["MON"]);
+  });
+
+  it("does not invent a market the venue is not listing", () => {
+    // We pin MON, but if the venue is not quoting it there is nothing to offer:
+    // a leash naming it could not trade today either.
+    expect(filterExecutable([{ market: "BTC", midUsdE6: 1n }])).toEqual([]);
+  });
+
+  it("every pinned symbol resolves to a market with its scale pinned too", () => {
+    // A symbol with no decimals pinned would misprice every order in it.
+    for (const sym of executableSymbols()) {
+      const m = executableMarket(sym);
+      expect(m).toBeDefined();
+      expect(Number.isInteger(m?.priceDecimals)).toBe(true);
+      expect(Number.isInteger(m?.sizeDecimals)).toBe(true);
+      expect(m?.symbol).toBe(sym);
+    }
   });
 });

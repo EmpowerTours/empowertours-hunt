@@ -4,7 +4,11 @@ import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
 import { loadPerpKey } from "@/lib/cota/keystore";
-import { MON_MARKET, planOpen, type Market } from "@/lib/cota/order";
+import {
+  executableMarket,
+  executableSymbols,
+  planOpen,
+} from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
 import { readMark } from "@/lib/cota/venue/market-data";
 import type { AccountSnapshot } from "@/lib/cota/venue/frames";
@@ -48,10 +52,6 @@ import { explainDenial } from "@/lib/cota/enforce";
 
 const BUILDER_FEE_BPS = 2; // matches the proven builder-9 fill
 
-// Only MON is pinned so far. Other markets need their own pin (id + decimals);
-// until then they are refused rather than traded on a guessed scale.
-const MARKETS: Record<string, Market> = { MON: MON_MARKET };
-
 const Input = z.object({
   digest: z
     .string()
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
     const { digest, side, targetNotionalUsd, leverageX } = parsed.data;
     const symbol = parsed.data.market.toUpperCase();
 
-    const market = MARKETS[symbol];
+    const market = executableMarket(symbol);
     if (!market) {
       return NextResponse.json(
         { error: `market ${symbol} is not supported yet` },
@@ -89,7 +89,12 @@ export async function POST(req: Request) {
           where: {
             playerId: player.id,
             revokedAt: null,
-            markets: { isEmpty: false },
+            // Not merely "names a market" — names one this executor can REACH.
+            // A leash naming only BTC authorises nothing here, and picking it as
+            // the active one because it happens to be newest would refuse every
+            // order with market_not_authorised while a usable leash sat behind
+            // it. Ten such leashes exist on the first account to use this.
+            markets: { hasSome: executableSymbols() },
           },
           orderBy: { createdAt: "desc" },
         });

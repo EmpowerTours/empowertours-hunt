@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { loadPerpKey } from "@/lib/cota/keystore";
-import { MON_MARKET, planClose, type Market } from "@/lib/cota/order";
+import { executableMarket, planClose } from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
 import { readMark } from "@/lib/cota/venue/market-data";
 import { readAccountPositions } from "@/lib/cota/venue/account-read";
@@ -55,8 +55,6 @@ import {
 // way, and that is new risk which belongs under mayOpen with the ceilings.
 // ---------------------------------------------------------------------------
 
-const MARKETS: Record<string, Market> = { MON: MON_MARKET };
-
 /**
  * GET /api/cota/close?market=MON — what is open, and what closing it would mean.
  *
@@ -74,7 +72,7 @@ export async function GET(req: Request) {
     const symbol = (
       new URL(req.url).searchParams.get("market") ?? "MON"
     ).toUpperCase();
-    const market = MARKETS[symbol];
+    const market = executableMarket(symbol);
     if (!market) {
       return NextResponse.json(
         { error: `market ${symbol} is not supported yet` },
@@ -150,7 +148,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "bad request" }, { status: 400 });
     }
     const symbol = parsed.data.market.toUpperCase();
-    const market = MARKETS[symbol];
+    const market = executableMarket(symbol);
     if (!market) {
       return NextResponse.json(
         { error: `market ${symbol} is not supported yet` },

@@ -151,6 +151,50 @@ export function planOpen(args: {
   return { orderType, sizeUnits, notionalUsd, order, decision };
 }
 
+/**
+ * The markets this executor can actually trade.
+ *
+ * A market needs a pinned id and decimals here before an order for it can be
+ * built at all, so this — not the venue's catalogue — is the list of markets a
+ * Cota may usefully name. Anything else produces a leash that verifies
+ * perfectly, anchors on chain, and authorises nothing the executor can reach.
+ *
+ * That is not hypothetical: the signing page offered every market the venue
+ * lists, and the first account to use it signed ten leashes naming BTC and PUMP.
+ * They are all still on file, all unrevoked, and not one of them could ever have
+ * placed an order. A bound that looks live and is not is worse than no bound,
+ * because the hunter believes they authorised something.
+ *
+ * Adding a market is deliberately more than adding a string: it needs its
+ * price/size decimals pinned against the venue's own config, because a wrong
+ * scale silently misprices every order in it.
+ */
+export const EXECUTABLE_MARKETS: Record<string, Market> = { MON: MON_MARKET };
+
+/** The pinned market for a symbol, or undefined if the executor can't reach it. */
+export function executableMarket(symbol: string): Market | undefined {
+  return EXECUTABLE_MARKETS[symbol.toUpperCase()];
+}
+
+/** Every symbol the executor can trade, for filtering a venue catalogue. */
+export function executableSymbols(): string[] {
+  return Object.keys(EXECUTABLE_MARKETS);
+}
+
+/**
+ * Keep only the venue's markets this executor can trade.
+ *
+ * Order and price data come from the venue; the filter comes from here. A
+ * market the venue lists and we cannot price is dropped, and a market we pin but
+ * the venue is not currently listing is NOT invented — if the venue is not
+ * quoting it, a leash naming it cannot trade today either.
+ */
+export function filterExecutable<T extends { market: string }>(
+  venueMarkets: T[],
+): T[] {
+  return venueMarkets.filter((m) => executableMarket(m.market) !== undefined);
+}
+
 export interface ClosePlan {
   orderType: typeof T_CLOSE_LONG | typeof T_CLOSE_SHORT;
   /** Units to close, floored to the market's size grid. */
