@@ -1070,6 +1070,22 @@ model Cota {
   /// boolean so the audit can answer when, not just whether.
   revokedAt DateTime?
 
+  /// Whether the agent may act on this leash WITHOUT the hunter present, and how
+  /// far: null/"off", "exit_only" (may close in profit, may never open), or
+  /// "full" (may also open).
+  ///
+  /// Deliberately on the Cota and not on the Player. What is authorised is "act
+  /// unattended up to THIS ceiling", so it belongs to the bound it is scoped by:
+  /// revoking the leash revokes autonomy with it, and a hunter who signs a larger
+  /// leash must consent again rather than have the agent inherit permission for a
+  /// ceiling they never agreed to run unattended.
+  ///
+  /// Set only through an authenticated session. It is a server-side grant
+  /// recorded against a signed, anchored bound — it is NOT itself independently
+  /// verifiable on chain, and nothing should claim otherwise.
+  autonomy   String?
+  autonomyAt DateTime?
+
   createdAt DateTime @default(now())
 
   @@index([playerId, createdAt])
