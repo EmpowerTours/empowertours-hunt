@@ -6,6 +6,7 @@ import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { signInAccount } from "@/lib/auth/passkey";
+import { newBrowserNonce, signAutonomy } from "@/lib/cota/sign";
 import { boundFromRow } from "@/lib/cota/bound";
 import {
   explainForwardingError,
@@ -96,6 +97,22 @@ const T = {
     closeDone: "Cerrada ✓",
     closeAccepted: "Aceptada — se anota en la próxima lectura.",
     closeFailed: "No se pudo cerrar",
+    autoTitle: "Agente autónomo",
+    autoLede:
+      "Permite que el agente actúe sin ti, dentro de esta misma correa. Firmas el permiso; caduca solo.",
+    autoOff: "Apagado",
+    autoExit: "Solo salir",
+    autoFull: "Completo",
+    autoOffNote: "El agente no hace nada sin que tú estés.",
+    autoExitNote:
+      "Puede cerrar con ganancia. Nunca puede abrir, así que no puede aumentar tu exposición.",
+    autoFullNote:
+      "También puede abrir, dentro de los topes de esta correa. Es lo más que puedes autorizar.",
+    autoSigning: "Firma con Face ID…",
+    autoSaved: "Permiso guardado",
+    autoFailed: "No se pudo guardar",
+    autoExpires: "Caduca",
+    autoDays: "días",
     revoke: "Revocar esta Cota",
     revokeConfirm: "Confirmar: revocar",
     revokeCancel: "Cancelar",
@@ -166,6 +183,22 @@ const T = {
     closeDone: "Closed ✓",
     closeAccepted: "Accepted — it lands in your ledger on the next read.",
     closeFailed: "Could not close",
+    autoTitle: "Autonomous agent",
+    autoLede:
+      "Let the agent act without you, inside this same leash. You sign the permission; it expires on its own.",
+    autoOff: "Off",
+    autoExit: "Exit only",
+    autoFull: "Full",
+    autoOffNote: "The agent does nothing unless you are here.",
+    autoExitNote:
+      "It can close in profit. It can never open, so it cannot increase your exposure.",
+    autoFullNote:
+      "It can also open, within this leash's ceilings. This is the most you can authorise.",
+    autoSigning: "Sign with Face ID…",
+    autoSaved: "Permission saved",
+    autoFailed: "Could not save",
+    autoExpires: "Expires",
+    autoDays: "days",
     revoke: "Revoke this Cota",
     revokeConfirm: "Confirm: revoke",
     revokeCancel: "Cancel",
@@ -231,6 +264,10 @@ export default function TradePage() {
     unrealisedUsd: number | null;
   } | null>(null);
   const [posMark, setPosMark] = useState<number | null>(null);
+  const [autonomy, setAutonomy] = useState<"off" | "exit_only" | "full">("off");
+  const [autonomyUntil, setAutonomyUntil] = useState<string | null>(null);
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoMsg, setAutoMsg] = useState<string | null>(null);
   const [closeBusy, setCloseBusy] = useState(false);
   const [closeMsg, setCloseMsg] = useState<string | null>(null);
   const [unreconciled, setUnreconciled] = useState(false);
@@ -518,6 +555,85 @@ export default function TradePage() {
     }
   }
 
+  // What the SERVER reads, not what we last sent. A grant that stores cleanly
+  // and fails verification on read is a grant that silently never works, so the
+  // toggle shows the reader's answer.
+  const cotaDigest = cota?.digest ?? null;
+  const refreshAutonomy = useCallback(async () => {
+    if (!cotaDigest) return;
+    try {
+      const res = await fetch(
+        `/api/cota/autonomy?digest=${encodeURIComponent(cotaDigest)}`,
+      );
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        mode?: "off" | "exit_only" | "full";
+        notAfter?: string | null;
+      };
+      setAutonomy(body.mode ?? "off");
+      setAutonomyUntil(body.notAfter ?? null);
+    } catch {
+      // Leave the last known answer rather than showing "off" on a failed
+      // fetch: telling someone the agent is off when it is running is the one
+      // wrong answer here that matters.
+    }
+  }, [cotaDigest]);
+
+  // Polled slowly as well as read once, so a grant that lapses while the page
+  // is open stops showing as active. Same shape as the position poll, which is
+  // the pattern that satisfies the compiler here.
+  useEffect(() => {
+    let live = true;
+    const tick = () => {
+      if (live) void refreshAutonomy();
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [refreshAutonomy]);
+
+  /** Grant or withdraw. Only a grant is signed — see signAutonomy. */
+  const setAutonomyMode = useCallback(
+    async (mode: "off" | "exit_only" | "full") => {
+      if (!cotaDigest) return;
+      setAutoBusy(true);
+      setAutoMsg(null);
+      try {
+        let body: Record<string, unknown> = { digest: cotaDigest, mode };
+        if (mode !== "off") {
+          // Thirty days, and the grant lapses on its own. Permission to run
+          // unattended should not be open-ended just because the leash is.
+          const notAfter = Math.floor(Date.now() / 1000) + 30 * 86_400;
+          const nonce = newBrowserNonce();
+          setAutoMsg(t.autoSigning);
+          const signature = await signAutonomy({
+            cotaDigest: cotaDigest as `0x${string}`,
+            mode,
+            notAfter: BigInt(notAfter),
+            nonce,
+          });
+          body = { ...body, signature, nonce, notAfter };
+        }
+        const res = await fetch("/api/cota/autonomy", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const out = (await res.json()) as { error?: string };
+        setAutoMsg(res.ok ? t.autoSaved : (out.error ?? t.autoFailed));
+      } catch {
+        setAutoMsg(t.autoFailed);
+      } finally {
+        setAutoBusy(false);
+        void refreshAutonomy();
+      }
+    },
+    [cotaDigest, refreshAutonomy, t],
+  );
+
   const refreshPosition = useCallback(async () => {
     if (!market) return;
     try {
@@ -778,6 +894,56 @@ export default function TradePage() {
               <Note tone="stop">{refusalText(decision.reason, lang)}</Note>
             )}
             <p className="text-ink-faint text-[11px]">{t.freshNote}</p>
+          </Panel>
+
+          <Panel className="space-y-3">
+            <div>
+              <p className="text-ink-dim text-xs tracking-wide uppercase">
+                {t.autoTitle}
+              </p>
+              <p className="text-ink-faint mt-1 text-xs">{t.autoLede}</p>
+            </div>
+            <div className="flex gap-2">
+              {(
+                [
+                  ["off", t.autoOff],
+                  ["exit_only", t.autoExit],
+                  ["full", t.autoFull],
+                ] as const
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={autoBusy}
+                  onClick={() => void setAutonomyMode(mode)}
+                  className={`min-h-11 flex-1 rounded-xl border-2 px-2 text-sm font-semibold ${
+                    autonomy === mode
+                      ? "border-phosphor text-phosphor"
+                      : "border-hull-line text-ink-dim"
+                  } disabled:opacity-50`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-ink-faint text-xs">
+              {autonomy === "full"
+                ? t.autoFullNote
+                : autonomy === "exit_only"
+                  ? t.autoExitNote
+                  : t.autoOffNote}
+            </p>
+            {autonomy !== "off" && autonomyUntil && (
+              <p className="text-ink-faint text-xs">
+                {t.autoExpires}{" "}
+                {new Date(autonomyUntil).toLocaleDateString(
+                  lang === "es" ? "es-MX" : "en-GB",
+                )}
+              </p>
+            )}
+            {autoMsg && (
+              <p className="text-ink-dim text-center text-[12px]">{autoMsg}</p>
+            )}
           </Panel>
 
           <Panel className="space-y-2">

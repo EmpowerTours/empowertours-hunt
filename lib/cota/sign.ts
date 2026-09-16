@@ -20,6 +20,8 @@ import {
   HUNT_DOMAIN,
   cotaDigest,
   type CotaMessage,
+  autonomyTypedData,
+  type AutonomyMessage,
 } from "./typedData";
 import { anchorLeashWithAccount } from "./anchor";
 
@@ -124,6 +126,28 @@ export async function signAndAnchorCota(
     }
 
     return { signature, anchorTxHash };
+  } finally {
+    passkey?.session.end();
+  }
+}
+
+/**
+ * Sign one autonomy grant with the player's passkey.
+ *
+ * Same shape and the same reasoning as signCota: the signature comes back
+ * alone, and the caller sends the fields it signed alongside it. A server that
+ * re-derives what was signed is a server whose verification proves nothing.
+ *
+ * There is no `signAutonomyOff`, and there should not be. Withdrawing consent
+ * is never signed — requiring a wallet to STOP an agent would make the off
+ * switch fail exactly when a wallet is unreachable, which is when someone is
+ * most likely to be reaching for it.
+ */
+export async function signAutonomy(message: AutonomyMessage): Promise<Hex> {
+  let passkey: PasskeyAccount | null = null;
+  try {
+    passkey = await signInAccount();
+    return await passkey.account.signTypedData(autonomyTypedData(message));
   } finally {
     passkey?.session.end();
   }
