@@ -1,0 +1,354 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/db/prisma";
+import { loadPerpKey } from "@/lib/cota/keystore";
+import { executableMarket, planClose, planOpen } from "@/lib/cota/order";
+import { placeOrder } from "@/lib/cota/venue/client";
+import { readMark, readBook } from "@/lib/cota/venue/market-data";
+import { readAccountPositions } from "@/lib/cota/venue/account-read";
+import {
+  entryUsdWithResidue,
+  signedSizeFromFrame,
+} from "@/lib/cota/venue/aggregate";
+import { exitPriceFor } from "@/lib/cota/venue/market-data";
+import { venueConfirmedFill, venueRefusedOrder } from "@/lib/cota/venue/frames";
+import type { MarkedMarket } from "@/lib/cota/venue/account-state";
+import { readDayState } from "@/lib/cota/day-state";
+import { boundFromRow } from "@/lib/cota/bound";
+import { verifyStoredGrant } from "@/lib/cota/autonomy";
+import { decide } from "@/lib/cota/agent/decide";
+import { proposeOrder, ProposerError } from "@/lib/cota/propose";
+import {
+  recordFill,
+  recordPlacedOrder,
+  fillToLedgerFill,
+  directionOfOrderType,
+  newAgentOrderId,
+} from "@/lib/cota/ledger";
+
+// ---------------------------------------------------------------------------
+// POST /api/cota/agent/run — the agent acts, with nobody watching.
+//
+// Triggered by a scheduler holding COTA_AGENT_TOKEN. Everything it is allowed to
+// do was authorised earlier by two separate signatures from the hunter: the Cota
+// (how much) and the autonomy grant (whether, unattended). This route adds no
+// authority of its own — it can only spend what those two already permit.
+//
+// ## The token cannot widen anything
+//
+// Worth being explicit, because a shared secret that can cause trades sounds
+// alarming and the bounding is what makes it not. A leaked token lets somebody
+// make the agent RUN. It does not let them choose a side, a size, a market or a
+// moment: the leash decides all four, the grant decides whether any of it may
+// happen unattended, and the exit policy refuses to realise a loss. The worst a
+// leaked token achieves is the agent doing its ordinary job at a time the
+// attacker picked, which costs fees inside a ceiling the hunter signed.
+//
+// It also cannot touch a hunter who has not opted in. Candidates come from
+// leashes carrying a grant, and each grant's signature is re-verified here
+// against the hunter's own wallet before anything is read, let alone sent.
+//
+// ## Decisions are made by decide(), which does no I/O
+//
+// This file reads, calls decide(), and sends. The judgement lives in
+// lib/cota/agent/decide.ts precisely so it can be tested without a venue, and so
+// that what the agent will do is readable without tracing a socket.
+// ---------------------------------------------------------------------------
+
+/** Hunters handled per invocation. A scheduler calls again; a loop does not. */
+const MAX_PER_RUN = 10;
+
+const Input = z.object({
+  /** Limit a run to one hunter — for a manual check or a targeted retry. */
+  playerId: z.string().min(1).max(64).optional(),
+  /** Decide and report, send nothing. The way to watch it think. */
+  dryRun: z.boolean().optional(),
+});
+
+function unauthorised() {
+  return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+}
+
+export async function POST(req: Request) {
+  const expected = process.env.COTA_AGENT_TOKEN;
+  // Unset means the seam is closed, not open — the same rule /check follows.
+  if (expected === undefined || expected.length < 16) return unauthorised();
+  if (req.headers.get("authorization") !== `Bearer ${expected}`) {
+    return unauthorised();
+  }
+
+  const parsed = Input.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "bad request" }, { status: 400 });
+  }
+  const { playerId, dryRun } = parsed.data;
+
+  const candidates = await prisma.cota.findMany({
+    where: {
+      ...(playerId ? { playerId } : {}),
+      autonomy: { not: null },
+      revokedAt: null,
+      anchorTxHash: { not: null },
+      notAfter: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+    take: MAX_PER_RUN,
+    include: { player: { select: { id: true, walletAddress: true } } },
+  });
+
+  const results: unknown[] = [];
+
+  for (const cota of candidates) {
+    const log = (o: Record<string, unknown>) =>
+      results.push({ playerId: cota.playerId, digest: cota.digest, ...o });
+
+    // The grant, re-verified. A row someone wrote without the hunter's key
+    // fails here and the hunter is skipped entirely.
+    const grant = await verifyStoredGrant({
+      stored: cota.autonomy,
+      cotaDigest: cota.digest,
+      signature: cota.autonomySignature,
+      nonce: cota.autonomyNonce,
+      notAfter: cota.autonomyNotAfter,
+      walletAddress: cota.player.walletAddress,
+    });
+    if (grant.mode === "off") {
+      log({ act: "nothing", why: `grant_${grant.reason ?? "invalid"}` });
+      continue;
+    }
+
+    const symbol = cota.markets.find((m) => executableMarket(m));
+    const market = symbol ? executableMarket(symbol) : undefined;
+    if (!market) {
+      log({ act: "nothing", why: "no_reachable_market" });
+      continue;
+    }
+
+    const cred = await loadPerpKey(cota.playerId);
+    if (!cred) {
+      log({ act: "nothing", why: "no_trading_key" });
+      continue;
+    }
+
+    try {
+      const markUsd = await readMark(market.id, market.priceDecimals);
+      const book = await readBook(market.id, market.priceDecimals);
+      const marks = new Map<number, MarkedMarket>([
+        [market.id, { market, markUsd }],
+      ]);
+
+      const read = await readAccountPositions({
+        apiKey: cred.apiKey,
+        secretHex: cred.secretHex,
+      });
+      const frame = read.positions.find((p) => p.marketId === market.id);
+      const signedSize = frame ? signedSizeFromFrame(frame, marks) : 0;
+      const entryUsd = frame
+        ? entryUsdWithResidue(frame, market.priceDecimals)
+        : null;
+      const exitPriceUsd = book ? exitPriceFor(signedSize, book) : null;
+
+      // The leash's own view, which the open path needs and the close path does
+      // not. Read once either way so a dry run reports the same state the live
+      // run would act on.
+      const day = await readDayState({
+        playerId: cota.playerId,
+        account: cred.account,
+        apiKey: cred.apiKey,
+        secretHex: cred.secretHex,
+        marks,
+        nowMs: Date.now(),
+      });
+
+      const plan = decide({
+        mode: grant.mode,
+        position:
+          frame && entryUsd !== null
+            ? {
+                signedSize,
+                entryUsd,
+                exitPriceUsd: exitPriceUsd ?? 0,
+                feesPaidUsd: (frame.feeScaled ?? 0) / 1_000_000,
+              }
+            : null,
+        exitPriceUsd,
+        // A null day-state means loss could not be vouched for, and the leash
+        // refuses opens on it. Never let the agent be the caller that trades
+        // through an unverifiable loss read.
+        mayOpenNow: day.dayState !== null && read.account !== null,
+      });
+
+      if (plan.act === "nothing") {
+        log({ act: "nothing", why: plan.why });
+        continue;
+      }
+      if (dryRun) {
+        log({ act: plan.act, why: plan.why, dryRun: true });
+        continue;
+      }
+      if (read.account && !read.account.forwardingAllowed) {
+        log({ act: "nothing", why: "forwarding_disabled" });
+        continue;
+      }
+
+      const agentOrderId = newAgentOrderId();
+
+      if (plan.act === "close") {
+        const cp = planClose({
+          market,
+          openSignedSize: signedSize,
+          markPriceUsd: exitPriceUsd ?? markUsd,
+        });
+        if (!cp.decision.ok) {
+          log({ act: "nothing", why: `close_${cp.decision.reason}` });
+          continue;
+        }
+        const result = await placeOrder({
+          apiKey: cred.apiKey,
+          secretHex: cred.secretHex,
+          market,
+          orderType: cp.orderType,
+          sizeUnits: cp.sizeUnits,
+          leverageX: frame ? frame.leverageX100 / 100 : 1,
+          feeBps: 0,
+        });
+        await recordOutcome(cota.playerId, cred.account, {
+          result,
+          market,
+          orderType: cp.orderType,
+          sizeUnits: cp.sizeUnits,
+          agentOrderId,
+        });
+        log({
+          act: "close",
+          netUsd: plan.netUsd,
+          netBps: plan.netBps,
+          filled: result.filled,
+          accepted: result.accepted,
+          venue: result.update?.reasonName ?? null,
+        });
+        continue;
+      }
+
+      // OPEN — full grants only, and only from flat. Kimi chooses side and
+      // size; the leash decides whether what it chose may happen.
+      let proposal;
+      try {
+        proposal = await proposeOrder({
+          bound: boundFromRow(cota),
+          state: day.dayState!,
+          markets: [{ market: market.symbol, priceUsd: markUsd }],
+          nowSeconds: BigInt(Math.floor(Date.now() / 1000)),
+        });
+      } catch (e) {
+        // A proposer that is down is not a reason to trade, and not an error
+        // worth failing the whole run over.
+        log({
+          act: "nothing",
+          why:
+            e instanceof ProposerError
+              ? "proposer_unavailable"
+              : "propose_failed",
+        });
+        continue;
+      }
+      if (proposal.proposal.action !== "open" || !proposal.decision.ok) {
+        log({
+          act: "nothing",
+          why: proposal.decision.ok ? "proposer_holds" : "leash_refused",
+        });
+        continue;
+      }
+
+      const op = planOpen({
+        bound: boundFromRow(cota),
+        state: day.dayState!,
+        market,
+        side: proposal.proposal.side === "short" ? "short" : "long",
+        targetNotionalUsd: proposal.proposal.notionalUsd ?? 0,
+        markPriceUsd: markUsd,
+        leverageX: proposal.proposal.leverage ?? 1,
+        nowSeconds: BigInt(Math.floor(Date.now() / 1000)),
+      });
+      if (!op.decision.ok || op.sizeUnits <= 0) {
+        log({
+          act: "nothing",
+          why: op.decision.ok ? "size_zero" : `leash_${op.decision.reason}`,
+        });
+        continue;
+      }
+
+      const result = await placeOrder({
+        apiKey: cred.apiKey,
+        secretHex: cred.secretHex,
+        market,
+        orderType: op.orderType,
+        sizeUnits: op.sizeUnits,
+        leverageX: proposal.proposal.leverage ?? 1,
+        feeBps: 2,
+      });
+      await recordOutcome(cota.playerId, cred.account, {
+        result,
+        market,
+        orderType: op.orderType,
+        sizeUnits: op.sizeUnits,
+        agentOrderId,
+      });
+      log({
+        act: "open",
+        sizeUnits: op.sizeUnits,
+        notionalUsd: op.notionalUsd,
+        filled: result.filled,
+        accepted: result.accepted,
+        venue: result.update?.reasonName ?? null,
+      });
+    } catch (e) {
+      // One hunter's venue failure must not stop the others being served.
+      console.error("[cota/agent] hunter failed", cota.playerId, e);
+      log({ act: "nothing", why: "error" });
+    }
+  }
+
+  return NextResponse.json({ ran: candidates.length, results });
+}
+
+/** Same recording contract the hunter-driven routes use. */
+async function recordOutcome(
+  playerId: string,
+  account: string,
+  a: {
+    result: Awaited<ReturnType<typeof placeOrder>>;
+    market: Parameters<typeof fillToLedgerFill>[1];
+    orderType: number;
+    sizeUnits: number;
+    agentOrderId: number;
+  },
+) {
+  const { result } = a;
+  try {
+    if (result.filled && result.fill) {
+      await recordFill(
+        playerId,
+        account,
+        fillToLedgerFill(
+          result.fill,
+          a.market,
+          a.orderType,
+          Date.now(),
+          a.agentOrderId,
+        ),
+      );
+    } else if (result.accepted && !venueRefusedOrder(result.update)) {
+      await recordPlacedOrder(playerId, account, {
+        marketId: a.market.id,
+        direction: directionOfOrderType(a.orderType),
+        sizeUnits: a.sizeUnits,
+        orderId: a.agentOrderId,
+        venueConfirmedFill: venueConfirmedFill(result.update),
+        venueStatus: result.update?.statusName ?? null,
+      });
+    }
+  } catch (e) {
+    console.error("[cota/agent] record failed", e);
+  }
+}
