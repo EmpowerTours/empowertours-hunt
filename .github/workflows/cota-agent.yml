@@ -1,0 +1,73 @@
+# The scheduler that turns /api/cota/agent/run from an endpoint into an agent.
+#
+# The route is a POLL, not a daemon: one call is one pass over every leash that
+# carries an autonomy grant, and then it returns. Nothing inside the app wakes it
+# again, so without something calling it on a clock a take-profit that becomes
+# true at 3am is simply never noticed.
+#
+# DRY RUN IS ON. Every run here decides and reports and sends nothing. Turning it
+# live is one line — `dryRun: false` in the body below — and should happen only
+# after the logs here have shown the agent deciding sensibly for a while.
+#
+# On timing: GitHub's scheduled workflows are routinely late, by five to twenty
+# minutes under load, and five minutes is the floor anyway. That is tolerable
+# because the decision is stateless — every run re-reads the venue, the ledger
+# and the grant from scratch, so a missed tick leaves nothing to catch up on, it
+# only means the agent was slower to notice. Where the lateness does cost
+# something, the minute-by-minute poll on the Mac Mini covers it, and the lease
+# in the route stops the two of them acting at once.
+
+name: cota-agent
+
+on:
+  schedule:
+    # Every 15 minutes. Tighter than this buys nothing while dryRun is on, and
+    # GitHub will not honour it precisely in any case.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: "Decide and report without sending"
+        type: boolean
+        default: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # A slow venue read must not leave a job hanging for six hours on the free
+    # tier's clock.
+    timeout-minutes: 5
+    steps:
+      - name: Ask the agent to act
+        env:
+          COTA_AGENT_TOKEN: ${{ secrets.COTA_AGENT_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'true' || inputs.dryRun }}
+        run: |
+          set -euo pipefail
+          if [ -z "${COTA_AGENT_TOKEN:-}" ]; then
+            echo "COTA_AGENT_TOKEN is not set as a repository secret" >&2
+            exit 1
+          fi
+          # -sS: quiet, but still show an error. --fail-with-body: a non-2xx is a
+          # failed run AND the body is printed, because the body is where the
+          # reason lives.
+          curl -sS --fail-with-body \
+            --max-time 120 \
+            -X POST "https://hunt.empowertours.xyz/api/cota/agent/run" \
+            -H "authorization: Bearer ${COTA_AGENT_TOKEN}" \
+            -H "content-type: application/json" \
+            -d "{\"dryRun\": ${DRY_RUN}}" \
+          | tee /tmp/out.json
+          echo
+          # Surface the per-hunter decisions in the job summary so a glance at
+          # the Actions tab answers "what has it been doing".
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          d = json.load(open("/tmp/out.json"))
+          print(f"### cota-agent — {d.get('ran', 0)} leash(es)\n")
+          rows = d.get("results") or []
+          if not rows:
+              print("No leash carries an autonomy grant.")
+          for r in rows:
+              print(f"- `{r.get('digest','?')[:12]}` **{r.get('act')}** — {r.get('why', '')}")
+          PY

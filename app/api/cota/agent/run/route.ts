@@ -17,6 +17,7 @@ import { readDayState } from "@/lib/cota/day-state";
 import { boundFromRow } from "@/lib/cota/bound";
 import { verifyStoredGrant } from "@/lib/cota/autonomy";
 import { decide } from "@/lib/cota/agent/decide";
+import { releaseAgentLease, takeAgentLease } from "@/lib/cota/agent/lease";
 import { proposeOrder, ProposerError } from "@/lib/cota/propose";
 import {
   recordFill,
@@ -117,15 +118,26 @@ export async function POST(req: Request) {
       continue;
     }
 
+    // Single-flight. Two schedulers — a minute-by-minute poll and a hosted cron
+    // that fires whenever it likes — WILL overlap, and two runs that both read
+    // the same unsettled position both send a full close, which flips the
+    // position instead of closing it. Whoever loses the race simply skips.
+    if (!dryRun && !(await takeAgentLease(cota.id))) {
+      log({ act: "nothing", why: "another_run_holds_the_lease" });
+      continue;
+    }
+
     const symbol = cota.markets.find((m) => executableMarket(m));
     const market = symbol ? executableMarket(symbol) : undefined;
     if (!market) {
+      if (!dryRun) await releaseAgentLease(cota.id);
       log({ act: "nothing", why: "no_reachable_market" });
       continue;
     }
 
     const cred = await loadPerpKey(cota.playerId);
     if (!cred) {
+      if (!dryRun) await releaseAgentLease(cota.id);
       log({ act: "nothing", why: "no_trading_key" });
       continue;
     }
@@ -306,6 +318,11 @@ export async function POST(req: Request) {
       // One hunter's venue failure must not stop the others being served.
       console.error("[cota/agent] hunter failed", cota.playerId, e);
       log({ act: "nothing", why: "error" });
+    } finally {
+      // Always, including after an order was sent. The expiry is a backstop for
+      // a process that dies, not the normal path — holding a leash for 90s after
+      // a clean run would make a minute-by-minute poll skip every other tick.
+      if (!dryRun) await releaseAgentLease(cota.id);
     }
   }
 

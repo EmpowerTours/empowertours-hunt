@@ -1094,6 +1094,22 @@ model Cota {
   /// access flip the mode and have the legitimate server trade for them. Read
   /// verification means a forged row simply fails to recover to the hunter's
   /// wallet and reads as "off".
+  /// Held while an agent run is acting on this leash, so two schedulers cannot
+  /// act on it at once.
+  ///
+  /// Without it, overlapping runs both read the same open position — the first
+  /// run's fill has not settled when the second reads — both decide to close,
+  /// and both send. planClose clamps to what the venue reported, which was the
+  /// full size for both, so the position does not close: it FLIPS to the other
+  /// side at twice the intended trade. A minute-by-minute poll alongside a
+  /// scheduler that fires whenever it likes makes that overlap ordinary rather
+  /// than unlucky.
+  ///
+  /// A lease, not a lock: it carries an expiry so a run that dies mid-flight
+  /// cannot wedge a hunter's agent forever. Taken with a conditional update, so
+  /// the database decides the winner rather than a read-then-write race.
+  agentLeaseUntil DateTime?
+
   autonomySignature String?
   autonomyNonce     String?   @unique
   /// Unix SECONDS. Permission to run unattended may lapse sooner than

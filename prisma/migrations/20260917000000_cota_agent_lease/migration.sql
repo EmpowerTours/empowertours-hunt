@@ -1,0 +1,12 @@
+-- Single-flight for agent runs, per leash.
+--
+-- Two overlapping runs both read the same open position (the first fill has not
+-- settled when the second reads), both decide to close, and both send. The close
+-- planner clamps to the size the venue reported — the full size, to both — so
+-- the position does not close, it FLIPS to the other side at twice the intended
+-- trade. Running a one-minute poll alongside a scheduler that fires whenever it
+-- likes makes that ordinary rather than unlucky.
+--
+-- A lease rather than a lock: it expires, so a run that dies mid-flight cannot
+-- wedge a hunter's agent permanently.
+ALTER TABLE "Cota" ADD COLUMN "agentLeaseUntil" TIMESTAMP(3);
