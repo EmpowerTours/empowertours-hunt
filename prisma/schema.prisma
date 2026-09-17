@@ -176,23 +176,24 @@ model Player {
 
   createdAt DateTime @default(now())
 
-  finds         Find[]
-  attempts      ClaimAttempt[]
-  payouts       Payout[]
-  hintRequests  HintRequest[]
-  huntStats     PlayerHunt[]
-  credits       CreditLedger[]
-  spawns        Spawn[]
-  enrollments   Enrollment[]
-  cotas         Cota[]
-  redemptions   Redemption[]
-  warranties    PlantWarranty[]
-  createdHunts  Hunt[]          @relation("HuntCreator")
-  surveyedZones Zone[]
-  dimeClaim     DimeClaim?
-  perpKey       PerpKey?
-  cotaFills     CotaFill[]
-  cotaOrders    CotaOrder[]
+  finds          Find[]
+  attempts       ClaimAttempt[]
+  payouts        Payout[]
+  hintRequests   HintRequest[]
+  huntStats      PlayerHunt[]
+  credits        CreditLedger[]
+  spawns         Spawn[]
+  enrollments    Enrollment[]
+  cotas          Cota[]
+  redemptions    Redemption[]
+  warranties     PlantWarranty[]
+  createdHunts   Hunt[]              @relation("HuntCreator")
+  surveyedZones  Zone[]
+  dimeClaim      DimeClaim?
+  perpKey        PerpKey?
+  cotaFills      CotaFill[]
+  cotaOrders     CotaOrder[]
+  agentDecisions CotaAgentDecision[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -340,6 +341,43 @@ model CotaOrder {
   createdAt DateTime @default(now())
 
   @@index([playerId, account, resolvedAt])
+}
+
+/// One agent decision, kept so a hunter can read what their agent has been doing.
+///
+/// The agent is a POLL: it wakes, decides, and returns its answer to whichever
+/// scheduler called it — a GitHub job or a cron on a machine in someone's house.
+/// Nothing a hunter can see. Without this table the honest answer to "what has it
+/// been doing" is "check the Actions tab of a repository you may not own", which
+/// is not an answer.
+///
+/// Every tick is recorded, including the boring ones. "It looked and held" is
+/// the state an agent spends almost all of its life in, and a log that only
+/// shows trades makes an agent that is working look like one that is asleep.
+model CotaAgentDecision {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  /// The leash acted under, by digest — the same reference the grant uses.
+  cotaDigest String
+
+  /// "nothing" | "close" | "open".
+  act    String
+  /// Why, in the words decide() used. For reading, never for branching.
+  why    String
+  /// Whether this run was allowed to send. A dry run decides and stops.
+  dryRun Boolean @default(false)
+
+  /// The numbers behind the decision — net PnL on a close, size on an open,
+  /// the venue's verdict if an order went out. Shape follows the act.
+  detail Json?
+
+  at DateTime @default(now())
+
+  @@index([playerId, at])
+  @@index([cotaDigest, at])
 }
 
 model Hunt {

@@ -112,6 +112,10 @@ const T = {
     autoSaved: "Permiso guardado",
     autoFailed: "No se pudo guardar",
     autoExpires: "Caduca",
+    histTitle: "Qué ha hecho el agente",
+    histNone:
+      "Todavía no ha decidido nada. Corre cada minuto; concédele permiso y aparecerá aquí.",
+    histDry: "simulación",
     autoDays: "días",
     revoke: "Revocar esta Cota",
     revokeConfirm: "Confirmar: revocar",
@@ -198,6 +202,10 @@ const T = {
     autoSaved: "Permission saved",
     autoFailed: "Could not save",
     autoExpires: "Expires",
+    histTitle: "What the agent has done",
+    histNone:
+      "No decisions yet. It runs every minute — grant it permission and they appear here.",
+    histDry: "dry run",
     autoDays: "days",
     revoke: "Revoke this Cota",
     revokeConfirm: "Confirm: revoke",
@@ -266,6 +274,16 @@ export default function TradePage() {
   const [posMark, setPosMark] = useState<number | null>(null);
   const [autonomy, setAutonomy] = useState<"off" | "exit_only" | "full">("off");
   const [autonomyUntil, setAutonomyUntil] = useState<string | null>(null);
+  const [history, setHistory] = useState<
+    {
+      id: string;
+      act: string;
+      why: string;
+      dryRun: boolean;
+      at: string;
+      detail?: Record<string, unknown> | null;
+    }[]
+  >([]);
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoMsg, setAutoMsg] = useState<string | null>(null);
   const [closeBusy, setCloseBusy] = useState(false);
@@ -634,6 +652,34 @@ export default function TradePage() {
     [cotaDigest, refreshAutonomy, t],
   );
 
+  const refreshHistory = useCallback(async () => {
+    if (!cotaDigest) return;
+    try {
+      const res = await fetch(
+        `/api/cota/agent/history?digest=${encodeURIComponent(cotaDigest)}&limit=20`,
+      );
+      if (!res.ok) return;
+      const body = (await res.json()) as { decisions?: typeof history };
+      setHistory(body.decisions ?? []);
+    } catch {
+      // Keep whatever was last shown. An empty list on a failed fetch reads as
+      // "your agent has done nothing", which is a different and alarming claim.
+    }
+  }, [cotaDigest]);
+
+  useEffect(() => {
+    let live = true;
+    const tick = () => {
+      if (live) void refreshHistory();
+    };
+    tick();
+    const id = setInterval(tick, 20_000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [refreshHistory]);
+
   const refreshPosition = useCallback(async () => {
     if (!market) return;
     try {
@@ -944,6 +990,46 @@ export default function TradePage() {
             {autoMsg && (
               <p className="text-ink-dim text-center text-[12px]">{autoMsg}</p>
             )}
+
+            <div className="border-hull-line space-y-1 border-t pt-3">
+              <p className="text-ink-dim text-xs tracking-wide uppercase">
+                {t.histTitle}
+              </p>
+              {history.length === 0 ? (
+                <p className="text-ink-faint text-xs">{t.histNone}</p>
+              ) : (
+                <ul className="space-y-1">
+                  {history.map((h) => (
+                    <li
+                      key={h.id}
+                      className="text-ink-dim flex items-baseline justify-between gap-2 font-mono text-[11px]"
+                    >
+                      <span className="text-ink-faint shrink-0">
+                        {new Date(h.at).toLocaleTimeString(
+                          lang === "es" ? "es-MX" : "en-GB",
+                          { hour: "2-digit", minute: "2-digit" },
+                        )}
+                      </span>
+                      <span
+                        className={
+                          h.act === "close"
+                            ? "text-[#4ade80]"
+                            : h.act === "open"
+                              ? "text-phosphor"
+                              : "text-ink-dim"
+                        }
+                      >
+                        {h.act}
+                      </span>
+                      <span className="text-ink-faint grow truncate text-right">
+                        {h.why}
+                        {h.dryRun ? ` · ${t.histDry}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </Panel>
 
           <Panel className="space-y-2">

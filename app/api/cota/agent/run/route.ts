@@ -102,8 +102,28 @@ export async function POST(req: Request) {
   const results: unknown[] = [];
 
   for (const cota of candidates) {
-    const log = (o: Record<string, unknown>) =>
+    // Every decision is recorded, the boring ones included. Holding is what the
+    // agent does nearly all the time, and a log that shows only trades makes a
+    // working agent indistinguishable from a dead one.
+    const log = (o: Record<string, unknown>) => {
       results.push({ playerId: cota.playerId, digest: cota.digest, ...o });
+      const { act, why, ...detail } = o as { act?: string; why?: string };
+      void prisma.cotaAgentDecision
+        .create({
+          data: {
+            playerId: cota.playerId,
+            cotaDigest: cota.digest,
+            act: String(act ?? "nothing"),
+            why: String(why ?? ""),
+            dryRun: dryRun === true,
+            detail: Object.keys(detail).length ? (detail as object) : undefined,
+          },
+        })
+        // Recording is observability, not control. A failed write must never
+        // stop the agent doing its job, and it must never be retried into a
+        // second order.
+        .catch((e) => console.error("[cota/agent] decision log failed", e));
+    };
 
     // The grant, re-verified. A row someone wrote without the hunter's key
     // fails here and the hunter is skipped entirely.
