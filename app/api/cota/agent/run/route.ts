@@ -17,6 +17,8 @@ import { readDayState } from "@/lib/cota/day-state";
 import { boundFromRow } from "@/lib/cota/bound";
 import { verifyStoredGrant } from "@/lib/cota/autonomy";
 import { decide } from "@/lib/cota/agent/decide";
+import { postOnlyPrice } from "@/lib/cota/post-only-price";
+import { TIF_POST_ONLY } from "@/lib/cota/order";
 import { releaseAgentLease, takeAgentLease } from "@/lib/cota/agent/lease";
 import { proposeOrder, ProposerError } from "@/lib/cota/propose";
 import {
@@ -290,6 +292,28 @@ export async function POST(req: Request) {
         continue;
       }
 
+      // Rest, do not cross. Perpl charges 6.9 bps to take and 0.9 to make, and
+      // the take-profit threshold exists mostly to clear that friction — so an
+      // entry that makes rather than takes is not a marginal saving, it is most
+      // of the round trip.
+      //
+      // Only the OPEN rests. Not filling while flat costs nothing: the agent was
+      // already flat, stays flat, and the next tick asks again. The close still
+      // crosses, because not filling THERE means sitting in a position it has
+      // decided to leave while the price that made the exit profitable walks
+      // away. Patient in, decisive out.
+      const quote = book
+        ? postOnlyPrice(
+            market,
+            proposal.proposal.side === "short" ? "short" : "long",
+            book,
+          )
+        : null;
+      if (!quote) {
+        log({ act: "nothing", why: "no_touch_to_rest_on" });
+        continue;
+      }
+
       const result = await placeOrder({
         apiKey: cred.apiKey,
         secretHex: cred.secretHex,
@@ -298,6 +322,8 @@ export async function POST(req: Request) {
         sizeUnits: op.sizeUnits,
         leverageX: proposal.proposal.leverage ?? 1,
         feeBps: 2,
+        priceUsd: quote.priceUsd,
+        flags: TIF_POST_ONLY,
       });
       await recordOutcome(cota.playerId, cred.account, {
         result,
@@ -308,6 +334,9 @@ export async function POST(req: Request) {
       });
       log({
         act: "open",
+        postOnly: true,
+        priceUsd: quote.priceUsd,
+        insideTicks: quote.insideTicks,
         sizeUnits: op.sizeUnits,
         notionalUsd: op.notionalUsd,
         filled: result.filled,

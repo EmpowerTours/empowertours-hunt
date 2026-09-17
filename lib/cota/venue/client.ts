@@ -56,6 +56,20 @@ export interface PlaceOrderArgs {
   sizeUnits: number;
   leverageX: number;
   feeBps: number;
+  /**
+   * A limit price, in USD. Omit for a market order.
+   *
+   * Present means the order RESTS rather than crosses, which is the difference
+   * between paying Perpl's 6.9 bps taker fee and its 0.9 bps maker fee. The
+   * caller decides the price; this layer only carries it to the wire.
+   */
+  priceUsd?: number;
+  /**
+   * Time-in-force / order flags. Omit and orderFrame picks: IOC for a market
+   * order, GTC for a limit one. Pass TIF_POST_ONLY to guarantee the order makes
+   * or is rejected — never takes.
+   */
+  flags?: number;
   chainId?: number;
   /** Whole-session cap. */
   timeoutMs?: number;
@@ -237,6 +251,8 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
               sizeUnits: args.sizeUnits,
               leverageX: args.leverageX,
               feeBps: args.feeBps,
+              priceUsd: args.priceUsd,
+              flags: args.flags,
             }),
           ),
         );
