@@ -1,0 +1,7 @@
+{
+  "schedule": "*/1 * * * *",
+  "agentUrl": "https://hunt.empowertours.xyz/api/cota/agent/run",
+  "origin": "https://hunt.empowertours.xyz",
+  "dryRun": false,
+  "tokenSecretId": "COTA_AGENT_TOKEN"
+}

@@ -1,0 +1,21 @@
+# Targets for the Cota agent scheduler.
+#
+# Two configs rather than one with a flag, because the difference between them
+# is whether real money moves. A single file with `dryRun` edited in place is a
+# file somebody flips by accident; two named targets make going live an explicit
+# choice of target on the command line.
+staging-settings:
+  user-workflow:
+    workflow-name: "cota-agent-scheduler-staging"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    secrets-path: ""
+
+production-settings:
+  user-workflow:
+    workflow-name: "cota-agent-scheduler-production"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.production.json"
+    secrets-path: ""
