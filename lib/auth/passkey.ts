@@ -16,6 +16,7 @@ import {
   HUNT_PRF_SALT_LABEL,
   walletFromPrfOutput,
 } from "./derive";
+import { HUNT_VAULT_SALT, vaultKeyFromPrfOutput } from "./vault-key";
 
 // ---------------------------------------------------------------------------
 // The WebAuthn half of player auth. Browser only — mera is a browser library
@@ -336,6 +337,37 @@ export async function signInAccount(): Promise<PasskeyAccount> {
 }
 
 /** Turn a mera failure into something a player standing outdoors can act on. */
+/**
+ * Unlock the hunter's note vault — the SAME face, a different salt, a key that
+ * is not a wallet.
+ *
+ * Deliberately its own ceremony rather than a second use of signInAccount's
+ * output. Signing in derives a signing key; this derives an encryption key, and
+ * the whole security argument for keeping them apart is that one ceremony must
+ * not hand back both. A hunter unlocking their notes is not authorising a trade,
+ * and the prompt they answer should correspond to the thing they are doing.
+ *
+ * The PRF bytes are used immediately and never returned to the caller — the key
+ * that leaves this function is non-extractable, so nothing downstream can upload
+ * the material even by mistake.
+ */
+export async function unlockNoteVault(): Promise<CryptoKey> {
+  assertOwnRelyingParty(RP_ID);
+  const known = storedCredential();
+  const { prfOutput, credentialId } = await withGuard(
+    getPasskeyPrfOutput({
+      rpId: RP_ID,
+      credential: known,
+      prfSalt: HUNT_VAULT_SALT,
+      timeout: CEREMONY_TIMEOUT_MS,
+    }),
+  );
+  rememberCredential(
+    known?.credentialId === credentialId ? known : { credentialId },
+  );
+  return vaultKeyFromPrfOutput(prfOutput);
+}
+
 export function explainPasskeyError(err: unknown): string {
   if (err instanceof CeremonyTimeout) {
     return "Nothing answered the Face ID request. If this device doesn't hold your passkey, open the hunt on the phone you first signed in with.";

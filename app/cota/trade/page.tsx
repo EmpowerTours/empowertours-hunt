@@ -5,7 +5,8 @@ import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
-import { signInAccount } from "@/lib/auth/passkey";
+import { signInAccount, unlockNoteVault } from "@/lib/auth/passkey";
+import { openNote, sealNote } from "@/lib/auth/vault-key";
 import { newBrowserNonce, signAutonomy } from "@/lib/cota/sign";
 import { boundFromRow } from "@/lib/cota/bound";
 import {
@@ -116,6 +117,19 @@ const T = {
     histNone:
       "Todavía no ha decidido nada. Corre cada minuto; concédele permiso y aparecerá aquí.",
     histDry: "simulación",
+    noteTitle: "Nota privada",
+    noteLede:
+      "Sellada en tu navegador con una clave derivada de tu cara — con una sal distinta a la de tu billetera. El servidor guarda texto cifrado que no puede abrir.",
+    noteUnlock: "Desbloquear con Face ID",
+    noteUnlocking: "Desbloqueando…",
+    notePlaceholder: "Por qué firmaste esta correa, qué esperas del agente…",
+    noteSave: "Guardar",
+    noteSaving: "Guardando…",
+    noteSaved: "Guardada",
+    noteClear: "Borrar",
+    noteFailed: "No se pudo abrir. ¿La misma cara, el mismo dispositivo?",
+    noteNoRecovery:
+      "Sin recuperación: si pierdes la passkey, esta nota se pierde para siempre. Ni nosotros podemos leerla.",
     autoDays: "días",
     revoke: "Revocar esta Cota",
     revokeConfirm: "Confirmar: revocar",
@@ -206,6 +220,19 @@ const T = {
     histNone:
       "No decisions yet. It runs every minute — grant it permission and they appear here.",
     histDry: "dry run",
+    noteTitle: "Private note",
+    noteLede:
+      "Sealed in your browser with a key derived from your face — under a different salt from your wallet. The server stores ciphertext it cannot open.",
+    noteUnlock: "Unlock with Face ID",
+    noteUnlocking: "Unlocking…",
+    notePlaceholder: "Why you signed this leash, what you expect of the agent…",
+    noteSave: "Save",
+    noteSaving: "Saving…",
+    noteSaved: "Saved",
+    noteClear: "Clear",
+    noteFailed: "Could not open. Same face, same device?",
+    noteNoRecovery:
+      "No recovery: lose the passkey and this note is gone for good. We cannot read it either.",
     autoDays: "days",
     revoke: "Revoke this Cota",
     revokeConfirm: "Confirm: revoke",
@@ -284,6 +311,10 @@ export default function TradePage() {
       detail?: Record<string, unknown> | null;
     }[]
   >([]);
+  const [noteKey, setNoteKey] = useState<CryptoKey | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [noteMsg, setNoteMsg] = useState<string | null>(null);
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoMsg, setAutoMsg] = useState<string | null>(null);
   const [closeBusy, setCloseBusy] = useState(false);
@@ -651,6 +682,63 @@ export default function TradePage() {
     },
     [cotaDigest, refreshAutonomy, t],
   );
+
+  /**
+   * Unlock and load in one gesture. Two prompts to read your own note would be
+   * one too many, and the ceremony IS the authorisation — there is nothing to
+   * authorise separately.
+   */
+  const unlockNotes = useCallback(async () => {
+    if (!cotaDigest) return;
+    setNoteBusy(true);
+    setNoteMsg(null);
+    try {
+      const key = await unlockNoteVault();
+      setNoteKey(key);
+      const res = await fetch(
+        `/api/cota/note?digest=${encodeURIComponent(cotaDigest)}`,
+      );
+      const body = (await res.json()) as {
+        note?: { iv: string; ciphertext: string } | null;
+      };
+      if (body.note) {
+        // A note that will not open is NOT shown as empty. Blanking it would
+        // invite the hunter to type over something they cannot see and destroy
+        // what was there.
+        setNoteText(await openNote(key, body.note, cotaDigest));
+      }
+    } catch {
+      setNoteKey(null);
+      setNoteMsg(t.noteFailed);
+    } finally {
+      setNoteBusy(false);
+    }
+  }, [cotaDigest, t]);
+
+  const saveNote = useCallback(async () => {
+    if (!cotaDigest || !noteKey) return;
+    setNoteBusy(true);
+    setNoteMsg(null);
+    try {
+      if (noteText.trim() === "") {
+        await fetch(`/api/cota/note?digest=${encodeURIComponent(cotaDigest)}`, {
+          method: "DELETE",
+        });
+      } else {
+        const sealed = await sealNote(noteKey, noteText, cotaDigest);
+        await fetch("/api/cota/note", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ digest: cotaDigest, ...sealed }),
+        });
+      }
+      setNoteMsg(t.noteSaved);
+    } catch {
+      setNoteMsg(t.noteFailed);
+    } finally {
+      setNoteBusy(false);
+    }
+  }, [cotaDigest, noteKey, noteText, t]);
 
   const refreshHistory = useCallback(async () => {
     if (!cotaDigest) return;
@@ -1030,6 +1118,50 @@ export default function TradePage() {
                 </ul>
               )}
             </div>
+          </Panel>
+
+          <Panel className="space-y-2">
+            <p className="text-ink-dim text-xs tracking-wide uppercase">
+              {t.noteTitle}
+            </p>
+            <p className="text-ink-faint text-xs">{t.noteLede}</p>
+            {noteKey === null ? (
+              <Button onClick={() => void unlockNotes()} disabled={noteBusy}>
+                {noteBusy ? t.noteUnlocking : t.noteUnlock}
+              </Button>
+            ) : (
+              <>
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder={t.notePlaceholder}
+                  rows={4}
+                  className="border-hull-line text-ink w-full rounded-xl border-2 bg-transparent px-3 py-2 text-sm outline-none"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => void saveNote()}
+                    disabled={noteBusy}
+                    className="flex-1"
+                  >
+                    {noteBusy ? t.noteSaving : t.noteSave}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setNoteText("");
+                    }}
+                    disabled={noteBusy}
+                    className="flex-1"
+                  >
+                    {t.noteClear}
+                  </Button>
+                </div>
+                <Note tone="warn">{t.noteNoRecovery}</Note>
+              </>
+            )}
+            {noteMsg && (
+              <p className="text-ink-dim text-center text-[12px]">{noteMsg}</p>
+            )}
           </Panel>
 
           <Panel className="space-y-2">

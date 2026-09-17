@@ -194,6 +194,7 @@ model Player {
   cotaFills      CotaFill[]
   cotaOrders     CotaOrder[]
   agentDecisions CotaAgentDecision[]
+  cotaNotes      CotaNote[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -378,6 +379,38 @@ model CotaAgentDecision {
 
   @@index([playerId, at])
   @@index([cotaDigest, at])
+}
+
+/// A hunter's private note about one leash — stored as ciphertext this server
+/// cannot read.
+///
+/// The key is derived in the browser from the passkey's PRF under a salt that is
+/// not the wallet's, imported non-extractable, and never transmitted. So these
+/// columns are not "encrypted at rest" in the usual sense, where the operator
+/// holds the key and promises not to look. There is no key here to hold.
+///
+/// Which means: no support path can recover a note, no backup contains a
+/// readable one, and no instruction to us can produce the plaintext. That is the
+/// point, and the cost is that losing the passkey loses the notes. It holds a
+/// hunter's own remarks for exactly that reason, and nothing the system needs.
+model CotaNote {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  /// The leash the note is about. Also the AES-GCM aad, so a row moved to
+  /// another digest fails to open rather than decrypting under the wrong bound.
+  cotaDigest String
+
+  /// base64. A fresh IV per write — GCM under a stable key demands it.
+  iv         String
+  ciphertext String
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([playerId, cotaDigest])
 }
 
 model Hunt {
