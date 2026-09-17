@@ -1,0 +1,26 @@
+# CRE project settings for the Cota agent scheduler.
+#
+# This workflow touches NO chain. It reads a secret, makes one HTTP POST to the
+# agent endpoint, and logs the reply. The on-chain work Cota does — anchoring a
+# leash, flipping order forwarding — is done by the hunter's own wallet in the
+# browser, never here.
+#
+# The `rpcs` entry below is therefore a CLI requirement rather than a dependency:
+# `cre workflow simulate` refuses to start a target with no RPC URLs at all, so
+# this names a public Sepolia endpoint that the workflow never calls. It is
+# listed rather than omitted purely to satisfy that check, and it is worth
+# knowing that removing it breaks the simulator and changes nothing about what
+# the workflow does.
+#
+# If a future workflow does need Monad, it will not go here: Monad is absent from
+# the official chain-selectors list, so it belongs under `experimental-chains`
+# with its selector and forwarder.
+staging-settings:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
+
+production-settings:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com

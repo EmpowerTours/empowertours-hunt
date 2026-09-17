@@ -46,31 +46,30 @@ import {
   HTTPClient,
   Runner,
   handler,
+  json,
   median,
+  ok,
   type HTTPSendRequester,
   type Runtime,
 } from "@chainlink/cre-sdk";
-import { z } from "zod";
 
-const configSchema = z.object({
+export type Config = {
   /** Standard cron. The agent is cheap to call and does nothing most ticks. */
-  schedule: z.string(),
+  schedule: string;
   /** Full URL of the agent run endpoint. */
-  agentUrl: z.string(),
+  agentUrl: string;
   /**
    * Origin to send. NOT cosmetic: the app's CSRF middleware rejects a
    * cross-origin POST with 403 before the route is reached, which reads exactly
    * like a rejected token and is not one. Both other schedulers were built
    * without it and would have failed every run.
    */
-  origin: z.string(),
+  origin: string;
   /** Decide and report, send nothing. Leave true until the logs look right. */
-  dryRun: z.boolean(),
+  dryRun: boolean;
   /** Id of the CRE secret holding COTA_AGENT_TOKEN. */
-  tokenSecretId: z.string(),
-});
-
-type Config = z.infer<typeof configSchema>;
+  tokenSecretId: string;
+};
 
 /** What we keep from the agent's reply. Numbers, so the DON can agree on them. */
 type RunSummary = {
@@ -97,14 +96,14 @@ const callAgent =
       })
       .result();
 
-    if (resp.statusCode !== 200) {
+    if (!ok(resp)) {
       // 401 is a bad token, 403 is the missing Origin, 404 is the wrong URL.
       // Three different problems that all look alike from here, so the status
       // goes into the error rather than a generic failure.
       throw new Error(`agent run returned ${resp.statusCode}`);
     }
 
-    const body = JSON.parse(new TextDecoder().decode(resp.body)) as {
+    const body = json(resp) as {
       ran?: number;
       results?: { act?: string }[];
     };
@@ -127,8 +126,8 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
       // are enough: nodes that saw the same run report the same numbers, and a
       // node that saw something else cannot drag the answer on its own.
       ConsensusAggregationByFields<RunSummary>({
-        ran: median<number>(),
-        acted: median<number>(),
+        ran: median<number>,
+        acted: median<number>,
       }),
     )(runtime.config)
     .result();
