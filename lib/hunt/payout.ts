@@ -73,7 +73,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { PayoutStatus } from "@prisma/client";
-import { monad } from "@/lib/monad";
+import { monad, monadRpcUrl } from "@/lib/monad";
 import { prisma } from "@/lib/db/prisma";
 import { toWei } from "@/lib/wei";
 
@@ -97,7 +97,7 @@ const UNRESOLVED_STATUSES = ["SENDING", "NEEDS_RECONCILIATION"] as const;
  * payout went through a shared rate-limited node.
  */
 export function rpcUrl(): string {
-  return process.env.MONAD_RPC_URL || monad.rpcUrls.default.http[0];
+  return monadRpcUrl();
 }
 
 function receiptTimeoutMs(): number {
@@ -755,7 +755,6 @@ async function reconcileRow(
     detail,
   };
 }
-
 
 /* --------------------------------------------------------------------------
    Sweeping the approved queue.
