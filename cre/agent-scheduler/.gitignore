@@ -1,0 +1,4 @@
+# Compiler scratch from `cre workflow simulate`. Regenerated every run.
+.cre_build_tmp.js
+dist/
+node_modules/
