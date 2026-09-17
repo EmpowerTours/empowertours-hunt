@@ -5,13 +5,13 @@ real-world locations; the server decides whether they were actually there.
 
 ## Two economies, deliberately different
 
-| | Cache finds | Spawns |
-|---|---|---|
-| Pays | **TURBO credit** (WMON-wei) | **native MON** (~0.001) |
-| Withdrawable | No — a discount on a subscription | Yes |
-| Location | Hidden, never sent to a client | **Public by design**, visible on radar |
-| Lifetime | Permanent | Ephemeral, expires |
-| Defence | Secrecy + quantized hints | Movement plausibility |
+|              | Cache finds                       | Spawns                                 |
+| ------------ | --------------------------------- | -------------------------------------- |
+| Pays         | **TURBO credit** (WMON-wei)       | **native MON** (~0.001)                |
+| Withdrawable | No — a discount on a subscription | Yes                                    |
+| Location     | Hidden, never sent to a client    | **Public by design**, visible on radar |
+| Lifetime     | Permanent                         | Ephemeral, expires                     |
+| Defence      | Secrecy + quantized hints         | Movement plausibility                  |
 
 Credit is denominated in WMON-wei so it is directly comparable to
 `TurboCohort.tierPrice` — roughly 139 WMON is one month of Explorer. Because a
@@ -168,7 +168,7 @@ predate 1 September and are the foundation the submission builds on:
 
 `git log --until=2026-08-31` lists them exactly.
 
-### Built during the window (103 commits since 1 September)
+### Built during the window (144 commits since 1 September)
 
 - **Cota** — an EIP-712 bound a hunter signs before software may trade for
   them. One enforcement path (`lib/cota/enforce.ts`) governs paper and live
@@ -178,40 +178,69 @@ predate 1 September and are the foundation the submission builds on:
 - **The executor** — the half that makes the bound more than a promise:
   server-held venue keys under AES-256-GCM (`lib/cota/keystore.ts`), the Perpl
   wire protocol held to captured golden frames (`lib/cota/venue/frames.ts` and
-  its conformance suite), and a single order path
-  (`app/api/cota/trade`) in which the gate runs _before_ the transport — there
-  is no code path that reaches the venue without passing `mayOpen`.
+  its conformance suite), and a single order path in which the gate runs
+  _before_ the transport — no code path reaches the venue without passing
+  `mayOpen`.
 
-  **It has not yet produced a fill, and the reason is worth stating plainly.**
-  On 2026-09-13 the whole path ran live for the first time: MON swapped to AUSD
-  on the Chainlink-priced desk, a Perpl account created and funded, a trading
-  key enrolled into server custody, Kimi asked for a suggestion, and two orders
-  placed. The model read `maxDailyLossUsdE6` off the signed bound and declined
-  to trade on a single mid-price — the constraint reasoned about rather than
-  merely enforced. Both manual orders were then **allowed by the leash** and
-  **accepted by the gateway**, and neither opened a position.
+  **It trades.** Account 5273 holds a real position opened by this code, and the
+  ledger reconciles with the venue to the microdollar. Getting there meant
+  finding four separate causes behind one symptom — "Accepted (not filled yet)"
+  — and each is worth recording because three were ours.
 
-  The cause is `fw: false` on the Perpl account: order forwarding, which is how
-  an API order reaches the chain, is off by default on a fresh account. With it
-  off the gateway returns `code: 0` and the chain refuses, which is
-  indistinguishable from an ordinary non-fill. It is not a property of this
-  code — the leash, the sizing, the margin, the slippage and the signing were
-  each ruled out against the live venue — and it is not fixable from here. The
-  account's own frame is the evidence:
-  `{"id":5273,"fr":false,"fw":false,"b":"10620689"}` with positions empty.
+  `fw: false` was the first. An earlier revision of this section said it was
+  "not fixable from here" and that the question was open with the venue. **That
+  was wrong.** Perpl's "1-click trading" is not a venue-side setting: it is
+  `allowOrderForwarding(bool)`, an on-chain call from the account holder's own
+  wallet (selector `0x7962f910`, confirmed in the live implementation behind the
+  exchange proxy). So it was always a transaction this application could send,
+  and it now sends it as the third signature of the deposit flow — no hunter
+  meets that wall again.
 
-  What this repository does about it is preflight on that flag rather than send
-  an order that cannot execute (`app/api/cota/trade`, `lib/cota/venue/frames.ts`),
-  so a hunter is told *"Perpl hasn't enabled order forwarding on your account"*
-  instead of watching "Accepted" never become a fill. Two accounts of two have
-  defaulted this way, so it is what every new user meets. The question is open
-  with the venue.
-- **A daily-loss stop that refuses to guess.** Perpl's position frames carry no
-  entry price and no PnL, so unrealised loss cannot simply be read. The ledger
-  reconstructs it from our own fills by VWAP (`lib/cota/venue/pnl.ts`), and when
-  the venue holds size the ledger cannot account for, the reader returns _null_
-  rather than zero and the trade route **refuses**. A limit that silently
-  disables itself is worse than no limit.
+  The rest were ours. `rq` is the order's on-chain `orderDescId` and must
+  strictly exceed the account's last; this client sent a literal `1` every time,
+  so the first order forwarded and every later one was silently discarded. Fills
+  landing after the placing socket closed were never recorded, so the ledger
+  disagreed with the venue forever and every subsequent order refused. And the
+  trades-per-day ceiling had never bound at all — it counted distinct order ids
+  taken from a field that was always `1`.
+
+- **An agent that acts unattended, inside two signatures.** The hunter signs the
+  Cota (how much) and separately signs an autonomy grant (whether, unsupervised
+  — `off`, `exit_only`, or `full`). The grant is EIP-712, scoped to one leash by
+  digest, and **re-verified on every read**, so database write access alone
+  cannot make an agent act. The exit policy (`lib/cota/exit.ts`) is a function
+  rather than a model: it closes only on a net gain after fees already paid, the
+  fee to close, and the spread crossed on exit — and never at a loss, by
+  instruction. `decide()` does no I/O, so what the agent will do is testable
+  without a venue.
+- **A daily-loss stop that refuses to guess**, and a correction to what this
+  document previously claimed. It said Perpl's position frames "carry no entry
+  price and no PnL". They carry `ep`, plus a Q16 residue in `epr`. The earlier
+  claim traced to a set of keys another client happened to parse, not to a
+  survey of what the venue sends, and the probe built to settle it was never run
+  against an open position. Loss is still gated on the fill ledger reconciling
+  with the venue — in both size and entry price — and returns _null_ rather than
+  zero when it cannot be vouched for, because a limit that silently disables
+  itself is worse than no limit.
+- **A close path**, which is the half of a leash that existed only in a comment.
+  `enforce.ts` had always said reducing "stays permitted always"; nothing could
+  reduce anything, so a hunter could enter a position through this app and had
+  no way out of it. `mayReduce` is gated on no ceiling, no expiry and no
+  revocation — every one of those, applied to a reduce, turns a safety limit
+  into a trap.
+- **A Chainlink CRE workflow** as the agent's scheduler (`cre/agent-scheduler`),
+  built and simulated. Every node in a DON executes an HTTP request, so a naive
+  POST would be one agent run per node; a server-side lease makes exactly one
+  win per leash.
+- **A risk screen** that leads with what a close would actually realise rather
+  than unrealised PnL against the mark — about 30 bps apart on MON, which is the
+  width of the band where a position reads green and pays out red. It shows no
+  liquidation price, and says on screen why: the venue documents its two margin
+  fractions in contradictory units.
+- **A second secret from the same passkey.** Mera's PRF under a different salt
+  yields an AES-256-GCM key, imported non-extractable, that never leaves the
+  page — so a hunter's private note on a leash is stored as ciphertext this
+  server cannot read. Not "will not": there is no key here to hold.
 - **Check-in** — a verified position without a planted cache, which is what
   makes the game playable anywhere rather than only where somebody has hidden
   something.
@@ -220,6 +249,20 @@ predate 1 September and are the foundation the submission builds on:
 - **TURBO credit redemption**, the public hunt endpoints, the heading-up
   compass and bearing pointer, OSM zone import, surveyor attribution, and
   instant payout on collect.
+
+### What does not work yet (§4.1)
+
+Stated because a submission that only lists what works is not a report.
+
+- **A new hunter cannot onboard.** Perpl requires 10 AUSD to open an account and
+  the MON→AUSD desk holds 3.35. AUSD is the illiquid leg on Monad: MON/USDC on
+  Kuru is ~$18k deep at zero fees, MON/AUSD is ~$5, AUSD/USDC is ~$0.13. Nothing
+  on-chain converts MON into AUSD at a useful size, so the desk is a manual
+  subsidy rather than an on-ramp.
+- **Everything is proven on one account.** 5273 is the only account this code has
+  ever traded. Anything that only breaks on a second hunter's state is untested.
+- **The agent has no measured edge.** It has been verified to stay inside its
+  bound, never to make money. The claim this project makes is about the bound.
 
 ### Use of AI coding tools (§4.1.4)
 
@@ -275,5 +318,5 @@ their own licences. Walkable-area data is imported from **OpenStreetMap**
 
 ```bash
 npm install
-./.claude/verify.sh   # typecheck, lint, 751 tests, production build, secret scan
+./.claude/verify.sh   # typecheck, lint, 957 tests, production build, secret scan
 ```
