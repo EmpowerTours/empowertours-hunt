@@ -9,6 +9,10 @@
 # live is one line — `dryRun: false` in the body below — and should happen only
 # after the logs here have shown the agent deciding sensibly for a while.
 #
+# The Origin header is not optional: the app's CSRF middleware rejects a
+# cross-origin POST with 403 BEFORE the route runs, so without it every
+# scheduled run fails on a status that looks like a bad token and is not.
+#
 # On timing: GitHub's scheduled workflows are routinely late, by five to twenty
 # minutes under load, and five minutes is the floor anyway. That is tolerable
 # because the decision is stateless — every run re-reads the venue, the ledger
@@ -55,6 +59,7 @@ jobs:
             --max-time 120 \
             -X POST "https://hunt.empowertours.xyz/api/cota/agent/run" \
             -H "authorization: Bearer ${COTA_AGENT_TOKEN}" \
+            -H "Origin: https://hunt.empowertours.xyz" \
             -H "content-type: application/json" \
             -d "{\"dryRun\": ${DRY_RUN}}" \
           | tee /tmp/out.json
