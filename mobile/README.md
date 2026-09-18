@@ -137,19 +137,38 @@ cd android && ./gradlew assembleDebug
 # → android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Status
+## Status — APK builds
 
-Scaffold, configured, not yet built. No APK exists and nothing has run on a
-device, so **the passkey path through the WebView is unproven**. It is also the
-only part of this that can fail in a way the web app never does, which makes it
-the first thing to test rather than the last.
+`./gradlew assembleDebug` produces a 5.2 MB `app-debug.apk`. Verified rather
+than assumed:
 
-Ordered, because two of these block the third:
+- `aapt2 dump badging` → `package: xyz.empowertours.app`,
+  `application-label: EmpowerTours`, `targetSdkVersion: 36`.
+- The dex genuinely contains `setWebAuthenticationSupport` and
+  `WEB_AUTHENTICATION_SUPPORT_FOR_APP`, so the WebAuthn enablement compiled in
+  rather than being quietly stripped.
+- Signed by the Android debug key, SHA-256
+  `0C:B0:E8:…:6A:6B`, which is the fingerprint in the asset-links file below.
 
-1. Install the Android SDK and produce a debug APK.
-2. Publish `assetlinks.json` on `empowertours.xyz` (see above) — without it the
-   ceremony cannot succeed no matter how correct the app is.
-3. Install on a real Android phone and complete one passkey sign-in, then check
-   the wallet address matches the one the same passkey produces in Chrome. If
-   those two differ, stop: something about the origin is wrong and shipping it
-   would strand balances.
+The debug key is the well-known one every Android SDK generates. That is fine
+for sideloading and for judging; a Play release needs its own key, and its
+fingerprint gets **added** to the `sha256_cert_fingerprints` array rather than
+replacing this one, so debug and release builds both keep working.
+
+### What is still unproven
+
+**Passkey sign-in inside the WebView has not been tested on a device.** It is
+the only part of this that can fail in a way the web app never does. It also
+cannot succeed until the asset-links file is live, so testing it before then
+would only prove that a missing file is missing.
+
+1. Publish `assetlinks.json` at
+   `https://empowertours.xyz/.well-known/assetlinks.json`. That host is
+   **LiteSpeed/cPanel, not Railway** — the apex 302s everything to a different
+   app, but `/.well-known/` is NOT caught by that rule (it 404s directly), so a
+   file dropped in `public_html/.well-known/` is served at exactly the right URL
+   with no redirect, which is what Digital Asset Links requires.
+2. Sideload, sign in once, and compare the wallet address against what the SAME
+   passkey produces in Chrome on the same phone. **If those two differ, stop.**
+   A different address means the ceremony ran under a different origin, and
+   shipping it would strand balances.
