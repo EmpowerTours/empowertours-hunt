@@ -19,10 +19,25 @@ import { useGeoCapability } from "@/components/hooks/useGeoCapability";
      spinner that never resolves.
 --------------------------------------------------------------------------- */
 
+/**
+ * How long the device gets to produce a first fix before it reports TIMEOUT.
+ *
+ * Exported because the UI counts against it. A countdown drawn from a number
+ * the screen invented would be a progress bar — it would reach zero while the
+ * watch was still running, or sit at 5s for a minute. This is the deadline the
+ * browser is actually holding, so the two cannot disagree.
+ */
+export const GEO_FIX_TIMEOUT_MS = 20_000;
+
 export interface GeoReading {
   status: GeoStatus;
   fix: GeoFix | null;
   message: string | null;
+  /**
+   * When the CURRENT watch armed (ms epoch), or null when none is running.
+   * `since + GEO_FIX_TIMEOUT_MS` is the moment the device must answer by.
+   */
+  since: number | null;
   /** Re-arm the watch after a denial or a timeout. */
   retry: () => void;
 }
@@ -61,7 +76,22 @@ export function useGeolocation(enabled = true): GeoReading {
     status: GeoStatus;
   } | null>(null);
 
-  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  // When this attempt started looking (ms epoch). Stamped at mount and again
+  // on every retry — the two moments a player starts waiting — because those
+  // are the only places a clock read is allowed to happen: not during render,
+  // which must stay pure, and not in the watch effect, which is not an event.
+  //
+  // It can therefore run a frame or two AHEAD of the watch itself, if the
+  // capability probe resolves late. That direction is the safe one: the
+  // countdown may reach zero just before the browser's own timeout does, so
+  // the player is told "still finding you" a moment early rather than being
+  // promised time the device no longer has.
+  const [armed, setArmed] = useState<number>(() => Date.now());
+
+  const retry = useCallback(() => {
+    setAttempt((n) => n + 1);
+    setArmed(Date.now());
+  }, []);
 
   const watch = `${enabled}:${capability}:${attempt}`;
   const current = reported?.watch === watch ? reported.status : null;
@@ -125,7 +155,7 @@ export function useGeolocation(enabled = true): GeoReading {
       },
       {
         enableHighAccuracy: true,
-        timeout: 20_000,
+        timeout: GEO_FIX_TIMEOUT_MS,
         // Never reuse a cached fix: a claim is only as honest as the moment it
         // was measured.
         maximumAge: 0,
@@ -135,5 +165,13 @@ export function useGeolocation(enabled = true): GeoReading {
     return () => navigator.geolocation.clearWatch(id);
   }, [enabled, capability, watch]);
 
-  return { status, fix, message: MESSAGES[status], retry };
+  return {
+    status,
+    fix,
+    message: MESSAGES[status],
+    // Null once the watch has answered or was never armed: a countdown only
+    // makes sense while something is still owed to the player.
+    since: status === "locating" ? armed : null,
+    retry,
+  };
 }

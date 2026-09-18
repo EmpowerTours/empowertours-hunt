@@ -41,6 +41,8 @@
     "denied": "El permiso de ubicación está apagado. La búsqueda no puede verificar nada sin él: actívalo en la configuración del sitio en tu navegador y vuelve a intentar.",
     "idle": "Esperando el GPS.",
     "locating": "Ubicándote…",
+    "locatingCountdown": "Preparando tu búsqueda — {seconds}s",
+    "locatingSlow": "Todavía te estamos ubicando. Sal a cielo abierto y mantén la pantalla encendida.",
     "needs": "necesita ±{meters} m",
     "ready": "GPS listo.",
     "retry": "Reintentar",

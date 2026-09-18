@@ -41,6 +41,8 @@
     "denied": "Location permission is off. The hunt cannot verify a claim without it — enable it in your browser's site settings, then retry.",
     "idle": "Waiting for GPS.",
     "locating": "Finding you…",
+    "locatingCountdown": "Getting your hunt ready — {seconds}s",
+    "locatingSlow": "Still finding you. Step into open sky and keep the screen on.",
     "needs": "needs ±{meters} m",
     "ready": "GPS locked.",
     "retry": "Retry",

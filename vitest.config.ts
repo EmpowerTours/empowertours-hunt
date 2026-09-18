@@ -9,6 +9,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts"],
+    // components/ holds pure helpers the screens depend on — fixQuality decides
+    // whether a claim is worth attempting, secondsLeft decides what a waiting
+    // player is told. Both were unreachable by the runner until now.
+    include: ["lib/**/*.test.ts", "components/**/*.test.ts"],
   },
 });

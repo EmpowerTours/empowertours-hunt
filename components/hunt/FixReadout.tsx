@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { formatAge } from "./format";
 import type { GeoFix, GeoStatus } from "./types";
 import { Note } from "@/components/ui/primitives";
+import { GEO_FIX_TIMEOUT_MS } from "@/components/hooks/useGeolocation";
 
 // GeoStatus -> "fix" namespace key for the Note title.
 const TITLE_KEY = {
@@ -46,12 +47,32 @@ const QUALITY_COLOR: Record<FixQuality, string> = {
   "too-coarse": "#ff3b30",
 };
 
+/**
+ * Seconds left of the device's own deadline, or 0 once it has run out.
+ *
+ * Counts against `since + GEO_FIX_TIMEOUT_MS`, which is the timeout handed to
+ * watchPosition — not a duration this component picked. When it reaches zero
+ * the wait is genuinely over-long and the copy says so rather than looping back
+ * to twenty and pretending to start again.
+ */
+export function secondsLeft(
+  since: number | null,
+  now: number,
+  timeoutMs: number,
+): number | null {
+  if (since === null) return null;
+  const remaining = since + timeoutMs - now;
+  if (!Number.isFinite(remaining)) return null;
+  return Math.max(0, Math.ceil(remaining / 1000));
+}
+
 export function FixReadout({
   fix,
   status,
   message,
   maxAccuracyM,
   now,
+  since,
   onRetry,
 }: {
   fix: GeoFix | null;
@@ -59,6 +80,8 @@ export function FixReadout({
   message: string | null;
   maxAccuracyM: number;
   now: number;
+  /** When the current GPS watch armed. See useGeolocation's `since`. */
+  since: number | null;
   onRetry: () => void;
 }) {
   const t = useTranslations("fix");
@@ -67,6 +90,11 @@ export function FixReadout({
   const color = QUALITY_COLOR[quality];
   const blocking =
     status === "denied" || status === "unsupported" || status === "unavailable";
+
+  // Only while the player has nothing yet. Once a fix has landed the panel has
+  // real numbers to show and a countdown would be noise on top of them.
+  const waiting = status === "locating" && fix === null;
+  const left = waiting ? secondsLeft(since, now, GEO_FIX_TIMEOUT_MS) : null;
 
   return (
     <div className="space-y-3">
@@ -113,6 +141,36 @@ export function FixReadout({
           </button>
         )}
       </div>
+
+      {/* The wait, named and bounded.
+
+          A player who opens a hunt sees a black scope and a dash where the
+          accuracy goes, and nothing on screen says whether that is a phone
+          still thinking or an app that has died. Reported from the street once
+          already, which is why this panel sits directly under the scope; the
+          missing half was how long. The number counts the device's own timeout,
+          so at zero the honest thing to say is that it is taking too long —
+          not to restart a bar that never meant anything. */}
+      {left !== null ? (
+        <div
+          className="border-hull-line bg-hull rounded-2xl border p-4"
+          aria-live="polite"
+        >
+          <p className="text-ink font-mono text-sm">
+            {left > 0
+              ? tGps("locatingCountdown", { seconds: left })
+              : tGps("locatingSlow")}
+          </p>
+          <div className="bg-hull-2 mt-3 h-1.5 overflow-hidden rounded-full">
+            <div
+              className="bg-phosphor h-full rounded-full transition-[width] duration-1000 ease-linear"
+              style={{
+                width: `${Math.min(100, Math.max(0, 100 - (left / (GEO_FIX_TIMEOUT_MS / 1000)) * 100))}%`,
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {message ? (
         <Note tone={blocking ? "stop" : "warn"} title={t(TITLE_KEY[status])}>

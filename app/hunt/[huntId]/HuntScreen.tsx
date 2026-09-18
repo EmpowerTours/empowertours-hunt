@@ -435,6 +435,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         message={geo.message === null ? null : tGps(geo.status)}
         maxAccuracyM={maxAccuracyM}
         now={now}
+        since={geo.since}
         onRetry={geo.retry}
       />
 
