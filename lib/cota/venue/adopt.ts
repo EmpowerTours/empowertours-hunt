@@ -40,7 +40,7 @@
 import type { MarkedMarket } from "./account-state";
 import type { LedgerFill, OpenPos } from "./pnl";
 import type { OpenPositionFrame } from "./frames";
-import { signedSizeFromFrame } from "./aggregate";
+import { entryUsdWithResidue, signedSizeFromFrame } from "./aggregate";
 
 /** Sizes are floats through descaling; below this the two sides agree. */
 const EPS = 1e-6;
@@ -234,8 +234,19 @@ export function planAdoption(args: {
     const mm = marks.get(marketId);
     if (!mm) throw new Error(`no market for held market ${marketId}`);
 
-    const venueEntryUsd =
-      frame.entryPriceScaled / 10 ** mm.market.priceDecimals;
+    // Residue-aware, like every other entry-price read in the system. Adopting
+    // at an entry that drops `epr` would leave the ledger permanently a
+    // fraction below the venue's own number — which is precisely the quantity
+    // positionsReconcile then measures against a tolerance.
+    const venueEntryUsd = entryUsdWithResidue(frame, mm.market.priceDecimals);
+    if (venueEntryUsd === null) {
+      unexplained.push({
+        marketId,
+        deltaUnits: delta,
+        reason: "no_entry_price",
+      });
+      continue;
+    }
     const held = foldByMarket.get(marketId);
     const priceUsd = impliedMarginalUsd({
       venueSize: signedSizeFromFrame(frame, marks),

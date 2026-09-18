@@ -253,3 +253,47 @@ describe("buildAggregateState — both halves, one refusal", () => {
     ).toThrow(/no entry price/);
   });
 });
+
+describe("entry price includes the Q16 residue everywhere", () => {
+  // Three parts of the system read an entry price: the close route, the agent,
+  // and the daily-loss stop. Two used the residue and one did not, so they
+  // disagreed about the same position. The size is small; the DIRECTION is not
+  // neutral — `ep` always rounds down, so dropping `epr` understates a long's
+  // entry, overstates unrealised gain, and therefore UNDERSTATES loss. For a
+  // ceiling meant to stop trading at a loss threshold that is the unsafe way to
+  // be wrong, and it never averages out.
+  const withResidue: OpenPositionFrame = {
+    pid: 1,
+    marketId: 10,
+    side: 1,
+    sizeScaled: 576,
+    leverageX100: 200,
+    entryPriceScaled: 22531,
+    entryResidueQ16: 50972,
+    feeScaled: 11553,
+  };
+
+  it("entryUsdFromFrame no longer drops epr", () => {
+    const e = entryUsdFromFrame(withResidue, marks);
+    expect(e).toBeCloseTo((22531 + 50972 / 65536) / 1e6, 12);
+    expect(e).toBeGreaterThan(22531 / 1e6);
+  });
+
+  it("the understatement is one-directional, never a wash", () => {
+    // Sweep residues: the naive read is never ABOVE the true entry, so the
+    // error cannot cancel out across positions.
+    for (const epr of [1, 1000, 30000, 65535]) {
+      const e = entryUsdFromFrame(
+        { ...withResidue, entryResidueQ16: epr },
+        marks,
+      );
+      expect(e).toBeGreaterThan(22531 / 1e6);
+    }
+  });
+
+  it("still returns null when the venue sent no ep at all", () => {
+    expect(
+      entryUsdFromFrame({ ...withResidue, entryPriceScaled: null }, marks),
+    ).toBeNull();
+  });
+});

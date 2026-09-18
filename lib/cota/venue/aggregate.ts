@@ -81,8 +81,17 @@ export function entryUsdFromFrame(
   if (!mm) {
     throw new Error(`no market for held market ${f.marketId}`);
   }
-  if (f.entryPriceScaled === null) return null;
-  return f.entryPriceScaled / 10 ** mm.market.priceDecimals;
+  // Includes the Q16 residue. This used to drop it, which made three parts of
+  // the system disagree about the entry price of the same position: the close
+  // route, the agent and the risk screen used the residue, while THIS — the
+  // input to the daily-loss stop — did not.
+  //
+  // The size is small (0.35 bps on 5273) but the direction is not neutral. `ep`
+  // always rounds DOWN, so dropping the residue understates a long's entry,
+  // which overstates unrealised gain and therefore UNDERSTATES loss. For a
+  // ceiling whose whole job is to stop trading at a loss threshold, that is the
+  // unsafe direction, and it is not a rounding argument — it never averages out.
+  return entryUsdWithResidue(f, mm.market.priceDecimals);
 }
 
 /**
