@@ -151,6 +151,11 @@ export default async function DownloadPage() {
       </Note>
 
       <div className="space-y-3 pt-2">
+        {/* Put this where someone who just failed to sign in will find it. The
+            page is the substitute for a USB cable: it measures what the device
+            can do and says so, so a bug report from three hours away is still
+            actionable. */}
+        <LinkButton href="/diag">Sign-in not working? Run diagnostics</LinkButton>
         <LinkButton href="/cota">Open Cota in this browser</LinkButton>
         <LinkButton href="/hunt">Browse hunts</LinkButton>
       </div>

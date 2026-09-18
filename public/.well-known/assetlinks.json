@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.get_login_creds"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "xyz.empowertours.app",
+      "sha256_cert_fingerprints": ["0C:B0:E8:0D:DD:A9:9B:E0:5D:EE:34:97:33:63:9B:8A:AB:15:69:F9:0D:D9:98:63:5B:62:6D:6F:02:4C:6A:6B"]
+    }
+  }
+]
