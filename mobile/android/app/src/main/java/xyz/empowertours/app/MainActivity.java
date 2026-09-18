@@ -1,6 +1,8 @@
 package xyz.empowertours.app;
 
+import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
+import android.webkit.WebView;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
@@ -29,10 +31,30 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Debug builds only. A remotely inspectable WebView exposes the page —
+        // and the signing ceremony running in it — to anything with adb on the
+        // device, so a release build must never carry this. Read from the
+        // manifest flag the packager itself sets rather than a constant someone
+        // can forget to flip back; BuildConfig is not generated at all under
+        // AGP 8's defaults, which is how the first attempt at this failed.
+        boolean debuggable =
+            (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        if (debuggable) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
+
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_AUTHENTICATION)) {
             WebSettingsCompat.setWebAuthenticationSupport(
                 this.bridge.getWebView().getSettings(),
                 WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_FOR_APP
+            );
+        } else {
+            // Say so in logcat rather than failing silently. If this line is
+            // present, the device's system WebView cannot do WebAuthn at all and
+            // no amount of correctness elsewhere will produce a sign-in.
+            android.util.Log.w(
+                "EmpowerTours",
+                "WEB_AUTHENTICATION unsupported by this system WebView — passkey sign-in cannot work here"
             );
         }
     }
