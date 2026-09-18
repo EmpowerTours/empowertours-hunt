@@ -20,7 +20,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-PACKAGE="${PACKAGE:-xyz.empowertours.cota}"
+PACKAGE="${PACKAGE:-xyz.empowertours.app}"
 STORE="${1:-$HOME/.android/debug.keystore}"
 ALIAS="${2:-androiddebugkey}"
 STOREPASS="${STOREPASS:-android}"

@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "xyz.empowertours.cota"
+    namespace = "xyz.empowertours.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "xyz.empowertours.cota"
+        applicationId "xyz.empowertours.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -37,7 +37,7 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
 
-    // WebAuthn inside the WebView. Without these three the app renders Cota
+    // WebAuthn inside the WebView. Without these three the app renders the site
     // correctly and then cannot sign in, because a passkey ceremony is the only
     // way in and a bare WebView will not run one. See MainActivity.
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"

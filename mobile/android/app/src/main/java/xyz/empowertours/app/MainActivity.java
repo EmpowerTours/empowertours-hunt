@@ -1,4 +1,4 @@
-package xyz.empowertours.cota;
+package xyz.empowertours.app;
 
 import android.os.Bundle;
 import androidx.webkit.WebSettingsCompat;
@@ -6,7 +6,7 @@ import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
 
 /**
- * Cota's WebView, with WebAuthn switched on.
+ * EmpowerTours' WebView, with WebAuthn switched on.
  *
  * <p>An Android WebView does not do WebAuthn by default, and every single thing
  * this app can do is behind a passkey: the ceremony is not just the login, it
@@ -18,7 +18,7 @@ import com.getcapacitor.BridgeActivity;
  * lives in the system WebView, which updates independently of the OS, so a
  * device can be new and still lack it. Where it is missing we leave the setting
  * alone — the page then gets the ordinary "no passkey available" path, which
- * `SignInPanel` already explains, instead of a ceremony that cannot complete.
+ * SignInPanel already explains, instead of a ceremony that cannot complete.
  *
  * <p>Note for anyone adding to the auth lane: the WebKit library does NOT
  * support {@code mediation: "conditional"}. Nothing in lib/auth/passkey.ts asks

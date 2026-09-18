@@ -1,10 +1,30 @@
-# Cota for Android
+# EmpowerTours for Android
 
-Cota, packaged so it can be installed rather than visited.
+The app, packaged so it can be installed rather than visited.
+
+## One app, two doors
+
+`lib/host.ts` opens with "One app, two public hosts": a single Next.js
+deployment serves `hunt.empowertours.xyz` (the game) and
+`cota.empowertours.xyz` (the trading floor) off the hostname. They share a
+relying-party id and a PRF salt, so they share a passkey and therefore a
+**wallet**. Two installs would mean two icons on a phone for one identity and
+one balance, so there is one package: `xyz.empowertours.app`.
+
+It opens on Cota, because the Agora bounty asks for a trading app and that is
+the trading door. Hunt is reachable in the same WebView (`allowNavigation`).
+
+Names, which are three different fields and not one:
+
+| Where | Value | Limit |
+|---|---|---|
+| Launcher label (`appName`) | `EmpowerTours` | ~12 chars before most launchers truncate |
+| Store title | `EmpowerTours: Hunt & Cota` | 30 (both stores; iOS search cuts ~26) |
+| iOS subtitle | `Hunt real caches. Trade Perpl.` | 30 |
 
 ## What this is, and what it is not
 
-It is a thin native shell around the **live** Cota origin,
+It is a thin native shell around the **live** origin,
 `https://cota.empowertours.xyz`. There is no second copy of the app in here —
 no bundled JS, no duplicated routes, nothing to deploy separately and nothing
 that can drift out of sync with the web. `www/index.html` is a five-line offline
@@ -103,12 +123,15 @@ Two limits worth knowing before debugging a failure:
 
 ## Build
 
+`android/` is already generated and committed — do NOT re-run `cap add android`,
+it would overwrite the two edits above with nothing in the diff to say why
+passkeys stopped working.
+
 Needs the Android SDK, which is not on the dev box this was written on.
 
 ```bash
 cd mobile
 npm install
-npx cap add android      # generates android/, once
 npx cap sync android
 cd android && ./gradlew assembleDebug
 # → android/app/build/outputs/apk/debug/app-debug.apk
@@ -116,7 +139,17 @@ cd android && ./gradlew assembleDebug
 
 ## Status
 
-Scaffold. `android/` has not been generated and no APK has been built or
-installed on a device, so **the passkey path through the WebView is unproven**.
-That is the one thing worth testing first: it is the only part of this that can
-fail in a way the web app never does.
+Scaffold, configured, not yet built. No APK exists and nothing has run on a
+device, so **the passkey path through the WebView is unproven**. It is also the
+only part of this that can fail in a way the web app never does, which makes it
+the first thing to test rather than the last.
+
+Ordered, because two of these block the third:
+
+1. Install the Android SDK and produce a debug APK.
+2. Publish `assetlinks.json` on `empowertours.xyz` (see above) — without it the
+   ceremony cannot succeed no matter how correct the app is.
+3. Install on a real Android phone and complete one passkey sign-in, then check
+   the wallet address matches the one the same passkey produces in Chrome. If
+   those two differ, stop: something about the origin is wrong and shipping it
+   would strand balances.

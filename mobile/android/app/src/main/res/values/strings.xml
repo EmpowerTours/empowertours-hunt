@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Cota</string>
-    <string name="title_activity_main">Cota</string>
-    <string name="package_name">xyz.empowertours.cota</string>
-    <string name="custom_url_scheme">xyz.empowertours.cota</string>
+    <string name="app_name">EmpowerTours</string>
+    <string name="title_activity_main">EmpowerTours</string>
+    <string name="package_name">xyz.empowertours.app</string>
+    <string name="custom_url_scheme">xyz.empowertours.app</string>
 </resources>

@@ -1,11 +1,19 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 // ---------------------------------------------------------------------------
-// Cota, as an Android app.
+// EmpowerTours, as an Android app.
 //
-// The Agora bounty asks for "a mobile app authenticating via Mera, holding an
-// AUSD balance, and executing trades through Perpl". Cota already does all
-// three; what it is not is something a judge can install. This produces that.
+// ONE app, because there is one app. lib/host.ts: "One app, two public hosts" —
+// hunt.empowertours.xyz is the game, cota.empowertours.xyz is the trading
+// floor, and a single Next.js deployment serves both off the hostname. They
+// share a relying-party id and a PRF salt, so they share a passkey and
+// therefore a WALLET. Shipping them as two installs would put two icons on a
+// phone for one identity and one balance.
+//
+// It opens on Cota because the Agora bounty asks for "a mobile app
+// authenticating via Mera, holding an AUSD balance, and executing trades
+// through Perpl", and that is the trading door. Hunt is reachable from inside
+// the same WebView — see allowNavigation.
 //
 // WHY server.url AND NOT A BUNDLED BUILD
 //
@@ -26,8 +34,14 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // ---------------------------------------------------------------------------
 
 const config: CapacitorConfig = {
-  appId: "xyz.empowertours.cota",
-  appName: "Cota",
+  // Neutral, because this is ONE app for both doors. `xyz.empowertours.mobile`
+  // is already taken by EmpowerTours Radio on the same Apple team, so it is not
+  // available and would collide.
+  appId: "xyz.empowertours.app",
+  // The launcher label, which is a different field from the store title. 12
+  // characters, which most launchers render without truncating; the store
+  // listing carries "EmpowerTours: Hunt & Cota" (25 of the 30 allowed).
+  appName: "EmpowerTours",
   // Capacitor requires a webDir even when the server takes over; www/ holds a
   // shell that is only ever seen if the device is offline before first paint.
   webDir: "www",
