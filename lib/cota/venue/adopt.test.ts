@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  closePriceFromRealised,
   impliedMarginalUsd,
   planAdoption,
   remainingFeeUsd,
@@ -192,8 +193,11 @@ describe("planAdoption — what it must refuse", () => {
     }
   });
 
-  it("will NOT adopt size the ledger holds and the venue does not", () => {
-    // A close or a liquidation. The price left with the position.
+  it("will NOT adopt size the ledger holds when nothing explains it", () => {
+    // A position that vanished with no order of ours behind it is a
+    // liquidation. It is still refused — the reason is now the more accurate
+    // "no_pending_order", because a close WITH one of our orders behind it can
+    // be priced from the venue's realised total. See the close suite below.
     const plan = planAdoption({
       fold: [{ marketId: 10, signedSize: 214, entryUsd: 0.023308, feesUsd: 0 }],
       venue: [],
@@ -203,7 +207,7 @@ describe("planAdoption — what it must refuse", () => {
       trust: "hunter",
     });
     expect(plan.fills).toEqual([]);
-    expect(plan.unexplained[0].reason).toBe("ledger_holds_more");
+    expect(plan.unexplained[0].reason).toBe("no_pending_order");
   });
 });
 
@@ -592,5 +596,159 @@ describe("a fill the venue confirmed does not expire", () => {
       });
       expect(plan.fills).toEqual([]);
     }
+  });
+});
+
+describe("a close we never saw, priced from the venue's realised PnL", () => {
+  // Account 5273's actual situation on 2026-09-18: the hunter pressed Close
+  // all, the venue filled it, the placing socket missed the fill, and the
+  // ledger was left holding 576 units of a position that no longer exists.
+  // Before this, planAdoption refused — "a closed position cannot be priced" —
+  // and left them unable to trade with no button to press.
+  const ENTRY_5273 = 0.023158014;
+  const heldLong: OpenPos[] = [
+    { marketId: 10, signedSize: 576, entryUsd: ENTRY_5273, feesUsd: 0.011553 },
+  ];
+  const closeOrder = pendingBuy({
+    direction: -1,
+    sizeUnits: 576,
+    orderId: 1698673214,
+    venueConfirmedFill: true,
+  });
+
+  it("records the close and flattens the ledger", () => {
+    const plan = planAdoption({
+      fold: heldLong,
+      venue: [], // the venue reports nothing open
+      marks,
+      pending: [closeOrder],
+      nowMs: NOW,
+      trust: "pending",
+      // trp moved -0.015442 -> +0.354368; our ledger had folded only the
+      // opening fees, -0.011553.
+      realised: { venueUsd: 0.354368, ledgerUsd: -0.011553 },
+    });
+
+    expect(plan.unexplained).toEqual([]);
+    expect(plan.fills).toHaveLength(1);
+    const f = plan.fills[0];
+    expect(f.direction).toBe(-1);
+    expect(f.sizeUnits).toBeCloseTo(576, 9);
+    expect(f.feeUsd).toBe(0); // trp is already net of fees
+
+    // The opening fills that produced the 576, plus the adopted close.
+    const opens: LedgerFill[] = [
+      {
+        marketId: 10,
+        direction: 1,
+        sizeUnits: 576,
+        priceUsd: ENTRY_5273,
+        feeUsd: 0.011553,
+        timestampMs: NOW - 86_400_000,
+        orderId: 1,
+      },
+    ];
+    const after = foldFills([...opens, f]).positions;
+    expect(after).toEqual([]); // flat, matching the venue
+    expect(positionsReconcile(after, [], marks)).toBe(true);
+  });
+
+  it("reproduces the venue's realised total exactly", () => {
+    // The property that matters: after adopting, the ledger's realised PnL
+    // equals trp. A close priced "plausibly" but disagreeing with the venue
+    // would corrupt every later loss read.
+    const realisedDelta = 0.354368 - -0.011553;
+    const price = closePriceFromRealised({
+      foldEntryUsd: ENTRY_5273,
+      foldSignedSize: 576,
+      realisedDeltaUsd: realisedDelta,
+    })!;
+    expect(576 * (price - ENTRY_5273)).toBeCloseTo(realisedDelta, 9);
+  });
+
+  it("a short realises as the price FALLS", () => {
+    const price = closePriceFromRealised({
+      foldEntryUsd: 0.02,
+      foldSignedSize: -100, // short
+      realisedDeltaUsd: 0.5, // profitable
+    })!;
+    expect(price).toBeLessThan(0.02);
+    expect(100 * (0.02 - price)).toBeCloseTo(0.5, 9);
+  });
+
+  it("refuses without a realised total rather than guessing", () => {
+    const plan = planAdoption({
+      fold: heldLong,
+      venue: [],
+      marks,
+      pending: [closeOrder],
+      nowMs: NOW,
+      trust: "pending",
+    });
+    expect(plan.fills).toEqual([]);
+    expect(plan.unexplained[0].reason).toBe("no_realised_total");
+  });
+
+  it("refuses when no order of ours explains the disappearance", () => {
+    // A position that vanished with no order of ours behind it is a
+    // liquidation, and adopting it silently would hide that from the hunter.
+    const plan = planAdoption({
+      fold: heldLong,
+      venue: [],
+      marks,
+      pending: [],
+      nowMs: NOW,
+      trust: "pending",
+      realised: { venueUsd: -5, ledgerUsd: -0.011553 },
+    });
+    expect(plan.fills).toEqual([]);
+    expect(plan.unexplained[0].reason).toBe("no_pending_order");
+  });
+
+  it("the AUTOMATIC path needs the venue to have confirmed the close", () => {
+    // An order we sent and the venue never acknowledged is not an explanation
+    // for a position that vanished. Unconfirmed, the disappearance could as
+    // easily be a liquidation — and adopting it unattended would write a
+    // realised PnL the hunter never agreed to and hide the liquidation.
+    const unconfirmed = { ...closeOrder, venueConfirmedFill: false };
+    const plan = planAdoption({
+      fold: heldLong,
+      venue: [],
+      marks,
+      pending: [unconfirmed],
+      nowMs: NOW,
+      trust: "pending",
+      realised: { venueUsd: 0.354368, ledgerUsd: -0.011553 },
+    });
+    expect(plan.fills).toEqual([]);
+    expect(plan.unexplained[0].reason).toBe("no_pending_order");
+  });
+
+  it("but the HUNTER path may adopt it, because a person is asking", () => {
+    // Same row, same uncertainty — the difference is that someone has looked at
+    // their own account and said yes. That is the whole distinction this module
+    // is built around.
+    const unconfirmed = { ...closeOrder, venueConfirmedFill: false };
+    const plan = planAdoption({
+      fold: heldLong,
+      venue: [],
+      marks,
+      pending: [unconfirmed],
+      nowMs: NOW,
+      trust: "hunter",
+      realised: { venueUsd: 0.354368, ledgerUsd: -0.011553 },
+    });
+    expect(plan.fills).toHaveLength(1);
+  });
+
+  it("refuses a negative or impossible price", () => {
+    // A realised loss larger than the whole position was worth.
+    expect(
+      closePriceFromRealised({
+        foldEntryUsd: 0.02,
+        foldSignedSize: 100,
+        realisedDeltaUsd: -100,
+      }),
+    ).toBeNull();
   });
 });

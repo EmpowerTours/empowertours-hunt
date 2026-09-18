@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   nextRequestId,
+  parseAccountStats,
   parseOrderUpdate,
   venueRefusedOrder,
   parseFills,
@@ -518,5 +519,52 @@ describe("parsePositions — the Q16 entry residue", () => {
     const bps = ((exact - naive) / exact) * 10_000;
     expect(bps).toBeGreaterThan(0.3);
     expect(bps).toBeLessThan(0.4);
+  });
+});
+
+describe("parseAccountStats — the only authority on a close we never saw", () => {
+  // Account 5273's real frame after the position was closed. trp had been
+  // -15442 (fees on the opens) and is now +354368 — the round trip's realised
+  // result, net of every fee. When the placing socket misses a closing fill the
+  // position is gone and its price with it, but this number remains.
+  const AFTER_CLOSE = {
+    mt: 19,
+    as: [
+      { id: 5273, fr: false, fw: true, ft: 0, lfr: 5, b: "10975057", lb: "0" },
+    ],
+    sts: [
+      {
+        id: 5273,
+        td: "10620689",
+        tw: "0",
+        tv: "26344385",
+        tf: "11553",
+        tbf: "2597",
+        trp: "354368",
+        wr: 3333,
+        tt: 3,
+      },
+    ],
+  };
+
+  it("reads realised PnL, fees and volume", () => {
+    const [s] = parseAccountStats(AFTER_CLOSE);
+    expect(s.accountId).toBe(5273);
+    expect(s.realisedPnlScaled).toBe(354368);
+    expect(s.feesScaled).toBe(11553);
+    expect(s.volumeScaled).toBe(26344385);
+  });
+
+  it("handles a negative realised total", () => {
+    const [s] = parseAccountStats({
+      ...AFTER_CLOSE,
+      sts: [{ id: 5273, trp: "-15442" }],
+    });
+    expect(s.realisedPnlScaled).toBe(-15442);
+  });
+
+  it("returns nothing for a frame that is not mt 19", () => {
+    expect(parseAccountStats({ mt: 26, sts: [] })).toEqual([]);
+    expect(parseAccountStats({ mt: 19 })).toEqual([]);
   });
 });

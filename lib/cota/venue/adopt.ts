@@ -84,7 +84,11 @@ export interface Unexplained {
   marketId: number;
   /** Signed size the venue holds that the ledger cannot account for. */
   deltaUnits: number;
-  reason: "no_pending_order" | "no_entry_price" | "ledger_holds_more";
+  reason:
+    | "no_pending_order"
+    | "no_entry_price"
+    | "ledger_holds_more"
+    | "no_realised_total";
 }
 
 export interface AdoptionPlan {
@@ -111,6 +115,46 @@ function deltaByMarket(
     );
   }
   return out;
+}
+
+/**
+ * The EFFECTIVE price of a close we never saw, derived from the venue's own
+ * realised PnL.
+ *
+ * A closed position takes its price with it: there is no `ep` to read, because
+ * there is no position. What remains is `trp`, the account's lifetime realised
+ * PnL net of fees, and the difference between it and the realised total our own
+ * ledger has folded is exactly what the unrecorded close produced.
+ *
+ * From that the price follows. For a long closed at P with VWAP entry E:
+ *   realised = size × (P − E)   →   P = E + realised / size
+ * and for a short the sign flips, because a short realises as the price falls.
+ *
+ * "Effective" is the honest word: `trp` is net of fees, so the fee is folded
+ * into the price rather than recorded separately, and the fill is written with
+ * a zero fee. The ledger's realised PnL then equals the venue's exactly, which
+ * is the number that matters — a close priced "correctly" but with a guessed
+ * fee would agree with nothing.
+ *
+ * Returns null on a non-finite result or a zero size, for the same reason
+ * impliedMarginalUsd does: a reconstructed price is where a nonsense number
+ * gets written once and believed thereafter.
+ */
+export function closePriceFromRealised(args: {
+  /** The fold's entry for the position being closed. */
+  foldEntryUsd: number;
+  /** Signed size the ledger holds: > 0 long, < 0 short. */
+  foldSignedSize: number;
+  /** Realised PnL this close produced, USD — the venue total minus ours. */
+  realisedDeltaUsd: number;
+}): number | null {
+  const { foldEntryUsd, foldSignedSize, realisedDeltaUsd } = args;
+  const size = Math.abs(foldSignedSize);
+  if (size <= EPS) return null;
+  const direction = foldSignedSize > 0 ? 1 : -1;
+  const price = foldEntryUsd + (direction * realisedDeltaUsd) / size;
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return price;
 }
 
 /**
@@ -199,8 +243,14 @@ export function planAdoption(args: {
   pending: PendingOrder[];
   nowMs: number;
   trust: "pending" | "hunter";
+  /**
+   * The venue's lifetime realised PnL (`trp`) and the ledger's own, both in
+   * USD. Their difference is what a close we never recorded produced, and it is
+   * the only way to price a position that is already gone.
+   */
+  realised?: { venueUsd: number; ledgerUsd: number };
 }): AdoptionPlan {
-  const { fold, venue, marks, pending, nowMs, trust } = args;
+  const { fold, venue, marks, pending, nowMs, trust, realised } = args;
   const frames = new Map(venue.map((v) => [v.marketId, v]));
   const foldByMarket = new Map(fold.map((p) => [p.marketId, p]));
   const fills: LedgerFill[] = [];
@@ -212,13 +262,65 @@ export function planAdoption(args: {
 
     const frame = frames.get(marketId);
     if (!frame) {
-      // The ledger holds size the venue does not: a close or liquidation whose
-      // price left with the position. Never invent one.
-      unexplained.push({
-        marketId,
-        deltaUnits: delta,
-        reason: "ledger_holds_more",
+      // The ledger holds size the venue does not: the position was CLOSED and
+      // we never saw the fill. Its price left with it — but its money did not.
+      // `trp` minus our own folded realised total is exactly what this close
+      // produced, and the price follows from that.
+      //
+      // This used to refuse outright, on the reasoning that a closed position
+      // cannot be priced. That was true of `ep` and false of the account. It
+      // left a hunter who closed their own position unable to trade again,
+      // with no button to press, which is the trap this module exists to avoid
+      // and it had one of its own.
+      const held = foldByMarket.get(marketId);
+      const order = pending.find(
+        (o) =>
+          o.marketId === marketId &&
+          o.direction === (delta > 0 ? 1 : -1) &&
+          o.sizeUnits + EPS >= Math.abs(delta) &&
+          (trust === "hunter" || o.venueConfirmedFill),
+      );
+      if (!held || !order) {
+        unexplained.push({
+          marketId,
+          deltaUnits: delta,
+          reason: order ? "ledger_holds_more" : "no_pending_order",
+        });
+        continue;
+      }
+      if (!realised) {
+        unexplained.push({
+          marketId,
+          deltaUnits: delta,
+          reason: "no_realised_total",
+        });
+        continue;
+      }
+      const price = closePriceFromRealised({
+        foldEntryUsd: held.entryUsd,
+        foldSignedSize: held.signedSize,
+        realisedDeltaUsd: realised.venueUsd - realised.ledgerUsd,
       });
+      if (price === null) {
+        unexplained.push({
+          marketId,
+          deltaUnits: delta,
+          reason: "no_entry_price",
+        });
+        continue;
+      }
+      fills.push({
+        marketId,
+        direction: delta > 0 ? 1 : -1,
+        sizeUnits: Math.abs(delta),
+        priceUsd: price,
+        // Zero, deliberately: trp is already net of fees, so the fee is inside
+        // the price. Recording one here would count it twice.
+        feeUsd: 0,
+        timestampMs: nowMs,
+        orderId: order.orderId,
+      });
+      resolvedOrderIds.push(order.id);
       continue;
     }
     if (frame.entryPriceScaled === null) {

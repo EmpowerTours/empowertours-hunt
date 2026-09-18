@@ -173,9 +173,17 @@ export async function POST(req: Request) {
         // adopting it is even possible — a position the venue prices can be
         // adopted at that price, one it doesn't cannot be adopted at all.
         unexplained,
+        // Offer the button for anything the hunter path can actually fix. A
+        // close attributable to one of our orders is now priceable from the
+        // venue's realised total, so "ledger_holds_more" is no longer a dead
+        // end — but a liquidation with nothing behind it still is.
         reconcilable:
           unexplained.length > 0 &&
-          unexplained.every((u) => u.reason === "no_pending_order"),
+          unexplained.every(
+            (u) =>
+              u.reason === "no_pending_order" ||
+              u.reason === "ledger_holds_more",
+          ),
         markUsd,
       });
     }

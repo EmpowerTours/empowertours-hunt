@@ -79,13 +79,29 @@ export async function readDayState(args: {
 
   if (agg.lossTodayUsdE6 === null) {
     const pending = await loadPendingOrders(playerId, account);
+    // The ledger's LIFETIME realised total, to difference against the venue's
+    // `trp`. Lifetime, not today's: trp is lifetime, and comparing the two over
+    // different windows would attribute a week of history to one close.
+    const folded = foldFills(fills);
+    const ledgerRealisedUsd = folded.realized.reduce(
+      (a, r) => a + r.realizedUsd,
+      0,
+    );
+
     const plan = planAdoption({
-      fold: foldFills(fills).positions,
+      fold: folded.positions,
       venue: read.positions,
       marks,
       pending,
       nowMs,
       trust: "pending",
+      realised:
+        read.stats === null
+          ? undefined
+          : {
+              venueUsd: read.stats.realisedPnlScaled / 1_000_000,
+              ledgerUsd: ledgerRealisedUsd,
+            },
     });
     unexplained = plan.unexplained;
 

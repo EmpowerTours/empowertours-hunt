@@ -223,6 +223,42 @@ export function parsePositions(frame: unknown): OpenPositionFrame[] {
   return out;
 }
 
+/**
+ * The account's lifetime totals, off the `sts` array of the mt 19 frame.
+ *
+ * `trp` is total realised PnL, NET of fees, in collateral base units. It is the
+ * only authority this system has on a close it never saw: when the placing
+ * socket misses a closing fill, the position is gone and its price went with it,
+ * but the money it made or lost is right here.
+ *
+ * Verified against account 5273: trp moved -15442 -> 354368 across one close,
+ * and 354368 is exactly the round trip's realised result net of every fee.
+ */
+export interface AccountStats {
+  accountId: number;
+  /** Total realised PnL, collateral base units (AUSD 6dp), signed. */
+  realisedPnlScaled: number;
+  /** Total fees charged, base units. */
+  feesScaled: number;
+  /** Total traded volume, base units. */
+  volumeScaled: number;
+}
+
+/** Parse the `sts` totals from a wallet snapshot (mt 19). */
+export function parseAccountStats(frame: unknown): AccountStats[] {
+  const f = frame as { mt?: number; sts?: unknown[] };
+  if (f?.mt !== 19 || !Array.isArray(f.sts)) return [];
+  return f.sts.map((raw) => {
+    const t = raw as Record<string, unknown>;
+    return {
+      accountId: Number(t.id ?? 0),
+      realisedPnlScaled: Number(t.trp ?? 0),
+      feesScaled: Number(t.tf ?? 0),
+      volumeScaled: Number(t.tv ?? 0),
+    };
+  });
+}
+
 export interface OrderStatus {
   /** Echoes the order's `sn`, so a client matches a status to its request. */
   clientSeq: number;

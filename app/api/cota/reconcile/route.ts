@@ -30,16 +30,20 @@ import {
 // route exists, and it is deliberately a POST the hunter has to trigger: a
 // person decides to take responsibility for size the agent cannot vouch for.
 //
-// What it will NOT do, at any hunter's request (see adopt.ts): price an
-// adoption at anything but the venue's own `ep`, invent a price for a position
-// the venue no longer reports, or touch a market whose mark is unknown. It
-// records what the venue says is there, or it records nothing.
+// What it will NOT do, at any hunter's request (see adopt.ts): invent a price.
+// An OPEN position is adopted at the venue's own `ep` and nothing else. A CLOSED
+// one — the ledger holding size the venue does not — is priced from the venue's
+// lifetime realised total `trp`, which is the only authority left once the
+// position and its price are gone. A disappearance with none of this agent's
+// orders behind it is a liquidation, and that is still refused: adopting it
+// silently would hide it from the hunter.
 //
 // The honest cost, stated here because the UI states it too: adopting an open
-// position starts its loss clock from the venue's entry price. Realised losses
-// taken before this moment — a closed trade earlier in the day — are not in the
-// ledger and this does not recover them. It resumes trading; it does not
-// reconstruct history.
+// position starts its loss clock from the venue's entry price. An adopted CLOSE
+// carries a zero fee, because `trp` is already net of fees and recording one
+// would count it twice — so the price is an EFFECTIVE price, not the tick the
+// order filled at. The ledger's realised PnL then equals the venue's exactly,
+// which is the number that has to agree.
 // ---------------------------------------------------------------------------
 
 export async function POST(req: Request) {
@@ -73,8 +77,13 @@ export async function POST(req: Request) {
     // route will refuse on the same ground until it is closed at the venue.
     let plan;
     try {
+      const folded = foldFills(fills);
+      const ledgerRealisedUsd = folded.realized.reduce(
+        (a, r) => a + r.realizedUsd,
+        0,
+      );
       plan = planAdoption({
-        fold: foldFills(fills).positions,
+        fold: folded.positions,
         venue: read.positions,
         marks,
         // Passed for ATTRIBUTION, not authorisation: trust "hunter" adopts
@@ -85,6 +94,17 @@ export async function POST(req: Request) {
         pending: await loadPendingOrders(player.id, cred.account),
         nowMs: Date.now(),
         trust: "hunter",
+        // The venue's lifetime realised total, which is the only way to price a
+        // position that has already closed. Without it a hunter who closed
+        // their own position could not reconcile at all — the button appeared
+        // and refused.
+        realised:
+          read.stats === null
+            ? undefined
+            : {
+                venueUsd: read.stats.realisedPnlScaled / 1_000_000,
+                ledgerUsd: ledgerRealisedUsd,
+              },
       });
     } catch (e) {
       const held = read.positions
@@ -116,8 +136,9 @@ export async function POST(req: Request) {
         entryUsd: f.priceUsd,
         feeUsd: f.feeUsd,
       })),
-      // Anything still here could not be adopted honestly — a position the
-      // venue no longer prices, or size the ledger holds and the venue does not.
+      // Anything still here could not be adopted honestly — most often a
+      // position that vanished with none of this agent's orders behind it,
+      // which is a liquidation rather than a close.
       unexplained: plan.unexplained,
     });
   } catch (err) {

@@ -16,10 +16,12 @@ import WebSocket from "ws";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes, type Hex } from "viem";
 import {
+  parseAccountStats,
   parsePositions,
   parseWalletSnapshot,
   signinCanonicalBytes,
   type AccountSnapshot,
+  type AccountStats,
   type OpenPositionFrame,
 } from "./frames";
 import { MT_API_KEY_SIGNIN } from "../order";
@@ -31,6 +33,12 @@ export interface AccountRead {
   /** The account the venue reports for this wallet, or null if it named none. */
   account: AccountSnapshot | null;
   positions: OpenPositionFrame[];
+  /**
+   * Lifetime totals from the same frame. `trp` here is the only authority on a
+   * close whose fill we missed: the position is gone, but its realised result
+   * is not. See adopt.ts::closePriceFromRealised.
+   */
+  stats: AccountStats | null;
 }
 
 export interface ReadPositionsArgs {
@@ -65,6 +73,7 @@ export function readAccountPositions(
     const ws = new WebSocket(url);
     const byPid = new Map<number, OpenPositionFrame>();
     let account: AccountSnapshot | null = null;
+    let stats: AccountStats | null = null;
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
 
@@ -86,7 +95,7 @@ export function readAccountPositions(
       if (settled) return;
       settled = true;
       cleanup();
-      resolve({ account, positions: [...byPid.values()] });
+      resolve({ account, positions: [...byPid.values()], stats });
     }
     function finishReject(e: Error) {
       if (settled) return;
@@ -129,6 +138,7 @@ export function readAccountPositions(
       // start the settle window, so positions have a bounded moment to stream in.
       if (mt === 19) {
         account = parseWalletSnapshot(msg)[0] ?? account;
+        stats = parseAccountStats(msg)[0] ?? stats;
         if (settleTimer === undefined)
           settleTimer = setTimeout(finish, settleMs);
       }
