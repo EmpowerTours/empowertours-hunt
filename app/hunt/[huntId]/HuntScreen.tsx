@@ -279,7 +279,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     claimAbort.current = controller;
 
     // Signing is its own phase because a passkey prompt takes a visible moment,
-    // and a button that says "checking" through a Face ID sheet reads as a hang.
+    // and a button that says "checking" through a passkey sheet reads as a hang.
     setPhase(signer ? "signing" : "submitting");
 
     try {

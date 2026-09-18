@@ -20,7 +20,7 @@ import { walletFromPrfOutput } from "./derive";
 // in production reads as "every player's signature is invalid" with no clue
 // where it went wrong. This is the only check that catches it without a phone.
 
-// A passkey-derived wallet, standing in for what Face ID would produce.
+// A passkey-derived wallet, standing in for what the authenticator produces.
 const { privateKey } = walletFromPrfOutput(new Uint8Array(32).fill(3));
 const account = privateKeyToAccount(bytesToHex(privateKey));
 

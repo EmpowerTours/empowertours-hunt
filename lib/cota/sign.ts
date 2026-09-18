@@ -4,7 +4,7 @@
 // Signing a Cota in the browser.
 //
 // Deliberately mirrors `claimSigner` in lib/auth/signIn.ts: open the passkey,
-// sign one thing, end the session on every path. Face ID runs per signature and
+// sign one thing, end the session on every path. The prompt runs per signature and
 // the key is zeroed immediately, because a key held open to save a prompt gives
 // up exactly the property the signature exists to provide.
 //
@@ -80,7 +80,7 @@ export async function signCota(message: CotaMessage): Promise<Hex> {
 /**
  * Sign a Cota AND anchor it on Monad in one passkey session.
  *
- * One Face ID covers both: the EIP-712 signature and the anchor transaction are
+ * One prompt covers both: the EIP-712 signature and the anchor transaction are
  * both local secp256k1 operations on the same in-memory key, so opening the
  * passkey once is enough. The hunter pays the small anchor fee from their own
  * wallet — their leash chains under their own address, no platform wallet.

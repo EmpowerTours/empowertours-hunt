@@ -258,7 +258,7 @@ async function runSignIn(): Promise<void> {
 /**
  * Registered with `<Providers signer>`. Signs one claim or spawn collect.
  *
- * Face ID runs per signature by design: this is the path that moves real MON,
+ * The passkey prompt runs per signature by design: this is the path that moves real MON,
  * and AGENTS.md requires every attempt to be individually signed and
  * non-repudiable. Holding a key open across a walk to save a prompt would trade
  * exactly the property the signature exists to provide.

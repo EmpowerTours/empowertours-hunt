@@ -23,7 +23,7 @@ import { HUNT_VAULT_SALT, vaultKeyFromPrfOutput } from "./vault-key";
 // and there is no server SDK, which is why `lib/auth/mera.ts` verifies a
 // signature rather than calling anything from here.
 //
-// Face ID reproduces the same 32 PRF bytes for the same (credential, rpId,
+// The passkey reproduces the same 32 PRF bytes for the same (credential, rpId,
 // salt) forever, so the same face on the same account is always the same
 // wallet. Nothing here reaches a server: the key is derived, used, and zeroed
 // in the page.
@@ -370,7 +370,7 @@ export async function unlockNoteVault(): Promise<CryptoKey> {
 
 export function explainPasskeyError(err: unknown): string {
   if (err instanceof CeremonyTimeout) {
-    return "Nothing answered the Face ID request. If this device doesn't hold your passkey, open the hunt on the phone you first signed in with.";
+    return "Nothing answered the passkey request. If this device doesn't hold your passkey, open the hunt on the device you first signed in with.";
   }
   if (isMeraError(err)) {
     switch (err.code) {
@@ -379,7 +379,7 @@ export function explainPasskeyError(err: unknown): string {
         // this outdoors, mid-hunt, with no one to ask.
         return "This device can't make a hunt wallet. On iPhone: use Safari with iCloud Keychain on, and update iOS if it's several years old. On Android: use Chrome signed in to Google Password Manager. 1Password works too. Bitwarden and Dashlane don't yet.";
       case "PASSKEY_OPERATION_FAILED":
-        return "The Face ID / fingerprint prompt was cancelled or unavailable. Tap sign in again.";
+        return "The passkey prompt was cancelled or unavailable. Tap sign in again.";
       case "CRYPTO_UNAVAILABLE":
         return "This page must be opened over HTTPS for passkeys to work.";
       default:

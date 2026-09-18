@@ -29,7 +29,7 @@ import {
 // The key is made on this device, signs its own proof here, and is stored only
 // in this browser. Hunt proxies the two venue calls (to send our whitelisted
 // origin) but keeps nothing. What the user is agreeing to is shown as a sentence
-// — Perpl's own `statement` — before the one Face ID prompt, because this is the
+// — Perpl's own `statement` — before the one passkey prompt, because this is the
 // signature that lets software trade for them later.
 // ---------------------------------------------------------------------------
 
@@ -61,7 +61,7 @@ const T = {
     signin: "Inicia sesión para autorizar",
     begin: "Crear clave",
     fetching: "Preparando…",
-    signingMsg: "Firma con Face ID…",
+    signingMsg: "Confirma con tu passkey…",
     submitting: "Registrando…",
     reviewTitle: "Vas a firmar esto",
     feeLabel: "Comisión máx.",
@@ -89,7 +89,7 @@ const T = {
     signin: "Sign in to authorize",
     begin: "Create key",
     fetching: "Preparing…",
-    signingMsg: "Sign with Face ID…",
+    signingMsg: "Confirm with your passkey…",
     submitting: "Registering…",
     reviewTitle: "You're about to sign this",
     feeLabel: "Max fee",
@@ -228,7 +228,7 @@ export default function CotaEnrollPage() {
     }
   }, [auth.walletAddress, t, fail]);
 
-  // Step 2: one Face ID signature over the payload, an Ed25519 proof over the
+  // Step 2: one passkey signature over the payload, an Ed25519 proof over the
   // same digest, then submit both and save the credential on the device.
   const confirm = useCallback(async () => {
     const f = flight.current;

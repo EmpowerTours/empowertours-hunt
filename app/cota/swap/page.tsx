@@ -20,7 +20,7 @@ import {
 // ---------------------------------------------------------------------------
 // MON -> AUSD. A hunter who only has MON turns it into AUSD here to fund a Perpl
 // account. The MON leaves their Cota wallet (the passkey wallet), the AUSD lands
-// in the same wallet. One Face ID per swap; the desk's staleness/slippage guards
+// in the same wallet. One passkey prompt per swap; the desk's staleness/slippage guards
 // protect the price. This is the on-ramp the bridge page can't be for MON-only
 // hunters.
 // ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ const T = {
     amount: "MON a cambiar",
     youGet: "Recibes ≈",
     swap: "Cambiar",
-    swapping: "Cambiando… firma con Face ID",
+    swapping: "Cambiando… confirma con tu passkey",
     done: "¡Listo! Recibiste",
     deskLow: "La caja no tiene suficiente AUSD para eso ahora.",
     tooLittle: "Ingresa una cantidad de MON.",
@@ -67,7 +67,7 @@ const T = {
     amount: "MON to swap",
     youGet: "You get ≈",
     swap: "Swap",
-    swapping: "Swapping… sign with Face ID",
+    swapping: "Swapping… confirm with your passkey",
     done: "Done! You received",
     deskLow: "The desk doesn't have enough AUSD for that right now.",
     tooLittle: "Enter an amount of MON.",

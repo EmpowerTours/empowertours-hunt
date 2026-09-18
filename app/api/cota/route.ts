@@ -115,7 +115,8 @@ export async function POST(req: Request) {
     if (!verified.ok) {
       // The reason is returned because every one of them is something the
       // player can act on — re-sign, wait, check the clock — and a bare 401
-      // on the screen where somebody just used Face ID reads as a broken app.
+      // on the screen where somebody just answered a passkey prompt reads as a
+      // broken app.
       return NextResponse.json({ error: verified.reason }, { status: 400 });
     }
 

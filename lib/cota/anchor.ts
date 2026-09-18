@@ -8,7 +8,7 @@
 // Anchored(anchorer, orderHash=digest, sequence, prevHash, execCommitment).
 //
 // HUNTER-ANCHORED. The hunter anchors their OWN leash from their OWN Mera
-// wallet, in the SAME passkey session as the signature (one Face ID — both are
+// wallet, in the SAME passkey session as the signature (one prompt — both are
 // local key ops), paying the small MON fee themselves. This means:
 //   • Each hunter's leashes chain under THEIR address — their own on-chain
 //     record, not a shared one.
@@ -79,7 +79,7 @@ export type AnchorResult =
 
 /**
  * Anchor a leash from the hunter's own wallet. Call inside the passkey session
- * that produced `signature`, using the same `account` — one Face ID covers both
+ * that produced `signature`, using the same `account` — one prompt covers both
  * the signature and this transaction, because both are local key operations.
  *
  * The caller treats any throw as best-effort: the leash is signed regardless.

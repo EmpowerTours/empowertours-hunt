@@ -109,7 +109,7 @@ const T = {
       "Puede cerrar con ganancia. Nunca puede abrir, así que no puede aumentar tu exposición.",
     autoFullNote:
       "También puede abrir, dentro de los topes de esta correa. Es lo más que puedes autorizar.",
-    autoSigning: "Firma con Face ID…",
+    autoSigning: "Confirma con tu passkey…",
     autoSaved: "Permiso guardado",
     autoFailed: "No se pudo guardar",
     autoExpires: "Caduca",
@@ -120,7 +120,7 @@ const T = {
     noteTitle: "Nota privada",
     noteLede:
       "Sellada en tu navegador con una clave derivada de tu cara — con una sal distinta a la de tu billetera. El servidor guarda texto cifrado que no puede abrir.",
-    noteUnlock: "Desbloquear con Face ID",
+    noteUnlock: "Desbloquear con tu passkey",
     noteUnlocking: "Desbloqueando…",
     notePlaceholder: "Por qué firmaste esta correa, qué esperas del agente…",
     noteSave: "Guardar",
@@ -212,7 +212,7 @@ const T = {
       "It can close in profit. It can never open, so it cannot increase your exposure.",
     autoFullNote:
       "It can also open, within this leash's ceilings. This is the most you can authorise.",
-    autoSigning: "Sign with Face ID…",
+    autoSigning: "Confirm with your passkey…",
     autoSaved: "Permission saved",
     autoFailed: "Could not save",
     autoExpires: "Expires",
@@ -223,7 +223,7 @@ const T = {
     noteTitle: "Private note",
     noteLede:
       "Sealed in your browser with a key derived from your face — under a different salt from your wallet. The server stores ciphertext it cannot open.",
-    noteUnlock: "Unlock with Face ID",
+    noteUnlock: "Unlock with your passkey",
     noteUnlocking: "Unlocking…",
     notePlaceholder: "Why you signed this leash, what you expect of the agent…",
     noteSave: "Save",
