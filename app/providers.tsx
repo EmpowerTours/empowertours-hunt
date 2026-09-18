@@ -45,6 +45,12 @@ export interface AuthSlotValue {
   /** True when a real sign-in implementation has been registered. */
   canSignIn: boolean;
   signIn: () => Promise<void>;
+  /**
+   * Make a NEW passkey and wallet. Separate from `signIn` on purpose: it is the
+   * branch a first-time player takes, and it must be a button they chose rather
+   * than something sign-in falls back to on its own.
+   */
+  createWallet: () => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => void;
 }
@@ -55,6 +61,11 @@ const NOT_WIRED: AuthSlotValue = {
   displayName: null,
   canSignIn: false,
   signIn: async () => {
+    throw new Error(
+      "Passkey sign-in is not wired up in this build (auth lane owns the browser-side Mera flow).",
+    );
+  },
+  createWallet: async () => {
     throw new Error(
       "Passkey sign-in is not wired up in this build (auth lane owns the browser-side Mera flow).",
     );
@@ -138,11 +149,14 @@ function useSession(): SessionState & { refresh: () => void } {
 export function Providers({
   children,
   signIn,
+  createWallet,
   signer,
 }: {
   children: React.ReactNode;
   /** Registered by the auth lane. Absent means sign-in is not available. */
   signIn?: () => Promise<void>;
+  /** Registered by the auth lane. Makes a new passkey wallet on this device. */
+  createWallet?: () => Promise<void>;
   /** Registered by the auth lane. Absent means MON collection is disabled. */
   signer?: ClaimSigner;
 }) {
@@ -161,10 +175,18 @@ export function Providers({
       displayName: null,
       canSignIn: signIn !== undefined,
       signIn: signIn ?? NOT_WIRED.signIn,
+      createWallet: createWallet ?? NOT_WIRED.createWallet,
       signOut,
       refresh,
     }),
-    [session.status, session.walletAddress, signIn, signOut, refresh],
+    [
+      session.status,
+      session.walletAddress,
+      signIn,
+      createWallet,
+      signOut,
+      refresh,
+    ],
   );
 
   return (

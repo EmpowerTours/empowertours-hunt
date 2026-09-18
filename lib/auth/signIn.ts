@@ -166,91 +166,111 @@ async function establishSession(passkey: PasskeyAccount): Promise<void> {
 }
 
 /**
- * How many times in a row the assertion has come back empty-handed.
+ * Thrown when the assertion came back empty-handed on a device that knows no
+ * credential of ours — i.e. making a wallet here is a reasonable next move.
  *
  * WebAuthn cannot tell us whether the player cancelled or simply has no passkey
  * — NotAllowedError covers both, on purpose, so a site cannot probe which
- * credentials someone holds. That ambiguity matters here: creating a passkey
- * when one already exists hands the player a DIFFERENT wallet and orphans their
- * credit. So a failed assertion never creates; it takes two consecutive
- * failures before the third tap makes a new wallet, and each step says what the
- * next one will do.
- */
-const FAILURES_BEFORE_CREATE = 2;
-const FAILURE_KEY = "hunt.passkey.assertFailures";
-
-/**
- * Kept in sessionStorage rather than a module variable so it survives a reload:
- * a player whose first tap fails often reloads before trying again, and a
- * counter that reset there would never reach the create branch. It also means
- * no shared mutable module state is written after an await.
- */
-function readFailures(): number {
-  try {
-    const n = Number(sessionStorage.getItem(FAILURE_KEY) ?? "0");
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function writeFailures(n: number): void {
-  try {
-    sessionStorage.setItem(FAILURE_KEY, String(n));
-  } catch {
-    // Private browsing. Falls back to "always try to find an existing wallet",
-    // which is the safe direction: it never silently creates a second one.
-  }
-}
-
-/**
- * Only one sign-in runs at a time.
+ * credentials someone holds. That ambiguity is why creating is never automatic:
+ * creating a passkey when one already exists hands the player a DIFFERENT
+ * wallet and orphans their credit.
  *
- * Two concurrent calls would open two WebAuthn ceremonies — a double-tap on the
- * button is enough — and on a device with no passkey the second could reach the
- * create branch while the first was still deciding, handing the player two
- * wallets. Returning the in-flight promise makes a second tap join the first.
+ * It used to be resolved by counting failures — two empty assertions and the
+ * third tap silently created. That read, to a first-time player, as the app
+ * being broken twice: Android shows its own "No passkeys available for
+ * empowertours.xyz on this device" sheet, and the only way forward was to tap
+ * the same button again on faith. Reported as "hunt isn't working", which is a
+ * fair description of what it looked like.
+ *
+ * So the branch is a question the player answers instead of a counter they
+ * cannot see: this error carries the offer, and `createWalletWithPasskey` is a
+ * second, differently-labelled button. Same safety property — nothing creates
+ * without a deliberate act — one fewer dead end.
+ */
+export class NoPasskeyFoundError extends Error {
+  /** Lets the UI show the create button without matching on message text. */
+  readonly canCreateWallet = true;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "NoPasskeyFoundError";
+  }
+}
+
+/**
+ * Only one ceremony runs at a time, across BOTH entry points.
+ *
+ * Two concurrent calls would open two WebAuthn ceremonies — a double-tap is
+ * enough — and sign-in racing create could hand the player two wallets. One
+ * shared slot means a second tap joins the first rather than starting another.
  */
 let inFlight: Promise<void> | null = null;
 
-/** Registered with `<Providers signIn>`. One tap: find the wallet, or make one. */
-export function signInWithPasskey(): Promise<void> {
+function exclusive(work: () => Promise<void>): Promise<void> {
   if (inFlight !== null) return inFlight;
-  inFlight = runSignIn().finally(() => {
+  inFlight = work().finally(() => {
     inFlight = null;
   });
   return inFlight;
 }
 
+/** Registered with `<Providers signIn>`. Opens the wallet this phone can reach. */
+export function signInWithPasskey(): Promise<void> {
+  return exclusive(runSignIn);
+}
+
+/**
+ * Registered with `<Providers createWallet>`. Makes a NEW passkey and wallet.
+ *
+ * Only ever reached from a button the player pressed after being told what it
+ * does. It still refuses on a device that already knows one of our credentials:
+ * a UI change must not be able to turn this into the path that orphans someone's
+ * balance, so the invariant is checked here rather than trusted to the caller.
+ */
+export function createWalletWithPasskey(): Promise<void> {
+  return exclusive(runCreateWallet);
+}
+
 async function runSignIn(): Promise<void> {
-  // Snapshot before any await; the write below is computed from the snapshot.
-  const failuresSoFar = readFailures();
   let passkey: PasskeyAccount | null = null;
   try {
-    if (failuresSoFar >= FAILURES_BEFORE_CREATE) {
-      passkey = await createAccount();
-    } else {
-      try {
-        passkey = await signInAccount();
-      } catch (err) {
-        // A known local credential means this really is their device and the
-        // ceremony failed for some other reason. Never offer to create there.
-        if (storedCredential() !== undefined) {
-          throw new Error(explainPasskeyError(err));
-        }
-        const failures = failuresSoFar + 1;
-        writeFailures(failures);
-        throw new Error(
-          failures >= FAILURES_BEFORE_CREATE
-            ? "No hunt wallet found. Tap sign in once more and a new one will be created for you."
-            : "Couldn't open your hunt wallet. If you cancelled, tap sign in again to retry.",
-        );
+    try {
+      passkey = await signInAccount();
+    } catch (err) {
+      // A known local credential means this really is their device and the
+      // ceremony failed for some other reason. Never offer to create there.
+      if (storedCredential() !== undefined) {
+        throw new Error(explainPasskeyError(err));
       }
+      throw new NoPasskeyFoundError(
+        "No hunt wallet on this phone. If you have played before, open the hunt on the phone you first signed in with — or make a new wallet below.",
+      );
     }
     await establishSession(passkey);
-    writeFailures(0);
   } finally {
     // Zero the key as soon as we are done with it, on every path.
+    passkey?.session.end();
+  }
+}
+
+async function runCreateWallet(): Promise<void> {
+  if (storedCredential() !== undefined) {
+    throw new Error(
+      "This phone already has a hunt passkey. Tap sign in to open the wallet it belongs to.",
+    );
+  }
+  let passkey: PasskeyAccount | null = null;
+  try {
+    try {
+      passkey = await createAccount();
+    } catch (err) {
+      // Only the ceremony is translated. A server refusal from
+      // establishSession already carries its own words and must not be
+      // relabelled as a passkey problem.
+      throw new Error(explainPasskeyError(err));
+    }
+    await establishSession(passkey);
+  } finally {
     passkey?.session.end();
   }
 }

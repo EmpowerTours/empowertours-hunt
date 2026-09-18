@@ -21,6 +21,7 @@ export function SignInPanel() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [offerCreate, setOfferCreate] = useState(false);
 
   if (auth.status === "loading") {
     return (
@@ -66,15 +67,19 @@ export function SignInPanel() {
     );
   }
 
-  const onSignIn = async () => {
+  const run = async (kind: "sign-in" | "create") => {
     setBusy(true);
     setError(null);
     try {
-      await auth.signIn();
+      await (kind === "create" ? auth.createWallet() : auth.signIn());
       auth.refresh();
       router.push("/hunt");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Sign-in failed.");
+      // Only a failed ASSERTION offers to create. A failed create must not
+      // re-offer itself, or a player whose device cannot make passkeys at all
+      // taps the same dead button forever.
+      setOfferCreate(kind === "sign-in" && isNoPasskeyFound(e));
     } finally {
       setBusy(false);
     }
@@ -84,7 +89,11 @@ export function SignInPanel() {
     <div className="space-y-3">
       {auth.canSignIn ? (
         <>
-          <Button type="button" onClick={() => void onSignIn()} disabled={busy}>
+          <Button
+            type="button"
+            onClick={() => void run("sign-in")}
+            disabled={busy}
+          >
             {busy ? "WAITING…" : "CONTINUE WITH YOUR PHONE"}
           </Button>
           <p className="text-ink-faint px-2 text-center text-xs leading-snug">
@@ -106,7 +115,35 @@ export function SignInPanel() {
         </Note>
       ) : null}
 
+      {/* Shown only after an assertion found nothing on this phone. The label
+          says what the button does, because the alternative — a wallet appearing
+          because the player tapped sign-in a third time — is how someone with a
+          passkey on another device ends up with two wallets and half a balance. */}
+      {offerCreate ? (
+        <Button
+          tone="primary"
+          type="button"
+          onClick={() => void run("create")}
+          disabled={busy}
+        >
+          {busy ? "WAITING…" : "MAKE A NEW HUNT WALLET"}
+        </Button>
+      ) : null}
+
       <LinkButton href="/hunt">Browse hunts</LinkButton>
     </div>
+  );
+}
+
+/**
+ * Structural, not textual: NoPasskeyFoundError sets this flag, and matching on
+ * the flag means the copy can be rewritten (or translated) without silently
+ * removing the only way a first-time player reaches a wallet.
+ */
+function isNoPasskeyFound(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    (e as { canCreateWallet?: unknown }).canCreateWallet === true
   );
 }

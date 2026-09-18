@@ -3,7 +3,11 @@
 import { useEffect } from "react";
 import { Providers } from "@/app/providers";
 import { ensureCredentialCookie } from "./passkey";
-import { claimSigner, signInWithPasskey } from "./signIn";
+import {
+  claimSigner,
+  createWalletWithPasskey,
+  signInWithPasskey,
+} from "./signIn";
 
 /**
  * Wires the auth lane's browser implementations into the UI lane's slots.
@@ -29,7 +33,11 @@ export function HuntAuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <Providers signIn={signInWithPasskey} signer={claimSigner}>
+    <Providers
+      signIn={signInWithPasskey}
+      createWallet={createWalletWithPasskey}
+      signer={claimSigner}
+    >
       {children}
     </Providers>
   );
