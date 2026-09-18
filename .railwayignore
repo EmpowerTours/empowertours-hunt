@@ -1,0 +1,8 @@
+# The Android wrapper is not part of the web build and must not ride along in
+# the deploy upload. mobile/node_modules alone is ~29 MB of Capacitor CLI that
+# the server will never import, and it was enough to make `railway up` time out
+# mid-upload — twice — with no error that named the cause.
+#
+# public/EmpowerTours.apk is deliberately NOT excluded: /download serves it and
+# hashes it at render time, so it has to ship.
+mobile/
