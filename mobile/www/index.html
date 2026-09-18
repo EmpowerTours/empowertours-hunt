@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cota</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        background: #06100d;
+        color: #cfe6dd;
+        font:
+          15px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        padding: 24px;
+        text-align: center;
+      }
+      strong {
+        display: block;
+        font-size: 22px;
+        letter-spacing: 0.3em;
+        color: #46ffbe;
+        margin-bottom: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Only ever seen with no network before first paint. Capacitor needs a
+      webDir to exist; the real app is the live origin in capacitor.config.ts.
+      It says what is wrong rather than showing a blank WebView, because a black
+      screen is how a working app gets reported as broken.
+    -->
+    <div>
+      <strong>COTA</strong>
+      <p>No connection. Cota runs against the live venue, so it needs one.</p>
+      <p>Reopen once you are back online.</p>
+    </div>
+  </body>
+</html>

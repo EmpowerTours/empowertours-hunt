@@ -1,0 +1,19 @@
+node_modules/
+
+# android/ IS committed. Capacitor treats the native project as source you
+# edit, and this one is edited: MainActivity turns on WebAuthn and
+# app/build.gradle adds the credentials libraries. Regenerating the tree would
+# silently drop both, and the failure mode is "passkeys stopped working in the
+# app" with nothing in the diff to explain it.
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+android/app/release/
+
+# Never. A signing key IS the app's identity — the asset-links file names its
+# fingerprint, so whoever holds it can ship something Android will hand this
+# app's passkeys to.
+*.jks
+*.keystore

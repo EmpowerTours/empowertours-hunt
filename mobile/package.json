@@ -1,0 +1,21 @@
+{
+  "name": "cota-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android wrapper for the Cota trading app. Its own package.json on purpose: the repo root's is shared (AGENTS.md) and nothing here belongs in the web build.",
+  "scripts": {
+    "add:android": "cap add android",
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "build:debug": "cd android && ./gradlew assembleDebug",
+    "build:release": "cd android && ./gradlew assembleRelease",
+    "fingerprint": "bash scripts/assetlinks.sh"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2"
+  }
+}
