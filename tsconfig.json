@@ -41,6 +41,12 @@
     // way Chainlink's own layout has it. Type-checking it from here would
     // demand @chainlink/cre-sdk as an app dependency for code the app never
     // imports and Next never bundles.
-    "cre"
+    "cre",
+    // Same shape, learned the hard way: mobile/capacitor.config.ts imports
+    // @capacitor/cli, which lives in mobile/node_modules. `next build` runs a
+    // repo-wide type check, so on a machine where mobile/ has not been
+    // installed — every CI build — it failed with TS2307 AFTER compiling
+    // successfully, and the deploy went red for a file the server never loads.
+    "mobile"
   ]
 }
