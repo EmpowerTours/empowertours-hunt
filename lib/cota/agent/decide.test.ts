@@ -139,3 +139,31 @@ describe("the invariant that matters", () => {
     expect([...acts].sort()).toEqual(["close", "nothing", "open"]);
   });
 });
+
+describe("observe decides as full would, so the log is worth reading", () => {
+  it("still reports a take-profit it is not allowed to take", () => {
+    // The whole point: a hunter in observe must see "it would have closed here",
+    // with the number, or they have nothing to judge before letting it act.
+    const d = decide({
+      ...base,
+      mode: "observe",
+      position: pos(576, ENTRY * 1.013),
+      exitPriceUsd: ENTRY * 1.013,
+    });
+    expect(d.act).toBe("close");
+    if (d.act === "close") expect(d.netUsd).toBeGreaterThan(0);
+  });
+
+  it("still reports an open it is not allowed to take", () => {
+    // exit_only would report grant_forbids_open here and tell the hunter
+    // nothing about the agent's judgement. observe shows the judgement.
+    expect(decide({ ...base, mode: "observe" }).act).toBe("open");
+  });
+
+  it("and exit_only still refuses to evaluate an open", () => {
+    // Confirms observe is not simply "full" — the other modes are unchanged.
+    const d = decide({ ...base, mode: "exit_only" });
+    expect(d.act).toBe("nothing");
+    expect(d.why).toBe("grant_forbids_open");
+  });
+});

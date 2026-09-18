@@ -25,7 +25,7 @@
 // can do anything else, which is the only thing that makes "never close at a
 // loss" a policy rather than a ratchet.
 
-import { agentMay, type AutonomyMode } from "../autonomy";
+import { agentMay, evaluationMode, type AutonomyMode } from "../autonomy";
 import { shouldExit, type ExitPolicy, type PositionSnapshot } from "../exit";
 
 export interface AgentInputs {
@@ -54,11 +54,17 @@ export type AgentPlan =
 export function decide(input: AgentInputs): AgentPlan {
   if (input.mode === "off") return { act: "nothing", why: "no_grant" };
 
+  // observe reasons as full would, and the CALLER refuses to send. Narrowing
+  // permissions here instead would make the log show what a restricted agent
+  // would have done, which is a worse basis for the decision the hunter is
+  // about to make on the strength of it.
+  const mode = evaluationMode(input.mode);
+
   const holding =
     input.position !== null && Math.abs(input.position.signedSize) > 0;
 
   if (holding) {
-    if (!agentMay(input.mode, "close")) {
+    if (!agentMay(mode, "close")) {
       return { act: "nothing", why: "grant_forbids_close" };
     }
     // No exit price means the book gave us no side to sell into. Refuse rather
@@ -84,7 +90,7 @@ export function decide(input: AgentInputs): AgentPlan {
     return { act: "nothing", why: "holding" };
   }
 
-  if (!agentMay(input.mode, "open")) {
+  if (!agentMay(mode, "open")) {
     return { act: "nothing", why: "grant_forbids_open" };
   }
   if (!input.mayOpenNow) return { act: "nothing", why: "leash_refuses_open" };

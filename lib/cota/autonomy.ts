@@ -29,7 +29,7 @@ import { autonomyTypedData } from "./typedData";
 /** Actions the agent can want to take without a hunter present. */
 export type AgentAction = "open" | "close";
 
-export const AUTONOMY_MODES = ["off", "exit_only", "full"] as const;
+export const AUTONOMY_MODES = ["off", "observe", "exit_only", "full"] as const;
 export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
 
 /**
@@ -42,7 +42,9 @@ export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
  * trading on every leash at once.
  */
 export function parseAutonomy(stored: string | null | undefined): AutonomyMode {
-  if (stored === "exit_only" || stored === "full") return stored;
+  if (stored === "exit_only" || stored === "full" || stored === "observe") {
+    return stored;
+  }
   return "off";
 }
 
@@ -66,7 +68,40 @@ export function parseAutonomy(stored: string | null | undefined): AutonomyMode {
 export function agentMay(mode: AutonomyMode, action: AgentAction): boolean {
   if (mode === "full") return true;
   if (mode === "exit_only") return action === "close";
+  // "observe" and "off" both authorise nothing. They differ in what the agent
+  // DOES with that: off skips the hunter entirely, observe still evaluates and
+  // writes down what it would have done. See observeOnly.
   return false;
+}
+
+/**
+ * Does this mode mean "work it out, write it down, send nothing"?
+ *
+ * The operator-level dryRun flag on the run endpoint is request-wide: one value
+ * for every leash in the run. That makes it a kill switch for us and no
+ * protection at all for a hunter — the moment it is off, a hunter who grants
+ * permission goes from consenting to being traded in under a minute, with
+ * nothing having shown them what the agent would do first.
+ *
+ * observe is that protection, owned by the person whose money it is. The agent
+ * evaluates exactly what `full` would evaluate, logs the decision with its
+ * numbers, and cannot send. A hunter watches "it would have closed at +327 bps"
+ * accumulate for a day and then decides, on evidence, whether to let it act.
+ */
+export function observeOnly(mode: AutonomyMode): boolean {
+  return mode === "observe";
+}
+
+/**
+ * The permissions to EVALUATE under.
+ *
+ * observe reasons as though it were full, because a log that only showed what a
+ * restricted mode would have done would be a worse basis for the decision the
+ * hunter is about to make. Nothing can be sent under it regardless — that is
+ * enforced by the caller checking observeOnly, not by narrowing this.
+ */
+export function evaluationMode(mode: AutonomyMode): AutonomyMode {
+  return mode === "observe" ? "full" : mode;
 }
 
 /**

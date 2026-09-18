@@ -15,7 +15,7 @@ import { venueConfirmedFill, venueRefusedOrder } from "@/lib/cota/venue/frames";
 import type { MarkedMarket } from "@/lib/cota/venue/account-state";
 import { readDayState } from "@/lib/cota/day-state";
 import { boundFromRow } from "@/lib/cota/bound";
-import { verifyStoredGrant } from "@/lib/cota/autonomy";
+import { observeOnly, verifyStoredGrant } from "@/lib/cota/autonomy";
 import { decide } from "@/lib/cota/agent/decide";
 import { postOnlyPrice } from "@/lib/cota/post-only-price";
 import { TIF_POST_ONLY } from "@/lib/cota/order";
@@ -216,8 +216,30 @@ export async function POST(req: Request) {
         log({ act: "nothing", why: plan.why });
         continue;
       }
+      // Two different reasons not to send, kept apart in the log because they
+      // are different facts. dryRun is ours — an operator switch covering the
+      // whole run. observe is the HUNTER'S, on their own leash, and is the only
+      // one of the two they control.
+      if (observeOnly(grant.mode)) {
+        log({
+          act: plan.act,
+          why: plan.why,
+          observed: true,
+          ...(plan.act === "close"
+            ? { netUsd: plan.netUsd, netBps: plan.netBps }
+            : {}),
+        });
+        continue;
+      }
       if (dryRun) {
-        log({ act: plan.act, why: plan.why, dryRun: true });
+        log({
+          act: plan.act,
+          why: plan.why,
+          dryRun: true,
+          ...(plan.act === "close"
+            ? { netUsd: plan.netUsd, netBps: plan.netBps }
+            : {}),
+        });
         continue;
       }
       if (read.account && !read.account.forwardingAllowed) {

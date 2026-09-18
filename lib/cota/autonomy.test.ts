@@ -210,3 +210,42 @@ describe("verifyStoredGrant — the signature is checked on READ", () => {
     expect(r.mode).toBe("off");
   });
 });
+
+describe("observe — the hunter's own dry run", () => {
+  it("authorises nothing, like off", async () => {
+    const { agentMay } = await import("./autonomy");
+    expect(agentMay("observe", "open")).toBe(false);
+    expect(agentMay("observe", "close")).toBe(false);
+  });
+
+  it("but EVALUATES as full, unlike off", async () => {
+    // The distinction that makes it useful. A log showing what a restricted
+    // agent would have done is a poor basis for deciding whether to unrestrict
+    // it — so observe reasons as the most permissive mode and sends nothing.
+    const { evaluationMode, observeOnly } = await import("./autonomy");
+    expect(evaluationMode("observe")).toBe("full");
+    expect(observeOnly("observe")).toBe(true);
+  });
+
+  it("no other mode is observe-only", async () => {
+    const { observeOnly } = await import("./autonomy");
+    for (const m of ["off", "exit_only", "full"] as const) {
+      expect(observeOnly(m)).toBe(false);
+    }
+  });
+
+  it("evaluationMode leaves every other mode alone", async () => {
+    const { evaluationMode } = await import("./autonomy");
+    for (const m of ["off", "exit_only", "full"] as const) {
+      expect(evaluationMode(m)).toBe(m);
+    }
+  });
+
+  it("parses from storage, and a near miss still fails closed", async () => {
+    const { parseAutonomy } = await import("./autonomy");
+    expect(parseAutonomy("observe")).toBe("observe");
+    for (const v of ["Observe", "OBSERVE", "observe ", "watch"]) {
+      expect(parseAutonomy(v)).toBe("off");
+    }
+  });
+});

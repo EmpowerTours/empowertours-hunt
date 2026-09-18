@@ -102,9 +102,12 @@ const T = {
     autoLede:
       "Permite que el agente actúe sin ti, dentro de esta misma correa. Firmas el permiso; caduca solo.",
     autoOff: "Apagado",
+    autoObserve: "Observar",
     autoExit: "Solo salir",
     autoFull: "Completo",
     autoOffNote: "El agente no hace nada sin que tú estés.",
+    autoObserveNote:
+      "Decide cada minuto y lo anota abajo, pero NO puede operar. Míralo un día y luego decide si lo sueltas.",
     autoExitNote:
       "Puede cerrar con ganancia. Nunca puede abrir, así que no puede aumentar tu exposición.",
     autoFullNote:
@@ -117,9 +120,10 @@ const T = {
     histNone:
       "Todavía no ha decidido nada. Corre cada minuto; concédele permiso y aparecerá aquí.",
     histDry: "simulación",
+    histObserved: "observando",
     noteTitle: "Nota privada",
     noteLede:
-      "Sellada en tu navegador con una clave derivada de tu cara — con una sal distinta a la de tu billetera. El servidor guarda texto cifrado que no puede abrir.",
+      "Sellada en tu navegador con una clave derivada de tu passkey — con una sal distinta a la de tu billetera. El servidor guarda texto cifrado que no puede abrir.",
     noteUnlock: "Desbloquear con tu passkey",
     noteUnlocking: "Desbloqueando…",
     notePlaceholder: "Por qué firmaste esta correa, qué esperas del agente…",
@@ -205,9 +209,12 @@ const T = {
     autoLede:
       "Let the agent act without you, inside this same leash. You sign the permission; it expires on its own.",
     autoOff: "Off",
+    autoObserve: "Observe",
     autoExit: "Exit only",
     autoFull: "Full",
     autoOffNote: "The agent does nothing unless you are here.",
+    autoObserveNote:
+      "It decides every minute and writes it down below, but CANNOT trade. Watch it for a day, then decide whether to let it act.",
     autoExitNote:
       "It can close in profit. It can never open, so it cannot increase your exposure.",
     autoFullNote:
@@ -220,9 +227,10 @@ const T = {
     histNone:
       "No decisions yet. It runs every minute — grant it permission and they appear here.",
     histDry: "dry run",
+    histObserved: "observed",
     noteTitle: "Private note",
     noteLede:
-      "Sealed in your browser with a key derived from your face — under a different salt from your wallet. The server stores ciphertext it cannot open.",
+      "Sealed in your browser with a key derived from your passkey — under a different salt from your wallet. The server stores ciphertext it cannot open.",
     noteUnlock: "Unlock with your passkey",
     noteUnlocking: "Unlocking…",
     notePlaceholder: "Why you signed this leash, what you expect of the agent…",
@@ -299,7 +307,9 @@ export default function TradePage() {
     unrealisedUsd: number | null;
   } | null>(null);
   const [posMark, setPosMark] = useState<number | null>(null);
-  const [autonomy, setAutonomy] = useState<"off" | "exit_only" | "full">("off");
+  const [autonomy, setAutonomy] = useState<
+    "off" | "observe" | "exit_only" | "full"
+  >("off");
   const [autonomyUntil, setAutonomyUntil] = useState<string | null>(null);
   const [history, setHistory] = useState<
     {
@@ -308,7 +318,12 @@ export default function TradePage() {
       why: string;
       dryRun: boolean;
       at: string;
-      detail?: Record<string, unknown> | null;
+      detail?: {
+        netUsd?: number;
+        netBps?: number;
+        observed?: boolean;
+        [k: string]: unknown;
+      } | null;
     }[]
   >([]);
   const [noteKey, setNoteKey] = useState<CryptoKey | null>(null);
@@ -616,7 +631,7 @@ export default function TradePage() {
       );
       if (!res.ok) return;
       const body = (await res.json()) as {
-        mode?: "off" | "exit_only" | "full";
+        mode?: "off" | "observe" | "exit_only" | "full";
         notAfter?: string | null;
       };
       setAutonomy(body.mode ?? "off");
@@ -646,7 +661,7 @@ export default function TradePage() {
 
   /** Grant or withdraw. Only a grant is signed — see signAutonomy. */
   const setAutonomyMode = useCallback(
-    async (mode: "off" | "exit_only" | "full") => {
+    async (mode: "off" | "observe" | "exit_only" | "full") => {
       if (!cotaDigest) return;
       setAutoBusy(true);
       setAutoMsg(null);
@@ -1041,6 +1056,7 @@ export default function TradePage() {
               {(
                 [
                   ["off", t.autoOff],
+                  ["observe", t.autoObserve],
                   ["exit_only", t.autoExit],
                   ["full", t.autoFull],
                 ] as const
@@ -1065,7 +1081,9 @@ export default function TradePage() {
                 ? t.autoFullNote
                 : autonomy === "exit_only"
                   ? t.autoExitNote
-                  : t.autoOffNote}
+                  : autonomy === "observe"
+                    ? t.autoObserveNote
+                    : t.autoOffNote}
             </p>
             {autonomy !== "off" && autonomyUntil && (
               <p className="text-ink-faint text-xs">
@@ -1110,8 +1128,32 @@ export default function TradePage() {
                         {h.act}
                       </span>
                       <span className="text-ink-faint grow truncate text-right">
+                        {/* The amount first, because it is the thing worth
+                            reading. A log of "close · take_profit" repeated
+                            forty times is not evidence; a column of figures is
+                            what a hunter can actually judge before deciding to
+                            let the agent press the button. */}
+                        {typeof h.detail?.netUsd === "number" && (
+                          <span
+                            className={
+                              h.detail.netUsd >= 0
+                                ? "text-[#4ade80] mr-2"
+                                : "text-alert mr-2"
+                            }
+                          >
+                            {h.detail.netUsd >= 0 ? "+" : ""}
+                            {h.detail.netUsd.toFixed(4)}
+                            {typeof h.detail.netBps === "number"
+                              ? ` (${h.detail.netBps.toFixed(0)}bps)`
+                              : ""}
+                          </span>
+                        )}
                         {h.why}
-                        {h.dryRun ? ` · ${t.histDry}` : ""}
+                        {h.detail?.observed
+                          ? ` · ${t.histObserved}`
+                          : h.dryRun
+                            ? ` · ${t.histDry}`
+                            : ""}
                       </span>
                     </li>
                   ))}
