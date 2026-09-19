@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note } from "@/components/ui/primitives";
@@ -47,6 +47,36 @@ const CREATE_WARNING = {
   },
 } as const;
 
+/* ---------------------------------------------------------------------------
+   What "WAITING…" means, while it means it.
+
+   The ceremony is given 60s, guarded at 75s (lib/auth/passkey.ts), because a
+   player outdoors picking a passkey off a system sheet needs that room and
+   cutting it short would break a working sign-in to make a broken one fail
+   faster. But for 75 seconds the button said "WAITING…" and nothing else, which
+   is indistinguishable from a frozen app — and that is exactly the window in
+   which someone force-quits and reports it as a hang.
+
+   So the wait counts, and after a few seconds it says what should have happened
+   by now. A sheet that never appeared is itself the diagnosis: the request went
+   to the system and nothing answered it.
+--------------------------------------------------------------------------- */
+const WAITING = {
+  en: {
+    title: "Still waiting",
+    hint: "Your phone should be showing a passkey sheet. If nothing appeared, the request reached the system and got no answer — wait for it to finish and the reason will show here.",
+    elapsed: (s: number) => `waiting ${s}s`,
+  },
+  es: {
+    title: "Aún esperando",
+    hint: "Tu teléfono debería mostrar una hoja de llave de acceso. Si no apareció nada, la solicitud llegó al sistema y nadie respondió — espera a que termine y aquí aparecerá el motivo.",
+    elapsed: (s: number) => `esperando ${s}s`,
+  },
+} as const;
+
+/** After this many seconds with no system sheet, saying so is more use than silence. */
+const HINT_AFTER_S = 6;
+
 /**
  * Structural, not textual: NoPasskeyFoundError carries this flag. Matching on
  * it means the copy can be rewritten or translated without silently removing
@@ -73,17 +103,37 @@ export function SignInPrompt({
   className?: string;
 }) {
   const auth = useAuthSlot();
-  const warn = CREATE_WARNING[useLocale() === "es" ? "es" : "en"];
+  const locale = useLocale() === "es" ? "es" : "en";
+  const warn = CREATE_WARNING[locale];
+  const waiting = WAITING[locale];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The ceremony's own error, shown verbatim: this is what gets screenshotted. */
   const [detail, setDetail] = useState<string | null>(null);
   const [offerCreate, setOfferCreate] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const tick = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+
+  // One interval for as long as a ceremony is open, cleared on every exit —
+  // including unmount, which a player navigating away mid-prompt will do.
+  useEffect(() => {
+    if (!busy) {
+      if (tick.current !== undefined) clearInterval(tick.current);
+      tick.current = undefined;
+      return;
+    }
+    tick.current = setInterval(() => setElapsed((n) => n + 1), 1000);
+    return () => {
+      if (tick.current !== undefined) clearInterval(tick.current);
+      tick.current = undefined;
+    };
+  }, [busy]);
 
   const run = async (kind: "sign-in" | "create") => {
     setBusy(true);
     setError(null);
     setDetail(null);
+    setElapsed(0);
     try {
       await (kind === "create" ? auth.createWallet() : auth.signIn());
       auth.refresh();
@@ -111,8 +161,14 @@ export function SignInPrompt({
         onClick={() => void run("sign-in")}
         disabled={busy || !auth.canSignIn}
       >
-        {busy ? "WAITING…" : label}
+        {busy ? `${waiting.elapsed(elapsed)}…` : label}
       </Button>
+
+      {busy && elapsed >= HINT_AFTER_S ? (
+        <Note tone="warn" title={waiting.title}>
+          {waiting.hint}
+        </Note>
+      ) : null}
 
       {error ? (
         <Note tone="warn" title="Not signed in">
@@ -138,7 +194,7 @@ export function SignInPrompt({
           onClick={() => void run("create")}
           disabled={busy}
         >
-          {busy ? "WAITING…" : createLabel}
+          {busy ? `${waiting.elapsed(elapsed)}…` : createLabel}
         </Button>
       ) : null}
     </div>
