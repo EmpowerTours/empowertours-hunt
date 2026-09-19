@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Note, Panel } from "@/components/ui/primitives";
+import { useAuthSlot } from "@/app/providers";
 import { RP_ID, storedCredential } from "@/lib/auth/passkey";
 import { HUNT_PRF_SALT_LABEL } from "@/lib/auth/derive";
 import { PasskeyProbe } from "@/components/diag/PasskeyProbe";
@@ -35,6 +36,7 @@ interface Check {
 
 export default function DiagnosticsPage() {
   const [checks, setChecks] = useState<Check[] | null>(null);
+  const auth = useAuthSlot();
 
   useEffect(() => {
     void (async () => {
@@ -230,6 +232,29 @@ export default function DiagnosticsPage() {
                 </div>
               ))}
             </dl>
+          </Panel>
+
+          {/* The comparison the whole server.url design exists to make possible, and
+          which until now needed two different screens and a good memory: open
+          this page in the app and in the browser, and the two addresses must be
+          identical. Different addresses mean two wallets and a split balance —
+          mobile/README.md says stop, and it means it. */}
+          <Panel className="space-y-2">
+            <h2 className="text-ink text-sm font-semibold">
+              Your wallet address
+            </h2>
+            <p className="text-ink-dim text-xs leading-snug">
+              Open this page in the app AND in your browser on the same phone.
+              The address below must be identical in both. If it is not, stop
+              and do not fund either one.
+            </p>
+            <p
+              className={`mt-1 font-mono text-sm break-all ${
+                auth.walletAddress ? "text-phosphor" : "text-ink-faint"
+              }`}
+            >
+              {auth.walletAddress ?? "not signed in on this screen"}
+            </p>
           </Panel>
 
           <PasskeyProbe />
