@@ -567,6 +567,20 @@ export default function CotaPage() {
           refreshKey={signedDigest}
         />
       )}
+
+      {/* Always here, not only after a failure.
+          /diag was reachable from the sign-in prompt's error state, which meant
+          it vanished the moment sign-in started working — and the first thing
+          anyone needs AFTER a successful sign-in on a new device is the wallet
+          address, to check it matches the browser's. A diagnostic you can only
+          reach by failing is the wrong shape. The app has no address bar, so a
+          quiet footer link is the whole route. */}
+      <a
+        href="/diag"
+        className="text-ink-faint hover:text-ink-dim block pt-2 text-center text-xs underline underline-offset-4"
+      >
+        {lang === "es" ? "Diagnóstico y dirección" : "Diagnostics & address"}
+      </a>
     </main>
   );
 }
