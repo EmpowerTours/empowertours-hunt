@@ -257,6 +257,22 @@ model CotaFill {
   orderId   Int
   filledAt  DateTime
 
+  // "observed" | "adopted" — see lib/cota/venue/pnl.ts: FillSource. Nullable
+  // with NO default on purpose: a row written before this column existed has
+  // unknown provenance, and both rows in the ledger at the time it was added
+  // came through adoption, so a default of "observed" would have asserted the
+  // opposite of the truth on exactly the rows it applied to. Not an enum
+  // because widening one is a migration and this will likely gain a third
+  // value (a venue-supplied fill history, if Perpl ever exposes one).
+  source       String?
+  // Perpl's OWN mark at record time, or null when there is no honest value —
+  // notably on every adopted row, whose timestamp is the reconcile moment
+  // rather than the fill. Captured here because it is unrecoverable later: no
+  // historical mark feed exists, and `filledAt` is not precise enough to look
+  // one up against. Measures spread/slippage vs the price we were shown; it is
+  // NOT an independent benchmark and cannot show adverse selection.
+  venueMarkUsd Float?
+
   createdAt DateTime @default(now())
 
   @@index([playerId, account, filledAt])

@@ -43,6 +43,7 @@ export function fillToLedgerFill(
   orderType: number,
   filledAtMs: number,
   orderId: number,
+  venueMarkUsd?: number | null,
 ): LedgerFill {
   return {
     marketId: market.id,
@@ -52,5 +53,13 @@ export function fillToLedgerFill(
     feeUsd: Number(fill.feeBaseUnits) / 10 ** COLLATERAL_DECIMALS,
     timestampMs: filledAtMs,
     orderId,
+    // Every fill built from a real mt 25 frame is observed BY CONSTRUCTION —
+    // this function is only reachable with one in hand. The adoption path
+    // builds its rows itself and stamps `adopted` there.
+    source: "observed",
+    // Optional so the 40-odd existing construction sites keep compiling. A
+    // caller with no mark passes nothing and the row records null, which reads
+    // as "not known" rather than claiming a mark we did not have.
+    venueMarkUsd: venueMarkUsd ?? null,
   };
 }

@@ -245,6 +245,7 @@ export async function POST(req: Request) {
             plan.orderType,
             Date.now(),
             agentOrderId,
+            markUsd,
           ),
         );
       } catch (e) {

@@ -319,6 +319,13 @@ export function planAdoption(args: {
         feeUsd: 0,
         timestampMs: nowMs,
         orderId: order.orderId,
+        source: "adopted",
+        // Null, not `marks.get(marketId)`. A mark IS in scope here, but it is
+        // the mark at RECONCILE time, and `timestampMs` above is the reconcile
+        // moment too — so recording it would pair a real number with a time
+        // the fill did not happen at. An absent value is the honest one; a
+        // plausible one silently poisons anything that reads it later.
+        venueMarkUsd: null,
       });
       resolvedOrderIds.push(order.id);
       continue;
@@ -433,6 +440,10 @@ export function planAdoption(args: {
       ),
       timestampMs: nowMs,
       orderId,
+      source: "adopted",
+      // See the sibling push above: the mark here is the reconcile-time mark
+      // against a reconcile-time stamp, so it is not recorded.
+      venueMarkUsd: null,
     });
   }
 

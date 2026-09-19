@@ -274,6 +274,7 @@ export async function POST(req: Request) {
           orderType: cp.orderType,
           sizeUnits: cp.sizeUnits,
           agentOrderId,
+          markUsd,
         });
         log({
           act: "close",
@@ -373,6 +374,7 @@ export async function POST(req: Request) {
         orderType: op.orderType,
         sizeUnits: op.sizeUnits,
         agentOrderId,
+        markUsd,
       });
       log({
         act: "open",
@@ -410,6 +412,8 @@ async function recordOutcome(
     orderType: number;
     sizeUnits: number;
     agentOrderId: number;
+    /** Perpl's mark read just before this order went out. */
+    markUsd: number;
   },
 ) {
   const { result } = a;
@@ -424,6 +428,7 @@ async function recordOutcome(
           a.orderType,
           Date.now(),
           a.agentOrderId,
+          a.markUsd,
         ),
       );
     } else if (result.accepted && !venueRefusedOrder(result.update)) {

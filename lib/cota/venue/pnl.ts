@@ -21,6 +21,25 @@
 
 import { USD_SCALE } from "./account-state";
 
+/**
+ * How a ledger row got here, which decides whether it can be analysed.
+ *
+ * - `observed`: the venue sent an mt 25 fill frame and we wrote what it said.
+ *   `priceUsd` is a realized execution price. `timestampMs` is still only
+ *   `Date.now()` at frame-processing time — the frame carries no timestamp of
+ *   its own (venue/frames.ts: Fill) — so it is late by one network hop, always
+ *   in the same direction. Fine at 30s+, not at 5s.
+ * - `adopted`: reconstructed by differencing this ledger against the venue's
+ *   lifetime realised total. `priceUsd` is IMPLIED, and `timestampMs` is the
+ *   reconcile moment, which can be hours after the fill actually happened.
+ *   Correct for the PnL fold, which only nets sizes and prices; useless for
+ *   anything that reads the timestamp as a time.
+ *
+ * The distinction exists because both kinds are plain Floats in the same table
+ * and are otherwise indistinguishable after the fact.
+ */
+export type FillSource = "observed" | "adopted";
+
 export interface LedgerFill {
   marketId: number;
   /** +1 = buy (opens/adds long, covers short); -1 = sell. From the order type. */
@@ -35,6 +54,21 @@ export interface LedgerFill {
   timestampMs: number;
   /** Order id/rq, to count distinct orders per day. */
   orderId: number;
+  /** Where this row came from — see FillSource. Absent = unknown provenance,
+   *  which is what every row written before this field existed reads as. */
+  source?: FillSource;
+  /** Perpl's own mark for this market at the moment the fill was recorded, or
+   *  null when there isn't an honest one to record.
+   *
+   *  This is the VENUE's mark, not an independent reference: it comes off the
+   *  same market-data feed that priced the fill, so it measures spread and
+   *  slippage against the price we were shown, NOT adverse selection. A real
+   *  markout needs a CEX feed and is not this field.
+   *
+   *  It is captured at write time because it cannot be recovered afterwards —
+   *  nothing stores the venue's historical marks, and `timestampMs` is not
+   *  accurate enough to look one up against (see FillSource). */
+  venueMarkUsd?: number | null;
 }
 
 export interface OpenPos {

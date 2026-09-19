@@ -45,10 +45,38 @@ describe("fillToLedgerFill — descale off the wire", () => {
       // every order this agent sends, so counting distinct orders by it always
       // answered 1 and the trades-per-day ceiling never bound.
       orderId: 4242,
+      // Reachable only with a real mt 25 frame in hand, so it is observed by
+      // construction.
+      source: "observed",
+      // No mark passed: null, not absent and not a guess.
+      venueMarkUsd: null,
     });
   });
 
   it("a close-long fill is a sell", () => {
     expect(fillToLedgerFill(fill, MON_MARKET, 3, 1, 1).direction).toBe(-1);
+  });
+
+  it("records the venue mark when the caller has one", () => {
+    const lf = fillToLedgerFill(fill, MON_MARKET, 1, 1_700_000, 4242, 0.0251);
+    expect(lf.venueMarkUsd).toBe(0.0251);
+    expect(lf.source).toBe("observed");
+  });
+
+  it("a mark of 0 is recorded, not swallowed as absent", () => {
+    // `?? null` and not `|| null`: a legitimately zero mark must survive. With
+    // `||` this row would claim no mark was known, which is a different and
+    // wrong statement.
+    expect(fillToLedgerFill(fill, MON_MARKET, 1, 1, 1, 0).venueMarkUsd).toBe(0);
+  });
+
+  it("never stamps a fill it built as adopted", () => {
+    // The whole point of the column: if this function could ever produce
+    // `adopted`, the two kinds would be back to indistinguishable.
+    for (const ot of [1, 2, 3, 4]) {
+      expect(fillToLedgerFill(fill, MON_MARKET, ot, 1, 1).source).toBe(
+        "observed",
+      );
+    }
   });
 });

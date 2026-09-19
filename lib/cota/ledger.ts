@@ -10,6 +10,12 @@ import { randomInt } from "node:crypto";
 
 export { directionOfOrderType, fillToLedgerFill } from "./venue/normalize";
 
+/** Column value for a row whose provenance was never recorded. Rows written
+ *  before `source` existed read as null and must not be guessed at: both the
+ *  fills in the ledger as of 2026-09-19 arrived via adoption, so defaulting
+ *  them to "observed" would assert the opposite of the truth. */
+const UNKNOWN_SOURCE = null;
+
 /**
  * A fresh id for one order this agent places, unique enough to count by.
  *
@@ -38,6 +44,8 @@ export async function recordFill(
       feeUsd: f.feeUsd,
       orderId: f.orderId,
       filledAt: new Date(f.timestampMs),
+      source: f.source ?? UNKNOWN_SOURCE,
+      venueMarkUsd: f.venueMarkUsd ?? null,
     },
   });
 }
@@ -59,6 +67,12 @@ export async function loadFills(
     feeUsd: r.feeUsd,
     timestampMs: r.filledAt.getTime(),
     orderId: r.orderId,
+    // Narrow the free-text column back to the union. Anything that is not one
+    // of the two known values — including null from a pre-migration row — comes
+    // back undefined, so a consumer sees "unknown", never a wrong label.
+    source:
+      r.source === "observed" || r.source === "adopted" ? r.source : undefined,
+    venueMarkUsd: r.venueMarkUsd,
   }));
 }
 
@@ -80,6 +94,8 @@ export async function recordFills(
       feeUsd: f.feeUsd,
       orderId: f.orderId,
       filledAt: new Date(f.timestampMs),
+      source: f.source ?? UNKNOWN_SOURCE,
+      venueMarkUsd: f.venueMarkUsd ?? null,
     })),
   });
 }

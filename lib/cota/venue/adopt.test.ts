@@ -104,6 +104,58 @@ describe("planAdoption — the agent's own order", () => {
   });
 });
 
+describe("planAdoption — provenance", () => {
+  // Both adoption branches must stamp their rows, and neither may record a
+  // mark. A mark IS in scope inside planAdoption, so "it happens not to set
+  // one" is not a property — it has to be asserted, or a later edit that
+  // helpfully fills it in would pair a reconcile-time mark with a
+  // reconcile-time stamp and nothing would complain.
+  it("stamps the pending-order branch adopted, with no mark", () => {
+    const plan = planAdoption({
+      fold: [],
+      venue: [live5273()],
+      marks,
+      pending: [pendingBuy()],
+      nowMs: NOW,
+      trust: "pending",
+    });
+    expect(plan.fills).toHaveLength(1);
+    expect(plan.fills[0].source).toBe("adopted");
+    expect(plan.fills[0].venueMarkUsd).toBeNull();
+  });
+
+  it("stamps the hunter-say-so branch adopted, with no mark", () => {
+    const plan = planAdoption({
+      fold: [],
+      venue: [live5273()],
+      marks,
+      pending: [],
+      nowMs: NOW,
+      trust: "hunter",
+    });
+    expect(plan.fills.length).toBeGreaterThan(0);
+    for (const f of plan.fills) {
+      expect(f.source).toBe("adopted");
+      expect(f.venueMarkUsd).toBeNull();
+    }
+  });
+
+  it("never emits a row this path did not build", () => {
+    // If any adopted row ever read "observed", the column would be worse than
+    // absent: a consumer filtering on it would pull an implied price at a
+    // reconcile timestamp into an analysis that trusts both.
+    const plan = planAdoption({
+      fold: [],
+      venue: [live5273()],
+      marks,
+      pending: [pendingBuy()],
+      nowMs: NOW,
+      trust: "pending",
+    });
+    expect(plan.fills.every((f) => f.source !== "observed")).toBe(true);
+  });
+});
+
 describe("planAdoption — what it must refuse", () => {
   it("will NOT adopt a position no pending order accounts for", () => {
     // Size the hunter opened somewhere else. Adopting it silently would fold a

@@ -1,0 +1,26 @@
+-- Provenance and the venue's own mark, for every Cota fill from here on.
+--
+-- WHY: the table holds two kinds of row that are indistinguishable once
+-- written. An `observed` row is what an mt 25 fill frame said. An `adopted` row
+-- was reconstructed by differencing this ledger against the venue's lifetime
+-- realised total — its price is IMPLIED and its `filledAt` is the reconcile
+-- moment, which can be hours after the fill. Both are correct for the PnL fold,
+-- which only nets sizes and prices. Neither is separable afterwards, so any
+-- later execution-quality work would silently mix a real price at a real time
+-- with an implied price at a wrong one.
+--
+-- `venueMarkUsd` is captured at write time because it cannot be recovered:
+-- nothing stores the venue's historical marks. It is Perpl's own mark off the
+-- same feed that priced the fill, so it measures spread and slippage against
+-- the price we were shown — NOT adverse selection, which needs an independent
+-- CEX reference this codebase does not have.
+--
+-- Both columns are NULLABLE with NO DEFAULT. Existing rows genuinely have
+-- unknown provenance, and backfilling them to 'observed' would be a false
+-- claim: every row in the ledger when this migration was written arrived
+-- through the adoption path, because a frame-parsing bug meant the observed
+-- path never fired in production (lib/cota/venue/frames.ts: parseFills).
+-- Additive and nullable, so this is safe against a live table with no rewrite
+-- and no lock beyond the catalogue update.
+ALTER TABLE "CotaFill" ADD COLUMN "source" TEXT;
+ALTER TABLE "CotaFill" ADD COLUMN "venueMarkUsd" DOUBLE PRECISION;
