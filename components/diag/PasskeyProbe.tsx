@@ -52,13 +52,27 @@ type Outcome = {
   tone: "ok" | "bad";
 };
 
-/** What each probe PROVED, as opposed to what it printed. */
+/**
+ * What each probe PROVED, as opposed to what it printed.
+ *
+ * "timeout" and "error" are kept apart on purpose. A sheet that opens and never
+ * resolves and a provider that answers with a failure look equally red on the
+ * screen and mean different things — the first is nothing listening, the second
+ * is something listening and unable to serve. The first version of this panel
+ * collapsed both into "both lookups timed out", and then said exactly that
+ * about a device which had in fact answered in three seconds. A diagnostic that
+ * narrates a mechanism the evidence does not show is worse than none.
+ */
+type Fail = "timeout" | "error";
 type Verdicts = {
   /** The credential was found and the assertion completed. */
-  plain?: "ok" | "fail";
+  plain?: "ok" | Fail;
   /** "noprf" = the assertion worked but the extension was not evaluated. */
-  prf?: "ok" | "noprf" | "fail";
+  prf?: "ok" | "noprf" | Fail;
 };
+
+/** Our own guard, as opposed to anything the platform reports. */
+const NO_ANSWER = "NoAnswer:";
 
 /* ---------------------------------------------------------------------------
    The probe has to state its own conclusion.
@@ -72,10 +86,19 @@ type Verdicts = {
 function verdictOf(v: Verdicts): { title: string; body: string } | null {
   if (v.plain === undefined || v.prf === undefined) return null;
 
-  if (v.plain === "fail" && v.prf === "fail") {
+  const bothFailed = v.plain !== "ok" && v.prf !== "ok" && v.prf !== "noprf";
+
+  if (bothFailed && v.plain === "timeout" && v.prf === "timeout") {
     return {
       title: "This device never answered",
-      body: "Both lookups timed out, with and without extensions — so this is not about what the request contained. The system credential sheet opened and nothing responded to it. Nothing in the app or on the website can fix that. Try the same app on a different Android phone: if sign-in works there, this device is the problem.",
+      body: "Both lookups ran out the clock, with and without extensions — so this is not about what the request contained. The system credential sheet opened and nothing responded to it. Nothing in the app or on the website can fix that. Try the same app on a different Android phone: if sign-in works there, this device is the problem.",
+    };
+  }
+
+  if (bothFailed) {
+    return {
+      title: "The credential manager refused",
+      body: "Both lookups failed the same way, with and without extensions, so this is not about what the request contained — and they failed quickly rather than hanging, which means the provider IS answering and cannot serve the credential. That is usually Google Play services or Google Password Manager on this device, not the app: update both from the Play Store, confirm the phone is signed in to the Google account holding the passkey, and check Google Password Manager is enabled as a credential provider. This app signs in on other Android phones.",
     };
   }
   if (v.plain === "ok" && v.prf !== "ok") {
@@ -144,7 +167,7 @@ export function PasskeyProbe() {
     // would hang exactly like the thing it is measuring.
     const guard = new Promise<never>((_, reject) =>
       setTimeout(
-        () => reject(new Error("NoAnswer: the sheet never resolved")),
+        () => reject(new Error(`${NO_ANSWER} the sheet never resolved`)),
         PROBE_TIMEOUT_MS + 5_000,
       ),
     );
@@ -156,7 +179,7 @@ export function PasskeyProbe() {
       ])) as PublicKeyCredential | null;
 
       if (cred === null) {
-        setVerdicts((v) => ({ ...v, [kind]: "fail" }));
+        setVerdicts((v) => ({ ...v, [kind]: "error" }));
         setResults((r) => [
           ...r,
           {
@@ -194,7 +217,8 @@ export function PasskeyProbe() {
         },
       ]);
     } catch (e: unknown) {
-      setVerdicts((v) => ({ ...v, [kind]: "fail" }));
+      const timedOut = e instanceof Error && e.message.startsWith(NO_ANSWER);
+      setVerdicts((v) => ({ ...v, [kind]: timedOut ? "timeout" : "error" }));
       setResults((r) => [
         ...r,
         {
