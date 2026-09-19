@@ -44,7 +44,7 @@ concurrency:
 jobs:
   compile:
     name: Compile (unsigned)
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -66,10 +66,26 @@ jobs:
         working-directory: mobile
         run: npx cap sync ios
 
-      - name: Show toolchain
+      # Apple REFUSES uploads built against an older SDK — as of now, anything
+      # below iOS 26. That rule is enforced at upload, not at build, so a wrong
+      # toolchain produces a perfectly good IPA and then fails after the slowest
+      # step in the pipeline. Selecting the newest Xcode and asserting the SDK
+      # here moves that failure to the top of the job, where it costs seconds.
+      - name: Select the newest Xcode and check the SDK
+        id: xcode
         run: |
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null \
+            | sort -V | tail -1)
+          echo "using $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
           xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
+          SDK=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iphoneos SDK: $SDK"
+          MAJOR=${SDK%%.*}
+          if [ "$MAJOR" -lt 26 ]; then
+            echo "::error::iOS SDK $SDK is below 26. App Store Connect rejects uploads built with it, and the runner image has nothing newer. Available: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+            exit 1
+          fi
 
       # Unsigned, and a simulator destination, so this needs no certificate and
       # no provisioning profile. It compiles every line the signed build would.
@@ -101,7 +117,7 @@ jobs:
   archive:
     name: Archive and upload to TestFlight
     needs: compile
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     # Only when the credentials exist. Secrets are not readable in `if:` on
     # pull requests from forks, and an unsigned fork PR should not try to sign.
@@ -123,6 +139,13 @@ jobs:
 
       # Bail out politely rather than failing, so the workflow is green until
       # somebody decides to set this up.
+      - name: Select the newest Xcode
+        run: |
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
       - name: Check for App Store Connect credentials
         id: creds
         env:
