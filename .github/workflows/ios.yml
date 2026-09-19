@@ -186,6 +186,29 @@ jobs:
           echo "identities available to codesign:"
           security find-identity -v -p codesigning "$KEYCHAIN"
 
+      # Manual signing means we supply the profile; -allowProvisioningUpdates
+      # does not create one in that mode. This profile matters for one reason
+      # beyond existing: it carries the Associated Domains entitlement, without
+      # which the archive fails with "requires a provisioning profile with the
+      # Associated Domains feature" — and passkeys would not work even if it
+      # somehow built.
+      - name: Install the provisioning profile
+        if: steps.creds.outputs.present == 'true'
+        env:
+          PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$DIR"
+          # Xcode looks these up by UUID, not by filename, so the name on disk
+          # is arbitrary but the UUID must be the one inside the file.
+          printf '%s' "$PROFILE" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          UUID=$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" \
+            | plutil -extract UUID raw -)
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$DIR/$UUID.mobileprovision"
+          echo "installed profile $UUID"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" \
+            | plutil -extract Name raw -
+
       # MANUAL signing, arrived at the hard way.
       #
       # Automatic signing archives with a DEVELOPMENT identity, and a development
@@ -220,6 +243,7 @@ jobs:
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="EmpowerTours App Store CI" \
             archive
 
       - name: Export the IPA

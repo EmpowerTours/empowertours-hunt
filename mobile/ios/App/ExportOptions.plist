@@ -15,6 +15,12 @@
   shell that App Review's guideline 4.2 would likely reject as a repackaged
   website.
 
+  MANUAL signing, and an explicit profile by name. Automatic signing archives
+  with a DEVELOPMENT identity, which needs a registered device; this team has
+  none and needs none for the App Store. The named profile is the one carrying
+  the Associated Domains entitlement — without that the archive is refused
+  outright, and passkeys could not work in the WebView even if it built.
+
   uploadSymbols is off because there is no crash reporter consuming them and
   the dSYM upload is the slowest part of the export. manageAppVersionAndBuildNumber
   is off too: the workflow sets CURRENT_PROJECT_VERSION from the run number, so
@@ -28,7 +34,12 @@
 	<key>teamID</key>
 	<string>VYPJ7L4YTB</string>
 	<key>signingStyle</key>
-	<string>automatic</string>
+	<string>manual</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>xyz.empowertours.app</key>
+		<string>EmpowerTours App Store CI</string>
+	</dict>
 	<key>uploadSymbols</key>
 	<false/>
 	<key>manageAppVersionAndBuildNumber</key>
