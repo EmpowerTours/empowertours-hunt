@@ -191,9 +191,24 @@ export class NoPasskeyFoundError extends Error {
   /** Lets the UI show the create button without matching on message text. */
   readonly canCreateWallet = true;
 
-  constructor(message: string) {
+  /**
+   * What the ceremony ACTUALLY said, kept for the screen to show.
+   *
+   * "No wallet on this phone" is the right sentence for a player and a useless
+   * one for anybody diagnosing, because three different failures produce it:
+   * a WebView that cannot do WebAuthn at all (NotSupportedError), an
+   * asset-links delegation the device would not honour (SecurityError), and a
+   * genuine empty lookup or a cancelled prompt (NotAllowedError). Throwing the
+   * friendly sentence and dropping the cause meant a phone could only ever
+   * report the symptom, and the person holding it is not the person who can
+   * read logcat.
+   */
+  readonly detail?: string;
+
+  constructor(message: string, detail?: string) {
     super(message);
     this.name = "NoPasskeyFoundError";
+    this.detail = detail;
   }
 }
 
@@ -244,6 +259,7 @@ async function runSignIn(): Promise<void> {
       }
       throw new NoPasskeyFoundError(
         "No hunt wallet on this phone. If you have played before, open the hunt on the phone you first signed in with — or make a new wallet below.",
+        explainPasskeyError(err),
       );
     }
     await establishSession(passkey);

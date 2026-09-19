@@ -76,17 +76,25 @@ export function SignInPrompt({
   const warn = CREATE_WARNING[useLocale() === "es" ? "es" : "en"];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The ceremony's own error, shown verbatim: this is what gets screenshotted. */
+  const [detail, setDetail] = useState<string | null>(null);
   const [offerCreate, setOfferCreate] = useState(false);
 
   const run = async (kind: "sign-in" | "create") => {
     setBusy(true);
     setError(null);
+    setDetail(null);
     try {
       await (kind === "create" ? auth.createWallet() : auth.signIn());
       auth.refresh();
       onSignedIn?.();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Sign-in failed.");
+      const d =
+        typeof e === "object" && e !== null
+          ? (e as { detail?: unknown }).detail
+          : undefined;
+      setDetail(typeof d === "string" && d.length > 0 ? d : null);
       // Only a failed ASSERTION offers to create. A failed create must not
       // re-offer itself, or someone whose device cannot make passkeys at all
       // taps the same dead button forever.
@@ -109,6 +117,11 @@ export function SignInPrompt({
       {error ? (
         <Note tone="warn" title="Not signed in">
           {error}
+          {detail ? (
+            <span className="text-ink-faint mt-2 block font-mono text-xs break-words">
+              {detail}
+            </span>
+          ) : null}
         </Note>
       ) : null}
 

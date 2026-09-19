@@ -86,6 +86,25 @@ describe("signInWithPasskey", () => {
     expect(passkey.createAccount).not.toHaveBeenCalled();
   });
 
+  it("carries the ceremony's own error, because the friendly sentence hides three causes", async () => {
+    passkey.storedCredential.mockReturnValue(undefined);
+    passkey.signInAccount.mockRejectedValue(
+      Object.assign(new Error("WebAuthn is not supported on this device"), {
+        name: "NotSupportedError",
+      }),
+    );
+
+    const err = await signInWithPasskey().catch((e: unknown) => e);
+
+    // A WebView that cannot do WebAuthn and an empty lookup produce the same
+    // player-facing message. Without the cause a phone can only report the
+    // symptom, and the person holding it cannot read logcat.
+    expect((err as { detail?: unknown }).detail).toBe(
+      "WebAuthn is not supported on this device",
+    );
+    expect((err as Error).message).toContain("No hunt wallet on this phone");
+  });
+
   it("does NOT offer to create when this device already knows a credential", async () => {
     passkey.storedCredential.mockReturnValue({ credentialId: "cred-1" });
     passkey.signInAccount.mockRejectedValue(new Error("cancelled"));
