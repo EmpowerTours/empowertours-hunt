@@ -5,7 +5,9 @@ import { Button, Note, Panel } from "@/components/ui/primitives";
 import { RP_ID } from "@/lib/auth/passkey";
 import {
   getPrfViaNative,
+  nativeAppInfo,
   nativePasskeyAvailable,
+  type NativeAppInfo,
 } from "@/lib/auth/native-passkey";
 
 /* ---------------------------------------------------------------------------
@@ -144,6 +146,7 @@ function describe(e: unknown): string {
 export function PasskeyProbe() {
   const [busy, setBusy] = useState<null | "plain" | "prf" | "native">(null);
   const [nativeReady, setNativeReady] = useState(false);
+  const [appInfo, setAppInfo] = useState<NativeAppInfo | null>(null);
 
   // Asks the plugin, so an older APK without it reports false rather than
   // offering a button that rejects with "not implemented".
@@ -151,6 +154,9 @@ export function PasskeyProbe() {
     void nativePasskeyAvailable()
       .then(setNativeReady)
       .catch(() => setNativeReady(false));
+    void nativeAppInfo()
+      .then(setAppInfo)
+      .catch(() => setAppInfo(null));
   }, []);
   const [elapsed, setElapsed] = useState(0);
   const [results, setResults] = useState<Outcome[]>([]);
@@ -355,6 +361,38 @@ export function PasskeyProbe() {
               </dd>
             </div>
           ))}
+        </dl>
+      ) : null}
+
+      {appInfo !== null ? (
+        <dl className="space-y-2">
+          <div>
+            <dt className="text-ink-faint font-mono text-[11px] tracking-[0.16em] uppercase">
+              installed build
+            </dt>
+            <dd className="text-ink-dim mt-0.5 font-mono text-xs break-all">
+              {appInfo.versionName ?? "?"} ({appInfo.versionCode ?? "?"})
+            </dd>
+          </div>
+          <div>
+            <dt className="text-ink-faint font-mono text-[11px] tracking-[0.16em] uppercase">
+              asset statements declared
+            </dt>
+            {/* The distinction "RP ID cannot be validated" cannot make by
+                itself: is the declaration missing from this APK, or present and
+                being refused? */}
+            <dd
+              className={`mt-0.5 font-mono text-xs break-all ${
+                appInfo.hasAssetStatementsMetaData === true
+                  ? "text-phosphor"
+                  : "text-red-400"
+              }`}
+            >
+              {appInfo.hasAssetStatementsMetaData === true
+                ? (appInfo.assetStatements ?? "yes")
+                : "NO — this APK predates the fix, reinstall from /download"}
+            </dd>
+          </div>
         </dl>
       ) : null}
 

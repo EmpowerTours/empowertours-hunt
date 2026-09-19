@@ -58,6 +58,63 @@ public class NativePasskeyPlugin extends Plugin {
         }
     }
 
+    /**
+     * What this INSTALLED build actually declares.
+     *
+     * Added because a screenshot could not distinguish "the asset statements
+     * are missing from this APK" from "they are present and the device refuses
+     * them anyway" — two different problems with one error message on screen.
+     * The page cannot see a manifest, so the app has to say.
+     */
+    @PluginMethod
+    public void appInfo(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            android.content.pm.PackageInfo pkg = getContext()
+                .getPackageManager()
+                .getPackageInfo(getContext().getPackageName(), 0);
+            result.put("versionName", pkg.versionName);
+            result.put(
+                "versionCode",
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? pkg.getLongVersionCode()
+                    : pkg.versionCode
+            );
+        } catch (Throwable t) {
+            result.put("versionName", "unknown");
+        }
+
+        // The manifest meta-data entry — present or not.
+        boolean hasMeta = false;
+        try {
+            android.content.pm.ApplicationInfo info = getContext()
+                .getPackageManager()
+                .getApplicationInfo(
+                    getContext().getPackageName(),
+                    android.content.pm.PackageManager.GET_META_DATA
+                );
+            hasMeta = info.metaData != null && info.metaData.containsKey("asset_statements");
+        } catch (Throwable t) {
+            hasMeta = false;
+        }
+        result.put("hasAssetStatementsMetaData", hasMeta);
+
+        // And the resource it points at, read by name so a missing one reports
+        // absent rather than failing to compile.
+        String statements = "";
+        try {
+            int id = getContext()
+                .getResources()
+                .getIdentifier("asset_statements", "string", getContext().getPackageName());
+            if (id != 0) statements = getContext().getString(id);
+        } catch (Throwable t) {
+            statements = "";
+        }
+        result.put("assetStatements", statements);
+
+        call.resolve(result);
+    }
+
     @PluginMethod
     public void isAvailable(PluginCall call) {
         JSObject result = new JSObject();

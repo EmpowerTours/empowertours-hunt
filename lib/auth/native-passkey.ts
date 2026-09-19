@@ -145,3 +145,31 @@ export async function getPrfViaNative(args: {
 
   return { prfOutput, credentialId: parsed.id };
 }
+
+export interface NativeAppInfo {
+  versionName?: string;
+  versionCode?: number;
+  hasAssetStatementsMetaData?: boolean;
+  assetStatements?: string;
+}
+
+/**
+ * What the installed APK declares about itself.
+ *
+ * "RP ID cannot be validated" looks identical whether the app is missing its
+ * asset statements or the device is refusing statements that are present. The
+ * page cannot read a manifest, so the app reports its own.
+ */
+export async function nativeAppInfo(): Promise<NativeAppInfo | null> {
+  const cap = bridge();
+  if (cap?.nativePromise === undefined) return null;
+  try {
+    return (await cap.nativePromise(
+      "NativePasskey",
+      "appInfo",
+      {},
+    )) as NativeAppInfo;
+  } catch {
+    return null;
+  }
+}
