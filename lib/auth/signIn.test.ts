@@ -19,8 +19,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 
 const passkey = vi.hoisted(() => ({
+  RP_ID: "empowertours.xyz",
   signInAccount: vi.fn(),
   createAccount: vi.fn(),
+  accountFromPrfOutput: vi.fn(),
   storedCredential: vi.fn(),
   explainPasskeyError: vi.fn((e: unknown) =>
     e instanceof Error ? e.message : "broken",
@@ -28,6 +30,17 @@ const passkey = vi.hoisted(() => ({
 }));
 
 vi.mock("./passkey", () => passkey);
+
+/**
+ * The second road: Credential Manager, reached natively. Mocked because the
+ * bridge only exists inside the app, and the branch it guards is the one that
+ * rescues a device whose WebView path is broken.
+ */
+const native = vi.hoisted(() => ({
+  nativePasskeyAvailable: vi.fn(async () => false),
+  getPrfViaNative: vi.fn(),
+}));
+vi.mock("./native-passkey", () => native);
 vi.mock("@/lib/auth/turnstile", () => ({ getCaptchaToken: async () => null }));
 
 const { createWalletWithPasskey, signInWithPasskey } = await import("./signIn");
@@ -103,6 +116,58 @@ describe("signInWithPasskey", () => {
       "WebAuthn is not supported on this device",
     );
     expect((err as Error).message).toContain("No hunt wallet on this phone");
+  });
+
+  it("falls back to the native credential manager when the WebView path fails", async () => {
+    const acct = fakeAccount();
+    passkey.storedCredential.mockReturnValue(undefined);
+    passkey.signInAccount.mockRejectedValue(
+      Object.assign(
+        new Error(
+          "An unknown error occurred while talking to the credential manager",
+        ),
+        {
+          name: "NotReadableError",
+        },
+      ),
+    );
+    native.nativePasskeyAvailable.mockResolvedValue(true);
+    native.getPrfViaNative.mockResolvedValue({
+      prfOutput: new Uint8Array(32).fill(7),
+      credentialId: "cred-1",
+    });
+    passkey.accountFromPrfOutput.mockReturnValue(acct);
+
+    await expect(signInWithPasskey()).resolves.toBeUndefined();
+
+    // The whole point: a real session, from the road that works, and NOT an
+    // offer to create a second wallet on a phone that already holds one.
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth/session",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(passkey.createAccount).not.toHaveBeenCalled();
+    expect(acct.end).toHaveBeenCalled();
+  });
+
+  it("reports the NATIVE error when both roads are shut", async () => {
+    passkey.storedCredential.mockReturnValue(undefined);
+    passkey.signInAccount.mockRejectedValue(
+      Object.assign(new Error("webview road"), { name: "NotReadableError" }),
+    );
+    native.nativePasskeyAvailable.mockResolvedValue(true);
+    native.getPrfViaNative.mockRejectedValue(
+      new Error("native road: no credential"),
+    );
+
+    const err = await signInWithPasskey().catch((e: unknown) => e);
+
+    // The WebView failure is already known to happen on these devices; the
+    // second road's answer is the one that has not been seen before.
+    expect((err as { detail?: unknown }).detail).toBe(
+      "native road: no credential",
+    );
+    expect((err as { canCreateWallet?: unknown }).canCreateWallet).toBe(true);
   });
 
   it("does NOT offer to create when this device already knows a credential", async () => {

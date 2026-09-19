@@ -2,12 +2,16 @@
 
 import type { ClaimMessage, ClaimSigner } from "@/components/hunt/types";
 import {
+  accountFromPrfOutput,
   createAccount,
   explainPasskeyError,
+  RP_ID,
   signInAccount,
   storedCredential,
   type PasskeyAccount,
 } from "./passkey";
+import { HUNT_PRF_SALT } from "./derive";
+import { getPrfViaNative, nativePasskeyAvailable } from "./native-passkey";
 import {
   claimAttemptTypedData,
   registrationTypedData,
@@ -252,6 +256,45 @@ async function runSignIn(): Promise<void> {
     try {
       passkey = await signInAccount();
     } catch (err) {
+      // SECOND ROAD, inside the app only.
+      //
+      // The WebView does WebAuthn through Play services' FIDO2 APIs, and on
+      // some devices that path fails while Credential Manager — what Chrome
+      // uses on the same phone, with the same passkey — works. Measured on a
+      // vivo running OriginOS 6: NotReadableError in three seconds from the
+      // WebView, a clean sign-in from Chrome.
+      //
+      // Tried only AFTER the ordinary path has failed, so nothing changes for
+      // the phones that already work. Same salt, same derivation, so a wallet
+      // reached this way is the SAME wallet — that is the whole requirement,
+      // and it is why this calls accountFromPrfOutput rather than deriving
+      // anything of its own.
+      const native = await nativePasskeyAvailable().catch(() => false);
+      if (native) {
+        try {
+          const known = storedCredential();
+          const { prfOutput, credentialId } = await getPrfViaNative({
+            rpId: RP_ID,
+            prfSalt: HUNT_PRF_SALT,
+            credentialId: known?.credentialId,
+          });
+          passkey = accountFromPrfOutput(prfOutput, credentialId);
+          await establishSession(passkey);
+          return;
+        } catch (nativeErr) {
+          // Report the NATIVE failure, not the WebView one. If both roads are
+          // shut, the second error is the more informative — the first is
+          // already known to fail on this class of device.
+          if (storedCredential() !== undefined) {
+            throw new Error(explainPasskeyError(nativeErr));
+          }
+          throw new NoPasskeyFoundError(
+            "No hunt wallet on this phone. If you have played before, open the hunt on the phone you first signed in with — or make a new wallet below.",
+            explainPasskeyError(nativeErr),
+          );
+        }
+      }
+
       // A known local credential means this really is their device and the
       // ceremony failed for some other reason. Never offer to create there.
       if (storedCredential() !== undefined) {

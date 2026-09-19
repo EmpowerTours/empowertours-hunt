@@ -30,6 +30,12 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // BEFORE super.onCreate: Capacitor builds its bridge there, and a
+        // plugin registered afterwards is not in it. The page reaches this one
+        // through window.Capacitor.nativePromise("NativePasskey", ...), which
+        // only exists if the bridge knew about it at construction.
+        registerPlugin(NativePasskeyPlugin.class);
+
         super.onCreate(savedInstanceState);
 
         // Debug builds only. A remotely inspectable WebView exposes the page —

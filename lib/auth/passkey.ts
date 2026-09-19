@@ -271,7 +271,13 @@ function rememberCredential(credential: PasskeyCredentialMetadata): void {
   });
 }
 
-function accountFromPrfOutput(
+/**
+ * Exported so the NATIVE fallback (lib/auth/native-passkey.ts) derives the
+ * wallet through exactly this code. Two derivations would be two chances to
+ * produce different addresses from the same passkey, which is the one failure
+ * this whole design exists to prevent.
+ */
+export function accountFromPrfOutput(
   prfOutput: Uint8Array,
   credentialId: string,
 ): PasskeyAccount {
