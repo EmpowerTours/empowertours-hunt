@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Note, Panel } from "@/components/ui/primitives";
 import { RP_ID } from "@/lib/auth/passkey";
+import {
+  getPrfViaNative,
+  nativePasskeyAvailable,
+} from "@/lib/auth/native-passkey";
 
 /* ---------------------------------------------------------------------------
    The probe that separates "no passkey here" from "PRF is the thing failing".
@@ -64,6 +68,16 @@ type Outcome = {
  * narrates a mechanism the evidence does not show is worse than none.
  */
 type Fail = "timeout" | "error";
+
+/**
+ * The THIRD road, and the reason this section exists at all.
+ *
+ * The two buttons above both go through the WebView, which on some devices is
+ * the broken path. Sign-in now falls back to Credential Manager natively when
+ * that happens — and the diagnostic could not see it, so a screenshot of this
+ * page said "everything fails" about a phone where sign-in might work. A probe
+ * that cannot test the road being taken is measuring the wrong thing.
+ */
 type Verdicts = {
   /** The credential was found and the assertion completed. */
   plain?: "ok" | Fail;
@@ -128,10 +142,62 @@ function describe(e: unknown): string {
 }
 
 export function PasskeyProbe() {
-  const [busy, setBusy] = useState<null | "plain" | "prf">(null);
+  const [busy, setBusy] = useState<null | "plain" | "prf" | "native">(null);
+  const [nativeReady, setNativeReady] = useState(false);
+
+  // Asks the plugin, so an older APK without it reports false rather than
+  // offering a button that rejects with "not implemented".
+  useEffect(() => {
+    void nativePasskeyAvailable()
+      .then(setNativeReady)
+      .catch(() => setNativeReady(false));
+  }, []);
   const [elapsed, setElapsed] = useState(0);
   const [results, setResults] = useState<Outcome[]>([]);
   const [verdicts, setVerdicts] = useState<Verdicts>({});
+  const [nativeOk, setNativeOk] = useState<boolean | null>(null);
+
+  const runNative = async () => {
+    setBusy("native");
+    setElapsed(0);
+    const started = Date.now();
+    const tick = setInterval(
+      () => setElapsed(Math.round((Date.now() - started) / 1000)),
+      1000,
+    );
+    try {
+      // PROBE_SALT again, not the wallet's: this answers whether the road is
+      // open, and no diagnostic should derive real key material to do it.
+      const { prfOutput, credentialId } = await getPrfViaNative({
+        rpId: RP_ID,
+        prfSalt: PROBE_SALT,
+        timeoutMs: PROBE_TIMEOUT_MS,
+      });
+      const secs = Math.round((Date.now() - started) / 1000);
+      setResults((r) => [
+        ...r,
+        {
+          label: "via credential manager",
+          text: `OK in ${secs}s, credential ${credentialId.slice(0, 12)}…, PRF ${prfOutput.length} bytes`,
+          tone: "ok",
+        },
+      ]);
+      setNativeOk(true);
+    } catch (e: unknown) {
+      setResults((r) => [
+        ...r,
+        {
+          label: "via credential manager",
+          text: `${describe(e)} (after ${Math.round((Date.now() - started) / 1000)}s)`,
+          tone: "bad",
+        },
+      ]);
+      setNativeOk(false);
+    } finally {
+      clearInterval(tick);
+      setBusy(null);
+    }
+  };
 
   const run = async (kind: "plain" | "prf") => {
     setBusy(kind);
@@ -261,6 +327,16 @@ export function PasskeyProbe() {
         >
           {busy === "prf" ? `${elapsed}s…` : "With PRF"}
         </Button>
+        {nativeReady ? (
+          <Button
+            type="button"
+            tone="ghost"
+            disabled={busy !== null}
+            onClick={() => void runNative()}
+          >
+            {busy === "native" ? `${elapsed}s…` : "Credential Manager"}
+          </Button>
+        ) : null}
       </div>
 
       {results.length > 0 ? (
@@ -280,6 +356,15 @@ export function PasskeyProbe() {
             </div>
           ))}
         </dl>
+      ) : null}
+
+      {nativeOk === true ? (
+        <Note tone="warn" title="The native road works">
+          Credential Manager served the passkey and evaluated PRF, even though
+          the WebView path on this phone does not. Sign-in uses this road
+          automatically when the first one fails, so tap sign in — and check the
+          address matches the one your browser shows.
+        </Note>
       ) : null}
 
       {(() => {
