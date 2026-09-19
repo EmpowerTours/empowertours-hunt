@@ -150,6 +150,13 @@ jobs:
           printf '%s' "$PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
           chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
 
+      # CODE_SIGN_IDENTITY is pinned here as well as in the project, because the
+      # failure it prevents is misleading: Capacitor's template hardcodes
+      # "iPhone Developer" in BOTH configurations, so an App Store archive asks
+      # Apple for a DEVELOPMENT profile and is told "your team has no devices
+      # from which to generate a provisioning profile". That reads as a missing
+      # device, and the real answer is that it should never have wanted a
+      # development profile at all.
       - name: Archive
         if: steps.creds.outputs.present == 'true'
         working-directory: mobile/ios/App
@@ -169,6 +176,8 @@ jobs:
             -authenticationKeyIssuerID "$ISSUER_ID" \
             -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8 \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             archive
 
       - name: Export the IPA
