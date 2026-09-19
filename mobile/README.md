@@ -16,11 +16,11 @@ the trading door. Hunt is reachable in the same WebView (`allowNavigation`).
 
 Names, which are three different fields and not one:
 
-| Where | Value | Limit |
-|---|---|---|
-| Launcher label (`appName`) | `EmpowerTours` | ~12 chars before most launchers truncate |
-| Store title | `EmpowerTours: Hunt & Cota` | 30 (both stores; iOS search cuts ~26) |
-| iOS subtitle | `Hunt real caches. Trade Perpl.` | 30 |
+| Where                      | Value                            | Limit                                    |
+| -------------------------- | -------------------------------- | ---------------------------------------- |
+| Launcher label (`appName`) | `EmpowerTours`                   | ~12 chars before most launchers truncate |
+| Store title                | `EmpowerTours: Hunt & Cota`      | 30 (both stores; iOS search cuts ~26)    |
+| iOS subtitle               | `Hunt real caches. Trade Perpl.` | 30                                       |
 
 ## What this is, and what it is not
 
@@ -30,9 +30,9 @@ no bundled JS, no duplicated routes, nothing to deploy separately and nothing
 that can drift out of sync with the web. `www/index.html` is a five-line offline
 notice and is the only markup this project owns.
 
-It exists because the Agora Onchain Trading bounty asks for *"a mobile app
+It exists because the Agora Onchain Trading bounty asks for _"a mobile app
 authenticating via Mera, holding an AUSD balance, and executing trades through
-Perpl"*. Cota does all three today. What it could not do was be installed, and
+Perpl"_. Cota does all three today. What it could not do was be installed, and
 "open this URL" is a weak answer when the same bounty has entries shipping
 native iOS builds.
 
@@ -157,10 +157,26 @@ replacing this one, so debug and release builds both keep working.
 
 ### What is still unproven
 
-**Passkey sign-in inside the WebView has not been tested on a device.** It is
-the only part of this that can fail in a way the web app never does. It also
-cannot succeed until the asset-links file is live, so testing it before then
-would only prove that a missing file is missing.
+**Passkey sign-in inside the WebView is VERIFIED ON HARDWARE (2026-09-18).** Both
+steps below were carried out: the asset-links file is live and Google's own
+`digitalassetlinks.googleapis.com/v1/statements:list` resolves our package and
+fingerprint, and on a Xiaomi (HyperOS) the app signed in and produced **the same
+wallet address as Chrome on that phone**. One person, one passkey, one wallet,
+whichever door they open.
+
+**It does NOT work on every Android.** On a vivo V2348 (Android 16, WebView
+Chrome 151) the system credential sheet opens and never resolves. That was run
+to ground rather than guessed at: `/diag`'s passkey probe shows a discoverable
+`get()` timing out identically **with and without** the PRF extension, which
+rules out PRF and rules out the request's contents. Asset links verify, the
+WebView reports WebAuthn enabled, the file loads instantly in that phone's own
+browser. The device's credential provider simply does not answer a sideloaded
+app. Nothing in this repo fixes that — send such a phone to `/diag`, and to Play
+Store updates for Google Play services.
+
+The historical note below is kept because it explains why the order matters:
+it could not have succeeded before the asset-links file was live, so testing it
+earlier would only have proved that a missing file is missing.
 
 1. Publish `assetlinks.json` at
    `https://empowertours.xyz/.well-known/assetlinks.json`. That host is
