@@ -1,0 +1,106 @@
+# =============================================================================
+# iOS builds, because there is no Mac.
+# =============================================================================
+# The Mac Mini on this network runs Ubuntu, so there is no Xcode and no Keychain
+# anywhere in this project. An IPA has to be built on somebody else's macOS, and
+# this is that machine.
+#
+# It lives at the repository ROOT, which is also the only place Codemagic reads
+# it from — and, usefully, not under .github/workflows, which this account's
+# token cannot write to.
+#
+# WHAT MUST EXIST BEFORE THIS CAN RUN — none of it is code, and none of it can
+# be done from here:
+#
+#   1. An App ID `xyz.empowertours.app` registered in the Apple Developer
+#      portal, with the **Associated Domains** capability enabled. Without that
+#      capability the entitlement in mobile/ios/App/App/App.entitlements is
+#      rejected at signing time, and passkeys in a WKWebView are the only reason
+#      this app exists.
+#      (`xyz.empowertours.mobile` is NOT it — that is EmpowerTours Radio.)
+#   2. An App Store Connect API key connected to Codemagic as an integration,
+#      and its name put in `integrations.app_store_connect` below.
+#   3. apple-app-site-association served at https://empowertours.xyz/.well-known/
+#      — see mobile/README.md. Signing succeeds without it; passkeys do not.
+#
+# Team VYPJ7L4YTB, "Empowertours, S.A.S. de C.V.".
+# =============================================================================
+
+workflows:
+  ios-app-store:
+    name: EmpowerTours iOS
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    integrations:
+      # Replace with the name you gave the App Store Connect key in Codemagic.
+      app_store_connect: codemagic
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: xyz.empowertours.app
+      vars:
+        # Capacitor 8 uses Swift Package Manager, NOT CocoaPods, so this project
+        # has no .xcworkspace and no Podfile. Every Codemagic sample for Ionic
+        # says `pod install` and `--workspace`; both are wrong here. Build the
+        # .xcodeproj directly.
+        XCODE_PROJECT: "mobile/ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+      xcode: latest
+      node: 22
+
+    scripts:
+      - name: Install Capacitor tooling
+        script: |
+          cd mobile
+          npm ci
+
+      - name: Sync the native project
+        # There is no web build step on purpose. The app is a shell around the
+        # LIVE origin (server.url in capacitor.config.ts) — mobile/www is a
+        # five-line offline notice and the only markup this project owns. A
+        # bundled build would run on a different origin, which would change the
+        # passkey, which would hand players a different wallet.
+        script: |
+          cd mobile
+          npx cap sync ios
+
+      - name: Confirm the associated-domains entitlement survived
+        # Cheap, and it fails the build rather than shipping an app that
+        # installs, opens, and then cannot sign in — which is precisely the
+        # failure mode this project already lived through on Android.
+        script: |
+          set -e
+          ENT="mobile/ios/App/App/App.entitlements"
+          grep -q "webcredentials:empowertours.xyz" "$ENT"
+          echo "associated domains present"
+
+      - name: Set up code signing
+        script: xcode-project use-profiles
+
+      - name: Build IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+    publishing:
+      # TestFlight is deliberately OFF for the first run. It needs an App Store
+      # Connect app record for this bundle id, which does not exist yet, and a
+      # failed publish after a successful build reads like a failed build.
+      # Once the record exists, add:
+      #   app_store_connect:
+      #     auth: integration
+      #     submit_to_testflight: true
+      email:
+        recipients:
+          - admin@empowertours.xyz
+        notify:
+          success: true
+          failure: true

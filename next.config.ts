@@ -24,7 +24,17 @@ const nextConfig: NextConfig = {
   // The version banner is free reconnaissance. Nothing depends on it.
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // apple-app-site-association has no file extension, by Apple's rule, so
+      // the static handler cannot guess its type — and with nosniff set above,
+      // a wrong or absent Content-Type is not something the client will look
+      // past. Apple requires application/json, over https, with no redirect.
+      {
+        source: "/.well-known/apple-app-site-association",
+        headers: [{ key: "Content-Type", value: "application/json" }],
+      },
+    ];
   },
 };
 

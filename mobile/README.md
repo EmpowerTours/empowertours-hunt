@@ -52,6 +52,83 @@ one person's wallet one wallet whether they opened Chrome or the app.
 The secondary benefits are ordinary: one deploy, one codebase, no release train
 between a fix and the phone.
 
+## iOS
+
+Added 2026-09-18. Same shape as Android and for the same reason: a thin shell on
+the LIVE origin, because the wallet is the passkey and a bundled build runs on a
+different origin.
+
+**WKWebView refuses WebAuthn outright** unless the app declares an Associated
+Domain for the relying-party id. That is the exact counterpart of Digital Asset
+Links, with the same failure mode — the app installs, opens, renders the real
+site, and cannot sign in. `mobile/ios/App/App/App.entitlements` declares
+`webcredentials:` for `empowertours.xyz` plus the hunt and cota subdomains.
+
+**The site half is `apple-app-site-association`**, and like assetlinks.json the
+copy that counts is on the **apex**, which is a different application on
+LiteSpeed/cPanel:
+
+```
+https://empowertours.xyz/.well-known/apple-app-site-association
+```
+
+Contents (Team `VYPJ7L4YTB`):
+
+```json
+{ "webcredentials": { "apps": ["VYPJ7L4YTB.xyz.empowertours.app"] } }
+```
+
+Two traps, both of which produce a file that looks fine in a browser and is
+rejected by Apple:
+
+- **No file extension**, by Apple's rule — so a server cannot guess its type.
+  Apple requires `application/json`. This repo sets that header explicitly in
+  `next.config.ts` for the hunt and cota copies; on cPanel the apex copy needs
+  a `.htaccess` in `.well-known/`:
+
+  ```apache
+  <Files "apple-app-site-association">
+    ForceType application/json
+  </Files>
+  ```
+
+- **No redirects.** Same rule as Digital Asset Links, and the same reason the
+  apex works at all: `/.well-known/` escapes the 302 that sends everything else
+  to another app.
+
+**Builds run on Codemagic** (`codemagic.yaml` at the repo root), because there is
+no Mac here — the Mac Mini runs Ubuntu, so there is no Xcode and no Keychain
+anywhere in this project. The root is also the one place Codemagic reads its
+config from, and conveniently not `.github/workflows`, which this account's
+token cannot write.
+
+**Capacitor 8 uses Swift Package Manager, not CocoaPods.** There is no Podfile
+and no `.xcworkspace`. Every Codemagic sample for Ionic says `pod install` and
+`--workspace`; both are wrong here, and the build script uses `--project`
+against `App.xcodeproj`.
+
+Before the first build, three things must exist, none of them code:
+
+1. App ID `xyz.empowertours.app` registered in the Developer portal **with the
+   Associated Domains capability enabled** — without it the entitlement is
+   rejected at signing. (`xyz.empowertours.mobile` is EmpowerTours Radio, a
+   different app.)
+2. An App Store Connect API key connected to Codemagic, named in
+   `integrations.app_store_connect`.
+3. The AASA file live at the apex.
+
+`TARGETED_DEVICE_FAMILY` is `1` (iPhone only) deliberately: iPad support makes
+iPad screenshots mandatory in App Store Connect and there are none at valid iPad
+sizes. `ITSAppUsesNonExemptEncryption` is `false` — HTTPS-only use is exempt, and
+without the key App Store Connect asks the export-compliance question on every
+upload.
+
+**Until an IPA ships, the iPhone route that works today is Safari → Share → Add
+to Home Screen.** Passkeys and the PRF extension both work in Safari 18+ with
+iCloud Keychain, which is the same wallet the app would derive. Two known iOS
+limits, neither of which affects this: extension data is not passed to external
+security keys, and PRF does not survive the cross-device QR flow.
+
 ## Digital Asset Links — required, and NOT served from this repo
 
 Android will not let this app use passkeys scoped to `empowertours.xyz` unless

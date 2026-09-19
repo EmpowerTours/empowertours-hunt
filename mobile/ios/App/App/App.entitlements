@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Associated Domains — the iOS half of "this app may use that site's passkeys".
+
+  WKWebView refuses WebAuthn outright unless the embedding app declares a
+  `webcredentials` association for the relying-party id, and the site serves a
+  matching apple-app-site-association file. It is the exact counterpart of the
+  Digital Asset Links file that makes this work on Android, and it fails the same
+  way when missing: not an error a page can explain, just a ceremony that never
+  succeeds.
+
+  Three entries, not one. The relying-party id is the PARENT domain
+  (empowertours.xyz) so that one passkey — and therefore one wallet — works on
+  every EmpowerTours door. The pages themselves are served from the hunt and
+  cota subdomains. Declaring all three means the association holds whichever
+  host the WebView happens to be on, and each one serves the AASA file.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:empowertours.xyz</string>
+		<string>webcredentials:cota.empowertours.xyz</string>
+		<string>webcredentials:hunt.empowertours.xyz</string>
+	</array>
+</dict>
+</plist>
