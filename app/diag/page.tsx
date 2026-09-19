@@ -167,6 +167,12 @@ export default function DiagnosticsPage() {
 
   return (
     <main className="safe-top safe-bottom mx-auto flex w-full max-w-md flex-col gap-4 px-5 py-8">
+      {/* The app has no address bar, so a page reached from a link needs a way
+          out of it. Without this, /diag is a dead end inside the WebView. */}
+      <a href="/cota" className="text-ink-dim w-fit text-sm hover:underline">
+        ← Cota
+      </a>
+
       <header>
         <h1 className="text-ink text-2xl font-bold tracking-tight">
           Sign-in diagnostics

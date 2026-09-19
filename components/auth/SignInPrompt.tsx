@@ -74,6 +74,22 @@ const WAITING = {
   },
 } as const;
 
+/* ---------------------------------------------------------------------------
+   The way to the diagnostic, from the screen where people need it.
+
+   /diag was built to answer "why can't this device sign in" without a cable,
+   and then linked only from /download — which the app never shows, because it
+   opens straight onto Cota. So the one person holding the failing phone had no
+   route to it and the copy below cheerfully told them to "open /diag" as though
+   that were a thing you can do inside a WebView with no address bar.
+
+   A link, next to the failure, where the failure happened.
+--------------------------------------------------------------------------- */
+const DIAG = {
+  en: "Sign-in not working? Run diagnostics →",
+  es: "¿No entra? Abre el diagnóstico →",
+} as const;
+
 /** After this many seconds with no system sheet, saying so is more use than silence. */
 const HINT_AFTER_S = 6;
 
@@ -106,6 +122,7 @@ export function SignInPrompt({
   const locale = useLocale() === "es" ? "es" : "en";
   const warn = CREATE_WARNING[locale];
   const waiting = WAITING[locale];
+  const diagLabel = DIAG[locale];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The ceremony's own error, shown verbatim: this is what gets screenshotted. */
@@ -179,6 +196,15 @@ export function SignInPrompt({
             </span>
           ) : null}
         </Note>
+      ) : null}
+
+      {error !== null || (busy && elapsed >= HINT_AFTER_S) ? (
+        <a
+          href="/diag"
+          className="text-ink-dim hover:text-ink block text-center text-xs underline underline-offset-4"
+        >
+          {diagLabel}
+        </a>
       ) : null}
 
       {offerCreate ? (
