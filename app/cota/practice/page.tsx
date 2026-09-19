@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel } from "@/components/ui/primitives";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import {
   checkHalted,
   close as closePosition,
@@ -281,13 +282,11 @@ export default function PracticePage() {
 
   if (auth.status !== "signed-in") {
     return (
-      <main className="mx-auto w-full max-w-lg p-4">
+      <main className="safe-top safe-bottom mx-auto w-full max-w-lg p-4">
         <Panel className="space-y-3">
           <h1 className="text-ink text-2xl font-semibold">{t.title}</h1>
           <p className="text-ink-dim text-sm">{t.signIn}</p>
-          <Button onClick={() => void auth.signIn()} disabled={!auth.canSignIn}>
-            {t.signIn}
-          </Button>
+          <SignInPrompt label={t.signIn} />
         </Panel>
       </main>
     );

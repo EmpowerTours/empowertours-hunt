@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { LeashHistory } from "@/components/cota/LeashHistory";
 import { readback } from "@/lib/cota/readback";
 import { leverageX100, LossyScaleError, usdE6 } from "@/lib/cota/scale";
@@ -116,9 +117,6 @@ export default function CotaPage() {
   // Monad tx that anchored the leash to AuditAnchorV2, once it lands. Null while
   // un-anchored (anchoring is a separate act that can be off or can fail).
   const [anchorTx, setAnchorTx] = useState<string | null>(null);
-  // Sign-in errors were swallowed by `void auth.signIn()`; surfaced here so the
-  // exact passkey failure (type + message) is visible on-device.
-  const [signInErr, setSignInErr] = useState<string | null>(null);
   // On the cota.* trading host there is no hunt game, so hide the way back to
   // it. Set after mount to avoid a hydration mismatch. It stays on
   // hunt.empowertours.xyz/cota, where the game does exist.
@@ -260,7 +258,7 @@ export default function CotaPage() {
   }, [ceilings, durationSeconds, mode]);
 
   return (
-    <main className="mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
+    <main className="safe-top safe-bottom mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
       {!onCotaHost && (
         <Link
           href="/hunt"
@@ -364,20 +362,7 @@ export default function CotaPage() {
       {auth.status !== "signed-in" ? (
         <Panel className="space-y-3">
           <p className="text-ink text-sm">{t("signInBody")}</p>
-          <Button
-            onClick={() => {
-              setSignInErr(null);
-              void auth.signIn().catch((e) => {
-                setSignInErr(e instanceof Error ? e.message : "sign-in failed");
-              });
-            }}
-            disabled={!auth.canSignIn}
-          >
-            {t("signIn")}
-          </Button>
-          {signInErr && (
-            <p className="text-alert text-xs break-words">{signInErr}</p>
-          )}
+          <SignInPrompt label={t("signIn")} />
         </Panel>
       ) : signedDigest !== null ? (
         <Panel className="space-y-3">

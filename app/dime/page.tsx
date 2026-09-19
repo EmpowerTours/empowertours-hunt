@@ -14,6 +14,21 @@ import { useAuthSlot } from "@/app/providers";
 // only decision on screen is Sí.
 // ---------------------------------------------------------------------------
 
+/**
+ * Are we inside the EmpowerTours app rather than a browser?
+ *
+ * Two signals because neither alone covers the installed base: MainActivity
+ * marks the user agent (builds carrying that change), and Capacitor injects a
+ * global (every build). Same test /diag reports on.
+ */
+function inAppWebView(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    / EmpowerToursApp\/1 /.test(navigator.userAgent) ||
+    typeof (window as { Capacitor?: unknown }).Capacitor !== "undefined"
+  );
+}
+
 type Phase = "loading" | "ready" | "signing" | "claiming" | "done" | "error";
 
 const T = {
@@ -66,18 +81,15 @@ export default function DimePage() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const applyStatus = useCallback(
-    (body: Status) => {
-      setStatus(body);
-      if (body.mine?.status === "SENT") {
-        setTxHash(body.mine.transferTxHash);
-        setPhase("done");
-      } else {
-        setPhase("ready");
-      }
-    },
-    [],
-  );
+  const applyStatus = useCallback((body: Status) => {
+    setStatus(body);
+    if (body.mine?.status === "SENT") {
+      setTxHash(body.mine.transferTxHash);
+      setPhase("done");
+    } else {
+      setPhase("ready");
+    }
+  }, []);
 
   // Inline in the effect, guarded by `ignore`, so the setState calls happen
   // inside an awaited closure rather than synchronously in the effect body —
@@ -115,9 +127,31 @@ export default function DimePage() {
     try {
       // Sign in first if needed — the passkey ceremony IS the wallet. One tap
       // creates it silently; the claimer never sees a seed phrase.
+      //
+      // A first-time claimer has no passkey to assert, so the assertion throws
+      // NoPasskeyFoundError, whose message tells them to "make a new wallet
+      // below" — and this page has no below, and must not grow one: the only
+      // decision on screen is Sí. So make the wallet here. Matching the flag
+      // rather than the text keeps this working if the copy changes.
+      //
+      // NOT inside the app's WebView. There, "no passkey found" is ambiguous:
+      // it is equally the symptom of the asset-links/WebView path being wrong
+      // on a phone that DOES hold a passkey in Google Password Manager. A
+      // wallet is a passkey, so creating one on that guess hands the claimer a
+      // second address and quietly strands whatever is in the first. In a
+      // browser the lookup is trustworthy, so the silent create stays.
       if (auth.status !== "signed-in") {
         setPhase("signing");
-        await auth.signIn();
+        try {
+          await auth.signIn();
+        } catch (e: unknown) {
+          const canCreate =
+            typeof e === "object" &&
+            e !== null &&
+            (e as { canCreateWallet?: unknown }).canCreateWallet === true;
+          if (!canCreate || inAppWebView()) throw e;
+          await auth.createWallet();
+        }
       }
       setPhase("claiming");
       const res = await fetch("/api/dime/claim", { method: "POST" });
@@ -144,7 +178,7 @@ export default function DimePage() {
   const closed = status !== null && !status.open;
 
   return (
-    <main className="mx-auto flex min-h-[100svh] w-full max-w-sm flex-col items-center justify-center gap-6 px-6 py-10">
+    <main className="safe-top safe-bottom mx-auto flex min-h-[100svh] w-full max-w-sm flex-col items-center justify-center gap-6 px-6 py-10">
       {/* Cover art placeholder — a warm gradient standing in for the real
           artwork until the master's image is wired in. */}
       <div

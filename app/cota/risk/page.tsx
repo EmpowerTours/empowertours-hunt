@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
-import { Button, Note, Panel } from "@/components/ui/primitives";
+import { Note, Panel } from "@/components/ui/primitives";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 
 // ---------------------------------------------------------------------------
@@ -180,7 +181,7 @@ export default function RiskPage() {
     v === null || v === undefined ? "—" : v.toFixed(dp);
 
   return (
-    <main className="text-ink mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
+    <main className="safe-top safe-bottom text-ink mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
       <a href="/cota" className="text-ink-dim w-fit text-sm hover:underline">
         ← {t.back}
       </a>
@@ -194,9 +195,7 @@ export default function RiskPage() {
 
       {auth.status !== "signed-in" ? (
         <Panel>
-          <Button onClick={() => void auth.signIn()} disabled={!auth.canSignIn}>
-            {t.signIn}
-          </Button>
+          <SignInPrompt label={t.signIn} />
         </Panel>
       ) : risk && risk.leash === null ? (
         <Panel>

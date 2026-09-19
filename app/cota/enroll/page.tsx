@@ -6,6 +6,7 @@ import type { Hex, TypedDataDefinition } from "viem";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { signInAccount } from "@/lib/auth/passkey";
 import {
   buildTerms,
@@ -332,7 +333,7 @@ export default function CotaEnrollPage() {
   }, [auth.status]);
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-col gap-5 px-5 py-8">
+    <main className="safe-top safe-bottom mx-auto flex w-full max-w-md flex-col gap-5 px-5 py-8">
       <header className="flex items-center justify-between">
         <h1 className="text-ink text-2xl font-black tracking-tight">
           {t.title}
@@ -377,7 +378,7 @@ export default function CotaEnrollPage() {
       ) : phase === "signin" ? (
         <div className="flex flex-col gap-4">
           <p className="text-ink-dim text-sm">{t.intro}</p>
-          <Button onClick={() => void auth.signIn()}>{t.signin}</Button>
+          <SignInPrompt label={t.signin} />
         </div>
       ) : phase === "ready" ? (
         <div className="flex flex-col gap-4">

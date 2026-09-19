@@ -50,7 +50,7 @@ export default function CotaBridgePage() {
   const t = T[useLocale() === "es" ? "es" : "en"];
 
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-col gap-5 px-5 py-8">
+    <main className="safe-top safe-bottom mx-auto flex w-full max-w-xl flex-col gap-5 px-5 py-8">
       <header className="flex flex-col gap-2">
         <h1 className="text-ink text-2xl font-black tracking-tight">
           {t.title}
