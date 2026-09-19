@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Note, Panel } from "@/components/ui/primitives";
 import { RP_ID, storedCredential } from "@/lib/auth/passkey";
 import { HUNT_PRF_SALT_LABEL } from "@/lib/auth/derive";
+import { PasskeyProbe } from "@/components/diag/PasskeyProbe";
 
 // ---------------------------------------------------------------------------
 // One screen that answers "why can't this device sign in".
@@ -224,6 +225,8 @@ export default function DiagnosticsPage() {
               ))}
             </dl>
           </Panel>
+
+          <PasskeyProbe />
         </>
       )}
     </main>
