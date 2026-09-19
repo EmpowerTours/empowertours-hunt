@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
+import { inAppWebView } from "@/lib/app-shell";
 
 // ---------------------------------------------------------------------------
 // The claim screen. The song title is the button.
@@ -13,21 +14,6 @@ import { useAuthSlot } from "@/app/providers";
 // explanation of what a mint is — the passkey does the wallet silently, and the
 // only decision on screen is Sí.
 // ---------------------------------------------------------------------------
-
-/**
- * Are we inside the EmpowerTours app rather than a browser?
- *
- * Two signals because neither alone covers the installed base: MainActivity
- * marks the user agent (builds carrying that change), and Capacitor injects a
- * global (every build). Same test /diag reports on.
- */
-function inAppWebView(): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    / EmpowerToursApp\/1 /.test(navigator.userAgent) ||
-    typeof (window as { Capacitor?: unknown }).Capacitor !== "undefined"
-  );
-}
 
 type Phase = "loading" | "ready" | "signing" | "claiming" | "done" | "error";
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note } from "@/components/ui/primitives";
+import { inAppWebView } from "@/lib/app-shell";
 
 /* ---------------------------------------------------------------------------
    Sign in, and — when this device holds no passkey — offer to make a wallet.
@@ -90,6 +91,32 @@ const DIAG = {
   es: "¿No entra? Abre el diagnóstico →",
 } as const;
 
+/* ---------------------------------------------------------------------------
+   The way out, on a phone whose app cannot reach its own credential manager.
+
+   Measured on a vivo running OriginOS 6: Chrome signs in and reaches the wallet,
+   the app gets NotReadableError in three seconds, and the same APK works on a
+   Xiaomi. So for some devices the app is a dead end and the browser is not —
+   and the app was telling those people nothing, which leaves them believing
+   their wallet is gone when it is one tap away in Chrome.
+
+   Deliberately TEXT, not a button. A link to our own origin stays inside the
+   WebView (it is in allowNavigation, as it must be), and whether window.open
+   escapes to the system browser is a Capacitor detail that varies — offering a
+   button that silently reloads the same dead screen would be a second dead end
+   wearing a way out. The instruction always works.
+--------------------------------------------------------------------------- */
+const USE_BROWSER = {
+  en: {
+    title: "Try your browser instead",
+    body: "Some phones will not let an installed app reach the passkey, even though the phone holds it. Your wallet is not lost. Open Chrome and go to cota.empowertours.xyz — the same passkey, the same wallet, and sign-in works there.",
+  },
+  es: {
+    title: "Prueba con el navegador",
+    body: "Algunos teléfonos no dejan que una app instalada llegue a la llave de acceso, aunque el teléfono la tenga. Tu cartera no se perdió. Abre Chrome y entra a cota.empowertours.xyz — la misma llave, la misma cartera, y ahí sí entra.",
+  },
+} as const;
+
 /** After this many seconds with no system sheet, saying so is more use than silence. */
 const HINT_AFTER_S = 6;
 
@@ -123,6 +150,7 @@ export function SignInPrompt({
   const warn = CREATE_WARNING[locale];
   const waiting = WAITING[locale];
   const diagLabel = DIAG[locale];
+  const useBrowser = USE_BROWSER[locale];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The ceremony's own error, shown verbatim: this is what gets screenshotted. */
@@ -195,6 +223,12 @@ export function SignInPrompt({
               {detail}
             </span>
           ) : null}
+        </Note>
+      ) : null}
+
+      {error !== null && inAppWebView() ? (
+        <Note tone="warn" title={useBrowser.title}>
+          {useBrowser.body}
         </Note>
       ) : null}
 
