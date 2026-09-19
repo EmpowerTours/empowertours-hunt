@@ -265,3 +265,63 @@ earlier would only have proved that a missing file is missing.
    passkey produces in Chrome on the same phone. **If those two differ, stop.**
    A different address means the ceremony ran under a different origin, and
    shipping it would strand balances.
+
+
+## iOS
+
+Same shape as Android and the same one thing that decides it: a WKWebView
+refuses WebAuthn outright unless the app declares an Associated Domain for the
+relying-party id and the site serves a matching file. Both halves are in place.
+
+| Piece | State |
+|---|---|
+| App ID `xyz.empowertours.app` (explicit, Associated Domains) | registered, prefix `VYPJ7L4YTB` |
+| `App.entitlements` → `webcredentials:` apex + both subdomains | committed |
+| `apple-app-site-association` on the apex | live, `application/json`, no redirect |
+| …confirmed through Apple's own CDN | `app-site-association.cdn-apple.com/a/v1/empowertours.xyz` |
+| `DEVELOPMENT_TEAM` | `VYPJ7L4YTB` in both configurations |
+| Shared scheme | `App.xcodeproj/xcshareddata/xcschemes/App.xcscheme` |
+
+### Building it
+
+There is no Mac here — this box is WSL and the Mac Mini runs Ubuntu — so
+`.github/workflows/ios.yml` builds on GitHub's macOS runners. The repo is
+public, so those minutes are free; the 10x macOS multiplier bills private repos
+only.
+
+Two jobs, split on purpose. **compile** needs no secrets and no Apple account:
+it proves the project builds, the SPM packages resolve and the entitlements
+parse, and it runs on every push touching `mobile/`. **archive** signs, exports
+and uploads to TestFlight, and *skips itself* when the credentials are absent —
+a workflow that goes red for a secret nobody has created yet only teaches
+people to ignore red workflows.
+
+### To enable the signed build
+
+Create an **App Store Connect API key** (App Store Connect → Users and Access →
+Integrations → App Store Connect API, role *App Manager*), then set three repo
+secrets:
+
+```
+APP_STORE_CONNECT_KEY_ID        the 10-character key id
+APP_STORE_CONNECT_ISSUER_ID     the issuer UUID, shown once at the top of that page
+APP_STORE_CONNECT_PRIVATE_KEY   the whole .p8 file, BEGIN/END lines included
+```
+
+An API key rather than a distribution certificate and a `.p12` in a secret:
+Xcode then creates and refreshes provisioning profiles itself under
+`-allowProvisioningUpdates`, so nobody ever exports a private key and there is
+no certificate to expire silently in eleven months. **The `.p8` downloads
+exactly once and Apple keeps no copy** — lose it and the only path is to revoke
+and issue another.
+
+An App Store Connect app record for `xyz.empowertours.app` also has to exist
+before the first upload is accepted.
+
+### What TestFlight is and is not
+
+Uploading to TestFlight is not submitting to the App Store. **Internal testers
+get the build with no review at all**, which matters here: App Review's
+guideline 4.2 treats a WebView shell as a repackaged website and the current
+consensus is that it gets rejected. TestFlight is the honest target for handing
+this to a judge or a tester; the public App Store would need real native work.

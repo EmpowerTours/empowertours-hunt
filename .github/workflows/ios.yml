@@ -1,0 +1,212 @@
+# ---------------------------------------------------------------------------
+# Build the iOS app on a machine that has Xcode, because none of ours does.
+#
+# There is no Mac here: this box is WSL and the Mac Mini runs Ubuntu. GitHub's
+# macOS runners are the Xcode we do not own, and on a PUBLIC repository their
+# minutes are free — the 10x macOS multiplier only bills private repos. That is
+# the whole reason this is viable rather than a cost decision to argue about.
+#
+# TWO JOBS, DELIBERATELY SPLIT.
+#
+# `compile` needs no secrets and no Apple account. It proves the project builds:
+# that capacitor synced, that the SPM packages resolved, that the entitlements
+# parse, that nothing in the Swift is broken. It runs on every push that touches
+# the app, and it is the check that would have caught a broken project days
+# before anyone went looking for a Mac.
+#
+# `archive` signs and uploads, and it is skipped unless the App Store Connect
+# credentials are present. A workflow that goes red because a secret has not
+# been created yet teaches people to ignore red workflows.
+#
+# WHY NOT A PODFILE STEP: Capacitor 8 uses Swift Package Manager here
+# (ios/App/CapApp-SPM), so there is no `pod install`. Adding one would fail
+# looking for a Podfile that does not exist.
+# ---------------------------------------------------------------------------
+name: iOS
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+concurrency:
+  # A second push while a build is running makes the first one irrelevant.
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: Compile (unsigned)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # mobile/ has its own package.json on purpose — the repo root's is shared
+      # and none of Capacitor belongs in the web build.
+      - name: Install Capacitor
+        working-directory: mobile
+        run: npm ci
+
+      # Copies capacitor.config.ts into the native project and refreshes the
+      # plugin list. Without it the app ships whatever config was committed last,
+      # which is how a server.url change silently fails to reach a build.
+      - name: Sync
+        working-directory: mobile
+        run: npx cap sync ios
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      # Unsigned, and a simulator destination, so this needs no certificate and
+      # no provisioning profile. It compiles every line the signed build would.
+      - name: Build
+        working-directory: mobile/ios/App
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      # The entitlement is the thing that makes passkeys work at all in a
+      # WKWebView, and it is easy to lose in a merge without anyone noticing
+      # until sign-in fails on a device. Assert it rather than hope.
+      - name: Assert the associated-domains entitlement survived
+        working-directory: mobile/ios/App
+        run: |
+          if ! grep -q "webcredentials:empowertours.xyz" App/App.entitlements; then
+            echo "::error::App.entitlements no longer declares webcredentials:empowertours.xyz — passkey sign-in cannot work in the WebView without it"
+            exit 1
+          fi
+          echo "associated domains entitlement present"
+
+  archive:
+    name: Archive and upload to TestFlight
+    needs: compile
+    runs-on: macos-15
+    timeout-minutes: 60
+    # Only when the credentials exist. Secrets are not readable in `if:` on
+    # pull requests from forks, and an unsigned fork PR should not try to sign.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Capacitor
+        working-directory: mobile
+        run: npm ci
+
+      - name: Sync
+        working-directory: mobile
+        run: npx cap sync ios
+
+      # Bail out politely rather than failing, so the workflow is green until
+      # somebody decides to set this up.
+      - name: Check for App Store Connect credentials
+        id: creds
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          if [ -z "$KEY_ID" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::APP_STORE_CONNECT_KEY_ID is not set — skipping the signed build. See mobile/README.md."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # An App Store Connect API key rather than a distribution certificate and
+      # a .p12 in a secret. Xcode can then create and refresh provisioning
+      # profiles itself with -allowProvisioningUpdates, which means no human
+      # ever exports a private key, and there is no certificate to expire
+      # silently in eleven months.
+      - name: Install the API key
+        if: steps.creds.outputs.present == 'true'
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s' "$PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
+          chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
+
+      - name: Archive
+        if: steps.creds.outputs.present == 'true'
+        working-directory: mobile/ios/App
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/App.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8 \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            archive
+
+      - name: Export the IPA
+        if: steps.creds.outputs.present == 'true'
+        working-directory: mobile/ios/App
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
+
+      - name: Upload to TestFlight
+        if: steps.creds.outputs.present == 'true'
+        working-directory: mobile/ios/App
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$(ls build/ipa/*.ipa | head -1)" \
+            --apiKey "$KEY_ID" \
+            --apiIssuer "$ISSUER_ID"
+
+      - name: Keep the IPA
+        if: steps.creds.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmpowerTours-ios
+          path: mobile/ios/App/build/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  How the archive becomes an IPA.
+
+  `app-store-connect` rather than `ad-hoc` or `development`: the destination is
+  TestFlight, and TestFlight builds come from an App Store export. An ad-hoc
+  export would produce a file that installs only on devices registered by UDID,
+  which is the wrong shape for handing a build to someone who is not in the
+  room.
+
+  Worth knowing before this is read as a store submission: uploading to
+  TestFlight is not submitting to the App Store. INTERNAL testers get the build
+  with no review at all, which is why this is a reasonable target for a WebView
+  shell that App Review's guideline 4.2 would likely reject as a repackaged
+  website.
+
+  uploadSymbols is off because there is no crash reporter consuming them and
+  the dSYM upload is the slowest part of the export. manageAppVersionAndBuildNumber
+  is off too: the workflow sets CURRENT_PROJECT_VERSION from the run number, so
+  the build number is traceable to the run that produced it, and letting Xcode
+  pick one instead would throw that away.
+-->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>VYPJ7L4YTB</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>uploadSymbols</key>
+	<false/>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<key>destination</key>
+	<string>export</string>
+</dict>
+</plist>
