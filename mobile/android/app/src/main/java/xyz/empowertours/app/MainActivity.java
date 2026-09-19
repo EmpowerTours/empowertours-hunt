@@ -2,6 +2,7 @@ package xyz.empowertours.app;
 
 import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewFeature;
@@ -43,9 +44,27 @@ public class MainActivity extends BridgeActivity {
             WebView.setWebContentsDebuggingEnabled(true);
         }
 
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_AUTHENTICATION)) {
+        boolean webAuthnSupported =
+            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_AUTHENTICATION);
+
+        // Tell the PAGE what the native side decided, by marking the user agent.
+        //
+        // /diag can see window.PublicKeyCredential, which in a WebView exists
+        // whether or not setWebAuthenticationSupport was ever called — so the
+        // JS-visible surface cannot distinguish "configured" from "not". This
+        // can. A user-agent suffix rather than an injected global because it
+        // survives navigation and reloads with no ordering to get wrong, and
+        // nothing on the server gates on the user agent.
+        WebSettings settings = this.bridge.getWebView().getSettings();
+        settings.setUserAgentString(
+            settings.getUserAgentString()
+                + " EmpowerToursApp/1 WebAuthnSupport/"
+                + (webAuthnSupported ? "1" : "0")
+        );
+
+        if (webAuthnSupported) {
             WebSettingsCompat.setWebAuthenticationSupport(
-                this.bridge.getWebView().getSettings(),
+                settings,
                 WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_FOR_APP
             );
         } else {

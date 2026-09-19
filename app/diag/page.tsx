@@ -101,16 +101,42 @@ export default function DiagnosticsPage() {
       });
 
       // --- Is this the app or a browser? ----------------------------------
-      // Capacitor injects a global. Worth stating plainly, because "it works in
-      // Chrome" and "it works in the app" are different claims and the whole
-      // question is which one is failing.
+      // Worth stating plainly and first, because "it works in Chrome" and "it
+      // works in the app" are different claims and the whole question is which
+      // one is failing. The first screenshot of this page came from Chrome and
+      // said nothing about the app, which is how this line earned its place at
+      // the top rather than buried among the context rows.
+      const ua = navigator.userAgent;
+      const marked = / EmpowerToursApp\/1 /.test(ua);
       const inApp =
+        marked ||
         typeof (window as { Capacitor?: unknown }).Capacitor !== "undefined";
       out.push({
         label: "Running inside the app",
-        value: inApp ? "yes (Capacitor WebView)" : "no (ordinary browser)",
-        tone: "info",
+        value: inApp ? "yes (app WebView)" : "no — this is an ordinary browser",
+        tone: inApp ? "info" : "bad",
+        why: inApp
+          ? undefined
+          : "This measures the browser you opened it in, not the app. To diagnose the app, open the EmpowerTours app and go to /diag from inside it.",
       });
+
+      // What the NATIVE side decided, reported through a user-agent marker.
+      //
+      // window.PublicKeyCredential exists in a WebView whether or not
+      // setWebAuthenticationSupport was ever called, so the JS-visible surface
+      // cannot tell "configured" from "not". This can: MainActivity writes the
+      // verdict into the user agent before the first load.
+      if (marked) {
+        const enabled = / WebAuthnSupport\/1\b/.test(ua);
+        out.push({
+          label: "WebAuthn enabled by the app",
+          value: enabled ? "yes" : "no",
+          tone: enabled ? "ok" : "bad",
+          why: enabled
+            ? undefined
+            : "This device's system WebView cannot do WebAuthn, so the app cannot run a passkey ceremony at all. Update Android System WebView from the Play Store, then reopen the app. Nothing in this app can work around it.",
+        });
+      }
 
       // --- Does this device already know one of our credentials? -----------
       const known = storedCredential();
