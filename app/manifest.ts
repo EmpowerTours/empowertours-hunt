@@ -5,7 +5,12 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "EmpowerTours Hunt",
-    short_name: "Hunt",
+    // "EmpowerTours", not "Hunt". One deployment serves the game and the
+    // trading floor off the hostname, and mobile/README already fixes the
+    // launcher label as EmpowerTours for exactly that reason — two icons for
+    // one identity and one balance is the thing being avoided. Added to the
+    // home screen from cota.empowertours.xyz, "Hunt" names the wrong door.
+    short_name: "EmpowerTours",
     description:
       "Walk your city and get paid in real MON for the rewards you reach.",
     start_url: "/",

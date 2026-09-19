@@ -52,6 +52,50 @@ type Outcome = {
   tone: "ok" | "bad";
 };
 
+/** What each probe PROVED, as opposed to what it printed. */
+type Verdicts = {
+  /** The credential was found and the assertion completed. */
+  plain?: "ok" | "fail";
+  /** "noprf" = the assertion worked but the extension was not evaluated. */
+  prf?: "ok" | "noprf" | "fail";
+};
+
+/* ---------------------------------------------------------------------------
+   The probe has to state its own conclusion.
+
+   Two lines of raw output are only a measurement to someone who already knows
+   what they mean, and the person running this is holding a phone in another
+   city. Worse, the two failures look identical on screen and lead to entirely
+   different projects — one is a device to swap, the other is a rewrite of how
+   the ceremony runs.
+--------------------------------------------------------------------------- */
+function verdictOf(v: Verdicts): { title: string; body: string } | null {
+  if (v.plain === undefined || v.prf === undefined) return null;
+
+  if (v.plain === "fail" && v.prf === "fail") {
+    return {
+      title: "This device never answered",
+      body: "Both lookups timed out, with and without extensions — so this is not about what the request contained. The system credential sheet opened and nothing responded to it. Nothing in the app or on the website can fix that. Try the same app on a different Android phone: if sign-in works there, this device is the problem.",
+    };
+  }
+  if (v.plain === "ok" && v.prf !== "ok") {
+    return {
+      title: "Found the passkey, cannot derive the wallet",
+      body: "The lookup succeeded without PRF and failed with it. The credential is reachable here, but this WebView will not evaluate the PRF extension — and PRF is what the wallet is made of. No configuration fixes this; the ceremony has to run outside the WebView.",
+    };
+  }
+  if (v.plain === "ok" && v.prf === "ok") {
+    return {
+      title: "Everything the wallet needs works here",
+      body: "Both lookups completed and PRF was evaluated. If sign-in still fails on this device, the fault is after the ceremony — the error text on the sign-in screen is the next clue, not this probe.",
+    };
+  }
+  return {
+    title: "Mixed result",
+    body: "The plain lookup failed while the PRF one did not, which is backwards and usually means one of the two was answered by a different provider, or cancelled by hand. Run both again without touching the sheet.",
+  };
+}
+
 function describe(e: unknown): string {
   if (e instanceof Error) {
     const name = e.name && e.name !== "Error" ? `${e.name}: ` : "";
@@ -64,6 +108,7 @@ export function PasskeyProbe() {
   const [busy, setBusy] = useState<null | "plain" | "prf">(null);
   const [elapsed, setElapsed] = useState(0);
   const [results, setResults] = useState<Outcome[]>([]);
+  const [verdicts, setVerdicts] = useState<Verdicts>({});
 
   const run = async (kind: "plain" | "prf") => {
     setBusy(kind);
@@ -111,6 +156,7 @@ export function PasskeyProbe() {
       ])) as PublicKeyCredential | null;
 
       if (cred === null) {
+        setVerdicts((v) => ({ ...v, [kind]: "fail" }));
         setResults((r) => [
           ...r,
           {
@@ -128,6 +174,11 @@ export function PasskeyProbe() {
       const gotPrf = ext.prf?.results?.first !== undefined;
       const secs = Math.round((Date.now() - started) / 1000);
 
+      setVerdicts((v) => ({
+        ...v,
+        [kind]: kind === "prf" ? (gotPrf ? "ok" : "noprf") : "ok",
+      }));
+
       setResults((r) => [
         ...r,
         {
@@ -143,6 +194,7 @@ export function PasskeyProbe() {
         },
       ]);
     } catch (e: unknown) {
+      setVerdicts((v) => ({ ...v, [kind]: "fail" }));
       setResults((r) => [
         ...r,
         {
@@ -205,6 +257,15 @@ export function PasskeyProbe() {
           ))}
         </dl>
       ) : null}
+
+      {(() => {
+        const v = verdictOf(verdicts);
+        return v === null ? null : (
+          <Note tone="warn" title={v.title}>
+            {v.body}
+          </Note>
+        );
+      })()}
 
       {busy !== null ? (
         <Note tone="warn" title="Probing">
