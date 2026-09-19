@@ -4,4 +4,26 @@
     <string name="title_activity_main">EmpowerTours</string>
     <string name="package_name">xyz.empowertours.app</string>
     <string name="custom_url_scheme">xyz.empowertours.app</string>
+
+    <!--
+      Digital Asset Links, declared FROM THE APP SIDE.
+
+      The file on empowertours.xyz says the site trusts this app. This says the
+      app claims that site, and Android's Credential Manager will not validate a
+      relying-party id without it: the native ceremony fails with
+      "RP ID cannot be validated" even though the statement is live and Google's
+      own statements:list resolves it.
+
+      Only the parent domain is listed, because that IS the relying-party id —
+      one passkey, therefore one wallet, across every EmpowerTours door.
+
+      The WebView path (WEB_AUTHENTICATION_SUPPORT_FOR_APP, Play services FIDO2)
+      does not appear to need this; the native path does. That difference cost
+      an evening, so it is written down rather than left to be rediscovered.
+    -->
+    <string name="asset_statements" translatable="false">
+        [{
+          \"include\": \"https://empowertours.xyz/.well-known/assetlinks.json\"
+        }]
+    </string>
 </resources>
