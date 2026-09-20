@@ -117,17 +117,39 @@ export default function CotaPage() {
   // Monad tx that anchored the leash to AuditAnchorV2, once it lands. Null while
   // un-anchored (anchoring is a separate act that can be off or can fail).
   const [anchorTx, setAnchorTx] = useState<string | null>(null);
-  // On the cota.* trading host there is no hunt game, so hide the way back to
-  // it. Set after mount to avoid a hydration mismatch. It stays on
-  // hunt.empowertours.xyz/cota, where the game does exist.
-  const [onCotaHost, setOnCotaHost] = useState(false);
+  // The way to the game, which is NOT always a same-origin path.
+  //
+  // lib/host.ts redirects every /hunt route on the cota.* host back to /cota,
+  // so a relative link is a loop there. It was previously hidden for that
+  // reason, and that left the installed app — whose WebView is pinned to
+  // cota.empowertours.xyz — with no reachable route into the game at all.
+  //
+  // So on cota.* the link crosses to the hunt host, which serves BOTH doors.
+  // The hostname is rewritten rather than hardcoded so preview and staging
+  // deploys point at their own sibling instead of production.
+  //
+  // Crossing origins is safe for the wallet: the relying-party id is the parent
+  // empowertours.xyz (lib/auth/passkey.ts PARENT_RP_IDS), so the same passkey
+  // yields the same PRF bytes and the same wallet on either host. The session
+  // cookie is host-only and deliberately stays that way — giving it
+  // Domain=empowertours.xyz would hand it to every sibling app, Regalo
+  // included — so the first crossing costs one sign-in tap, not a new wallet.
+  //
+  // Null until mounted, to avoid a hydration mismatch on a client-only value.
+  const [huntHref, setHuntHref] = useState<string | null>(null);
   useEffect(() => {
     // Past a microtask so this isn't the synchronous set-state-in-effect the
     // lint forbids; runs right after mount to read the client-only hostname.
-    void Promise.resolve().then(() =>
-      setOnCotaHost(window.location.hostname.startsWith("cota.")),
-    );
+    void Promise.resolve().then(() => {
+      const host = window.location.hostname;
+      setHuntHref(
+        host.startsWith("cota.")
+          ? `${window.location.protocol}//hunt.${host.slice("cota.".length)}/hunt`
+          : "/hunt",
+      );
+    });
   }, []);
+  const crossesHost = huntHref !== null && huntHref.startsWith("http");
   // Practice vs live, chosen UP FRONT. Both sign the same leash; this only
   // decides where the leash is used — a funded account shouldn't have to sign,
   // then dig past practice to find the live door.
@@ -259,13 +281,39 @@ export default function CotaPage() {
 
   return (
     <main className="safe-top safe-bottom mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
-      {!onCotaHost && (
+      {/* Came from the game: a slim way back, unchanged. */}
+      {huntHref !== null && !crossesHost && (
         <Link
-          href="/hunt"
+          href={huntHref}
           className="text-ink-dim inline-flex items-center gap-1 text-sm"
         >
           ← {lang === "es" ? "Volver a cazar" : "Back to hunting"}
         </Link>
+      )}
+      {/* Arrived straight at the trading floor — the installed app opens here,
+          so this is the only door to the game and it is sized like one. A plain
+          anchor, not next/link: this leaves the origin, and the WebView is
+          allowed to follow it because hunt.empowertours.xyz is in
+          `allowNavigation` (mobile/capacitor.config.ts). */}
+      {crossesHost && (
+        <a
+          href={huntHref}
+          className="border-phosphor/40 bg-hull active:bg-hull-2 flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border-2 px-5"
+        >
+          <span>
+            <span className="text-ink block text-base font-semibold">
+              {lang === "es" ? "Caza MON de verdad" : "Hunt for real MON"}
+            </span>
+            <span className="text-ink-dim block text-xs leading-snug">
+              {lang === "es"
+                ? "Premios escondidos cerca de ti. Mismo monedero."
+                : "Rewards hidden near you. Same wallet."}
+            </span>
+          </span>
+          <span className="text-phosphor shrink-0 text-xl" aria-hidden>
+            →
+          </span>
+        </a>
       )}
       <header className="flex items-start justify-between gap-3">
         <div>
