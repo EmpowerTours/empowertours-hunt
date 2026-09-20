@@ -6,6 +6,7 @@ import { checkLimit } from "@/lib/ratelimit";
 import { monad, monadRpcUrl } from "@/lib/monad";
 import { readCatalogue } from "@/lib/editions/catalogue";
 import { relayerConfig } from "@/lib/editions/relayer";
+import { unexplainedLicences } from "@/lib/editions/ownership";
 import {
   deriveEdition,
   evaluateEditionEligibility,
@@ -134,6 +135,13 @@ export async function GET(
       select: { collection: true, masterId: true, tier: true },
     });
     const held = new Set(claims.map((c) => heldKey(c)));
+    // Per master and ACROSS tiers, because the chain's cheap read is
+    // tier-blind and this is what gets subtracted from it.
+    const knownPerMaster = new Map<string, number>();
+    for (const c of claims) {
+      const k = `${c.collection}/${c.masterId}`;
+      knownPerMaster.set(k, (knownPerMaster.get(k) ?? 0) + 1);
+    }
 
     // Their own wallet, read from chain. There is no internal balance: hunt
     // payouts land in the hunter's wallet, so this IS the spendable figure.
@@ -203,9 +211,21 @@ export async function GET(
     const d = byMaster.get(
       `${draw.offer.collection}/${draw.offer.masterId}/${draw.offer.tier}`,
     );
+    // One read, for the one work being offered. A warning, never a gate —
+    // see lib/editions/ownership.ts.
+    const unexplained = await unexplainedLicences({
+      registry: draw.offer.collection as `0x${string}`,
+      owner: player.walletAddress as `0x${string}`,
+      masterId: BigInt(draw.offer.masterId),
+      knownCount:
+        knownPerMaster.get(`${draw.offer.collection}/${draw.offer.masterId}`) ??
+        0,
+    });
     return NextResponse.json({
       offered: true,
       payTo: relayerConfig()?.relayerAddress ?? null,
+      // Null (could not ask) renders the same as false: show nothing.
+      alreadyHeld: (unexplained ?? 0) > 0,
       edition: view(created, {
         name: d?.name ?? `#${created.masterId}`,
         imageUrl: d?.imageUrl ?? null,
