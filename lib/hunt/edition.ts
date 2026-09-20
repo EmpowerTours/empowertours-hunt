@@ -99,6 +99,12 @@ export type EditionRejectReason = (typeof EDITION_REJECT_REASONS)[number];
 // ---------------------------------------------------------------------------
 
 export type EditionKind = "MUSIC" | "ART";
+/**
+ * The two things the venue will sell for one master. STANDARD is uncapped and
+ * cheap; COLLECTOR has its own price and its own supply cap. A hunter may hold
+ * one of each, which is why tier is part of the claim key.
+ */
+export type EditionTier = "STANDARD" | "COLLECTOR";
 export type EditionTerms = "FREE" | "PURCHASE";
 
 /**
@@ -114,6 +120,7 @@ export interface EditionOffer {
   /** The master id within that collection. */
   masterId: string;
   kind: EditionKind;
+  tier: EditionTier;
   terms: EditionTerms;
   /**
    * WMON wei. Null only when terms is FREE, mirroring the database CHECK
@@ -134,10 +141,14 @@ export interface EditionOffer {
 export function canonicalOrder(
   catalogue: readonly EditionOffer[],
 ): EditionOffer[] {
-  return [...catalogue].sort((a, b) =>
-    a.collection === b.collection
-      ? a.masterId.localeCompare(b.masterId)
-      : a.collection.localeCompare(b.collection),
+  // Tier is part of the ordering for the same reason it is part of the claim
+  // key: the same master appears twice, once per tier, and "the seed chose
+  // index 3" has to mean one of them and always the same one.
+  return [...catalogue].sort(
+    (a, b) =>
+      a.collection.localeCompare(b.collection) ||
+      a.masterId.localeCompare(b.masterId) ||
+      a.tier.localeCompare(b.tier),
   );
 }
 
@@ -251,7 +262,7 @@ export function quotedPrice(offer: EditionOffer): bigint {
     // Mirrors the database CHECK. Reject by default: a PURCHASE without a
     // usable price must not reach a hunter as a free one.
     throw new RangeError(
-      `quotedPrice: PURCHASE offer ${offer.collection}/${offer.masterId} has no positive price`,
+      `quotedPrice: PURCHASE offer ${offer.collection}/${offer.masterId}/${offer.tier} has no positive price`,
     );
   }
   return offer.priceWei;

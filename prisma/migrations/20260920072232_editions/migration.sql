@@ -8,6 +8,9 @@
 CREATE TYPE "EditionKind" AS ENUM ('MUSIC', 'ART');
 
 -- CreateEnum
+CREATE TYPE "EditionTier" AS ENUM ('STANDARD', 'COLLECTOR');
+
+-- CreateEnum
 CREATE TYPE "EditionTerms" AS ENUM ('FREE', 'PURCHASE');
 
 -- CreateEnum
@@ -33,6 +36,7 @@ CREATE TABLE "Edition" (
     "lat" DOUBLE PRECISION NOT NULL,
     "lng" DOUBLE PRECISION NOT NULL,
     "radiusMeters" INTEGER NOT NULL DEFAULT 25,
+    "tier" "EditionTier" NOT NULL,
     "terms" "EditionTerms" NOT NULL,
     "priceWei" DECIMAL(78,0),
     "expiresAt" TIMESTAMP(3) NOT NULL,
@@ -49,6 +53,7 @@ CREATE TABLE "EditionClaim" (
     "editionId" TEXT,
     "collection" TEXT NOT NULL,
     "masterId" TEXT NOT NULL,
+    "tier" "EditionTier" NOT NULL,
     "walletAddress" TEXT NOT NULL,
     "paidWei" DECIMAL(78,0) NOT NULL,
     "licenseId" TEXT,
@@ -84,7 +89,7 @@ CREATE UNIQUE INDEX "EditionClaim_transferTxHash_key" ON "EditionClaim"("transfe
 CREATE INDEX "EditionClaim_status_createdAt_idx" ON "EditionClaim"("status", "createdAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "EditionClaim_playerId_collection_masterId_key" ON "EditionClaim"("playerId", "collection", "masterId");
+CREATE UNIQUE INDEX "EditionClaim_playerId_collection_masterId_tier_key" ON "EditionClaim"("playerId", "collection", "masterId", "tier");
 
 -- AddForeignKey
 ALTER TABLE "Edition" ADD CONSTRAINT "Edition_huntId_fkey" FOREIGN KEY ("huntId") REFERENCES "Hunt"("id") ON DELETE CASCADE ON UPDATE CASCADE;

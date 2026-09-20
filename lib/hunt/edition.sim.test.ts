@@ -47,6 +47,7 @@ function catalogue(freeIds: readonly string[] = []): EditionOffer[] {
     collection: REG,
     masterId: m.id,
     kind: "MUSIC" as const,
+    tier: "STANDARD" as const,
     terms: freeIds.includes(m.id) ? ("FREE" as const) : ("PURCHASE" as const),
     priceWei: freeIds.includes(m.id)
       ? null

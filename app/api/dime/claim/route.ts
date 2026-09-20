@@ -76,9 +76,13 @@ export async function POST(req: Request) {
     }
     // The claim is keyed on the work, so the giveaway and a found edition of
     // the same song are the same row and the same "once, forever" rule.
+    // STANDARD, always. This page exists to put a wallet on a stranger's
+    // phone; the COLLECTOR edition is the capped, priced thing they can buy
+    // afterwards, and keying the claim by tier is what keeps that possible.
     const key = {
       collection: cfg.licenseRegistry,
       masterId: drop.masterId.toString(),
+      tier: "STANDARD" as const,
     };
 
     const player = await requirePlayer(req);
@@ -96,7 +100,9 @@ export async function POST(req: Request) {
     // If this player already has a row, the claim is done or in flight. Report
     // its state rather than trying again — a second relay is a second licence.
     const existing = await prisma.editionClaim.findUnique({
-      where: { playerId_collection_masterId: { playerId: player.id, ...key } },
+      where: {
+        playerId_collection_masterId_tier: { playerId: player.id, ...key },
+      },
       select: { id: true, status: true, transferTxHash: true, licenseId: true },
     });
     if (existing) {
@@ -181,7 +187,7 @@ export async function POST(req: Request) {
 
     const result = await relayLicense(
       cfg,
-      { collection: cfg.licenseRegistry, ...drop },
+      { collection: cfg.licenseRegistry, isCollector: false, ...drop },
       player.walletAddress as Address,
     );
 
@@ -235,6 +241,8 @@ export async function GET(req: Request) {
         ? {
             collection: cfg.licenseRegistry,
             masterId: drop.masterId.toString(),
+            // Matches the POST. This page only ever deals the STANDARD tier.
+            tier: "STANDARD" as const,
           }
         : null;
 
@@ -251,7 +259,10 @@ export async function GET(req: Request) {
       const row = key
         ? await prisma.editionClaim.findUnique({
             where: {
-              playerId_collection_masterId: { playerId: player.id, ...key },
+              playerId_collection_masterId_tier: {
+                playerId: player.id,
+                ...key,
+              },
             },
             select: { status: true, transferTxHash: true },
           })

@@ -1426,6 +1426,11 @@ model Edition {
   lng          Float
   radiusMeters Int   @default(25)
 
+  /// Which tier this drop offers. The venue prices the two separately and
+  /// caps the collector one, so they are different products and a hunter may
+  /// hold one of each.
+  tier EditionTier
+
   terms EditionTerms
 
   /// WMON wei, and NULL only when terms is FREE. A PURCHASE with no price must
@@ -1452,6 +1457,17 @@ enum EditionKind {
   ART
 }
 
+/// The two things SalesController will sell for one master.
+///
+/// STANDARD is the funnel — cheap or given away, uncapped, its job is to put a
+/// wallet on a stranger's phone. COLLECTOR is the scarce one: its own price,
+/// its own `maxCollectorEditions` cap. `purchase()` takes this as its
+/// `isCollector` flag.
+enum EditionTier {
+  STANDARD
+  COLLECTOR
+}
+
 enum EditionTerms {
   /// The relayer buys it and gives it away. SalesController refuses a zero
   /// price, so "free" is an app flow paid by the relayer, never a contract
@@ -1461,12 +1477,18 @@ enum EditionTerms {
   PURCHASE
 }
 
-/// One edition of a given work per passkey, FOREVER.
+/// One edition of a given work PER TIER per passkey, FOREVER.
 ///
 /// Generalises the old DimeClaim, which was the same machinery keyed to a
 /// single hardcoded song. The rule that matters is the unique index: without
 /// it one wallet takes the whole supply, which is the only thing that turns a
 /// drop into a drained relayer.
+///
+/// TIER IS PART OF THE KEY, and leaving it out was a real bug caught before
+/// deployment. Without it, claiming the free STANDARD licence would
+/// permanently bar that passkey from ever buying the COLLECTOR edition — the
+/// exact conversion a giveaway exists to create. The venue treats them as two
+/// products with two prices and a separate cap; so does this.
 ///
 /// The row is written BEFORE any chain work, so a concurrent double-claim hits
 /// the constraint rather than the relayer, and is then advanced by the
@@ -1484,6 +1506,7 @@ model EditionClaim {
 
   collection String
   masterId   String
+  tier       EditionTier
 
   /// Snapshotted at claim time, so a later wallet change cannot rewrite who
   /// claimed. Same reasoning as the old DimeClaim.
@@ -1506,7 +1529,7 @@ model EditionClaim {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([playerId, collection, masterId])
+  @@unique([playerId, collection, masterId, tier])
   @@index([status, createdAt])
 }
 

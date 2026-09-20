@@ -74,6 +74,15 @@ export interface LicenseOrder {
   /** Must equal the configured licenseRegistry. Checked, not assumed. */
   collection: Address;
   masterId: bigint;
+  /**
+   * Which tier to buy — `purchase()`'s own `isCollector` flag.
+   *
+   * Was hardcoded false when this relayer existed for one free song. It is a
+   * parameter now because the two tiers are separately priced and separately
+   * capped, and a giveaway of the standard licence exists precisely to sell
+   * the collector one later.
+   */
+  isCollector: boolean;
   /** Licence metadata uri, passed straight to purchase(). */
   licenseUri: string;
 }
@@ -167,7 +176,7 @@ export function relayLicense(
         address: cfg.salesController,
         abi: SALES_ABI,
         functionName: "purchase",
-        args: [order.masterId, false, order.licenseUri],
+        args: [order.masterId, order.isCollector, order.licenseUri],
       });
       purchaseTxHash = hash;
       const receipt = await pub.waitForTransactionReceipt({ hash });

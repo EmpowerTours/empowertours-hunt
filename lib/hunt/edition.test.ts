@@ -27,6 +27,7 @@ function offer(
     collection: REG,
     masterId,
     kind: "MUSIC",
+    tier: "STANDARD",
     terms: "PURCHASE",
     priceWei: 1_000_000_000_000_000n,
     ...over,
@@ -119,6 +120,14 @@ describe("canonicalOrder", () => {
     const out = canonicalOrder(input);
     expect(out.map((o) => o.masterId)).toEqual(["a", "b"]);
     expect(input).toEqual(copy);
+  });
+
+  it("separates the two tiers of the same master", () => {
+    const out = canonicalOrder([
+      offer("m1", { tier: "STANDARD" }),
+      offer("m1", { tier: "COLLECTOR" }),
+    ]);
+    expect(out.map((o) => o.tier)).toEqual(["COLLECTOR", "STANDARD"]);
   });
 
   it("separates the same master id in different collections", () => {
