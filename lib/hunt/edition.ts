@@ -35,9 +35,10 @@
 // price is proven a different way: it is written onto the row at placement and
 // honoured for the life of the drop (see quoting, below).
 
-import { destinationPoint, uniformBigInt } from "@/lib/hunt/spawn";
+import { attemptSeed, destinationPoint, uniformBigInt } from "@/lib/hunt/spawn";
 import type { LatLng } from "@/lib/geo/distance";
 import { affordableWithGas } from "@/lib/editions/payment";
+import { isWalkable, type WalkableArea } from "@/lib/geo/polygon";
 
 // ---------------------------------------------------------------------------
 // Reasons
@@ -337,4 +338,58 @@ export function heldKey(offer: {
   tier: EditionTier;
 }): string {
   return `${offer.collection}/${offer.masterId}/${offer.tier}`;
+}
+
+export type EditionPlacement =
+  | { ok: true; draw: EditionDraw; attempts: number }
+  | { ok: false; attempts: number };
+
+/**
+ * Draw an edition that lands somewhere a person can actually walk.
+ *
+ * Exactly `deriveSpawnInArea`'s contract, and deliberately the same shape: a
+ * bare `deriveEdition` places a point on an abstract disc and will happily put
+ * a drop in the river or inside a house. This redraws until the point is
+ * inside the hunt's surveyed area.
+ *
+ * `attemptSeed` is imported from spawn.ts rather than reimplemented. It is
+ * part of the reveal promise — given the revealed seed anyone can replay
+ * attempts 0..n and confirm both where the accepted drop landed and that the
+ * rejected ones really were unwalkable — and two copies of that derivation
+ * would eventually disagree and quietly break replay for one of them.
+ *
+ * DECLINES RATHER THAN LOOPS, for the same reason spawns do: a player at the
+ * edge of the hull would otherwise spin this forever. Missing one cycle is a
+ * non-event.
+ */
+export function deriveEditionInArea(
+  seed: string,
+  params: EditionDrawParams,
+  area: WalkableArea,
+  maxAttempts = 10,
+  allowUnsurveyed = false,
+): EditionPlacement {
+  if (!(Number.isInteger(maxAttempts) && maxAttempts >= 1)) {
+    throw new RangeError("maxAttempts must be a positive integer");
+  }
+
+  // Only when there is NO survey at all. An exclude ring is somebody saying
+  // "not there"; a hunt with excludes but no includes is a survey in progress.
+  const unsurveyed =
+    area.include.length === 0 && area.exclude.length === 0 && allowUnsurveyed;
+  if (unsurveyed) {
+    return {
+      ok: true,
+      draw: deriveEdition(attemptSeed(seed, 0), params),
+      attempts: 1,
+    };
+  }
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const draw = deriveEdition(attemptSeed(seed, attempt), params);
+    if (isWalkable({ lat: draw.lat, lng: draw.lng }, area)) {
+      return { ok: true, draw, attempts: attempt + 1 };
+    }
+  }
+  return { ok: false, attempts: maxAttempts };
 }

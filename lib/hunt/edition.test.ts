@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canAfford,
+  deriveEditionInArea,
   canonicalOrder,
   deriveEdition,
   heldKey,
@@ -223,5 +224,64 @@ describe("placeableFor", () => {
 
   it("returns nothing rather than throwing when all are unaffordable", () => {
     expect(placeableFor([dear], none, 0n, GAS)).toEqual([]);
+  });
+});
+
+describe("deriveEditionInArea", () => {
+  // A ring that contains the origin and a generous area around it.
+  const wide = {
+    include: [
+      [
+        { lat: 17.54, lng: -99.51 },
+        { lat: 17.56, lng: -99.51 },
+        { lat: 17.56, lng: -99.49 },
+        { lat: 17.54, lng: -99.49 },
+      ],
+    ],
+    exclude: [],
+  };
+  const nowhere = { include: [], exclude: [] };
+
+  it("places inside a surveyed area", () => {
+    const r = deriveEditionInArea("seed", PARAMS, wide);
+    expect(r.ok).toBe(true);
+  });
+
+  // An unsurveyed hunt places NOTHING unless it has opted in — isWalkable
+  // reads an empty hull as "nowhere approved", not "anywhere goes".
+  it("declines on an unsurveyed hunt by default", () => {
+    const r = deriveEditionInArea("seed", PARAMS, nowhere);
+    expect(r).toEqual({ ok: false, attempts: 10 });
+  });
+
+  it("places on an unsurveyed hunt only when opted in", () => {
+    expect(deriveEditionInArea("seed", PARAMS, nowhere, 10, true).ok).toBe(
+      true,
+    );
+  });
+
+  // Excludes are somebody saying "not there". A survey in progress must not be
+  // overridden by the unsurveyed opt-in.
+  it("never applies the opt-in to a hunt that has exclude rings", () => {
+    const excluded = { include: [], exclude: wide.include };
+    expect(deriveEditionInArea("seed", PARAMS, excluded, 3, true).ok).toBe(
+      false,
+    );
+  });
+
+  it("declines rather than looping forever", () => {
+    const r = deriveEditionInArea("seed", PARAMS, nowhere, 3);
+    expect(r).toEqual({ ok: false, attempts: 3 });
+  });
+
+  it("rejects a nonsense attempt count", () => {
+    expect(() => deriveEditionInArea("s", PARAMS, wide, 0)).toThrow(RangeError);
+  });
+
+  // Replay: the same seed and area must reproduce the same accepted drop.
+  it("is reproducible from the seed", () => {
+    const a = deriveEditionInArea("replay", PARAMS, wide);
+    const b = deriveEditionInArea("replay", PARAMS, wide);
+    expect(a).toEqual(b);
   });
 });

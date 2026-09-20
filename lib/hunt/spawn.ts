@@ -303,7 +303,7 @@ export function deriveSpawn(seed: string, params: SpawnDrawParams): SpawnDraw {
  * seed-reveal promise is that the drop was fixed before the player moved, and
  * an unreproducible retry makes that unverifiable.
  */
-function attemptSeed(seed: string, attempt: number): string {
+export function attemptSeed(seed: string, attempt: number): string {
   if (attempt === 0) return seed;
   return createHash("sha256")
     .update(`${seed}:placement:${attempt}`, "utf8")
@@ -357,7 +357,11 @@ export function deriveSpawnInArea(
   const unsurveyed =
     area.include.length === 0 && area.exclude.length === 0 && allowUnsurveyed;
   if (unsurveyed) {
-    return { ok: true, draw: deriveSpawn(attemptSeed(seed, 0), params), attempts: 1 };
+    return {
+      ok: true,
+      draw: deriveSpawn(attemptSeed(seed, 0), params),
+      attempts: 1,
+    };
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
