@@ -43,6 +43,21 @@ export const AUSD = "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a" as const;
 export const KURU_MON_USDC_MARKET =
   "0x065c9d28e428a0db40191a54d33d5b7c71a9c394" as const;
 
+/**
+ * Kuru's swap executor — and the address an ERC-20 leg must be approved to.
+ *
+ * NOT the entrypoint the quote addresses its transaction to. Approving that one
+ * leaves the swap reverting 0x5264a63f with a perfectly good allowance in
+ * place; the entrypoint delegates the token pull to this contract. Kuru's
+ * documentation does not mention it, and it is only visible by decoding a
+ * receipt or by elimination.
+ *
+ * Same deployer as the entrypoint (0xb624377f…E91E), 17KB, holds nothing at
+ * rest — a pass-through router, not a custodian.
+ */
+export const KURU_EXECUTOR =
+  "0x2f84fb8982073f39ba47c7fcc29119af074abbcb" as const;
+
 /** Uniswap v4's PoolManager on Monad. Present in leg 2, absent from leg 1. */
 export const UNISWAP_V4_POOL_MANAGER =
   "0x188d586ddcf52439676ca21a244753fa19f9ea8e" as const;

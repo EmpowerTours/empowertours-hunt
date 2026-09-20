@@ -2,7 +2,14 @@
 
 import type { LocalAccount } from "viem";
 import { publicClient, walletClientFor } from "./swap";
-import { AUSD, USDC, kuruQuote, kuruToken, type KuruQuote } from "./kuru";
+import {
+  AUSD,
+  KURU_EXECUTOR,
+  USDC,
+  kuruQuote,
+  kuruToken,
+  type KuruQuote,
+} from "./kuru";
 
 // ---------------------------------------------------------------------------
 // Executing the Kuru on-ramp from the browser, with the hunter signing.
@@ -10,7 +17,7 @@ import { AUSD, USDC, kuruQuote, kuruToken, type KuruQuote } from "./kuru";
 // Three transactions, and the shape is forced rather than chosen:
 //
 //   1. MON  -> USDC   on Kuru's ORDER BOOK          <- the trade
-//   2. approve USDC   to Kuru's entrypoint          <- only if allowance short
+//   2. approve USDC   to Kuru's EXECUTOR            <- only if allowance short
 //   3. USDC -> AUSD   stable hop                    <- the conversion
 //
 // Step 1 is the one that matters. Measured on mainnet, a MON->USDC quote
@@ -157,11 +164,25 @@ export async function swapMonToAusdViaKuru(args: {
   }
 
   // --- 2. allowance, only if it is short ----------------------------------
+  //
+  // THE SPENDER IS NOT THE ADDRESS THE TRANSACTION IS SENT TO. Approving the
+  // entrypoint that `to` names is the obvious thing and it does not work: the
+  // swap reverts 0x5264a63f with a correct allowance in place. Kuru's
+  // entrypoint delegates the pull to its executor, and that is what needs the
+  // approval.
+  //
+  // Established by elimination on mainnet rather than from documentation,
+  // which does not mention the executor at all. Simulating from an address
+  // holding USDC with NO allowance reverts 0x7939f424 — Solady's
+  // TransferFromFailed — while ours reverted with something else, which is
+  // what proved the transfer was already succeeding and the failure was
+  // downstream. Approving KURU_EXECUTOR then made the same call return
+  // 0.497674 AUSD.
   const allowance = (await pc.readContract({
     address: USDC,
     abi: ERC20_ABI,
     functionName: "allowance",
-    args: [user, leg1.to],
+    args: [user, KURU_EXECUTOR],
   })) as bigint;
   if (allowance < usdcIn) {
     step("approving");
@@ -172,7 +193,7 @@ export async function swapMonToAusdViaKuru(args: {
       address: USDC,
       abi: ERC20_ABI,
       functionName: "approve",
-      args: [leg1.to, usdcIn],
+      args: [KURU_EXECUTOR, usdcIn],
     });
     const r = await pc.waitForTransactionReceipt({ hash: approveHash });
     if (r.status !== "success") throw new Error("kuru: USDC approval reverted");
