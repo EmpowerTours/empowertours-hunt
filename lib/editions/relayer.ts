@@ -58,6 +58,7 @@ const PRICING_ABI = parseAbi([
 
 const LICENSE_ABI = parseAbi([
   "function transferFrom(address from, address to, uint256 tokenId)",
+  "function tokenURI(uint256 tokenId) view returns (string)",
 ]);
 
 export interface RelayerConfig {
@@ -186,11 +187,39 @@ export function relayLicense(
     let purchaseTxHash: string | undefined;
     let licenseId: bigint | undefined;
     try {
+      // ---- The licence uri belongs to the MASTER, not to the deployment.
+      //
+      // This took `order.licenseUri`, which the answer route filled from a single
+      // EDITION_LICENSE_URI env var — one string for every claim. A licence for one track
+      // would then carry another track's artwork, and unset (the default) mints a licence
+      // with no metadata at all.
+      //
+      // fcempowertours does not do that: on a real purchase it reads the master's own
+      // tokenURI and passes that. So does this now. The Edition row deliberately stores no
+      // uri — its own schema comment says the chain stays authoritative — and the master is
+      // the only thing that knows what this licence depicts.
+      //
+      // A read failure is not fatal: the purchase still succeeds and the licence simply
+      // carries no uri, which is what would have happened with the env var unset. Better to
+      // sell a licence with no artwork than to fail a claim the hunter already paid for.
+      let licenseUri = order.licenseUri;
+      try {
+        const fromChain = (await pub.readContract({
+          address: order.collection,
+          abi: LICENSE_ABI,
+          functionName: "tokenURI",
+          args: [order.masterId],
+        })) as string;
+        if (fromChain) licenseUri = fromChain;
+      } catch {
+        // Falls through to whatever the caller passed.
+      }
+
       const hash = await wallet.writeContract({
         address: cfg.salesController,
         abi: SALES_ABI,
         functionName: "purchase",
-        args: [order.masterId, order.isCollector, order.licenseUri],
+        args: [order.masterId, order.isCollector, licenseUri],
       });
       purchaseTxHash = hash;
       const receipt = await pub.waitForTransactionReceipt({ hash });

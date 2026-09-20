@@ -220,6 +220,9 @@ export async function POST(
         collection: edition.collection as Address,
         masterId: BigInt(edition.masterId),
         isCollector: edition.tier === "COLLECTOR",
+        // A fallback only. relayLicense reads the master's own tokenURI and prefers it,
+        // because one env var cannot describe every track in the catalogue. Left here so a
+        // deployment can still pin a uri deliberately if it ever needs to.
         licenseUri: process.env.EDITION_LICENSE_URI ?? "",
       },
       player.walletAddress as Address,
