@@ -36,6 +36,7 @@ const T = {
     notSwap:
       "Esto NO cambia MON por AUSD. Mueve AUSD que ya tienes en otra cadena. Si sólo tienes MON de la búsqueda, todavía no puedes usar este puente — usa el modo práctica.",
     widgetTitle: "Puente a Monad",
+    back: "Cota",
   },
   en: {
     title: "Bring AUSD to Monad",
@@ -43,6 +44,7 @@ const T = {
     notSwap:
       "This does NOT swap MON for AUSD. It moves AUSD you already hold on another chain. If you only have hunted MON, this bridge can't help yet — use practice mode.",
     widgetTitle: "Bridge to Monad",
+    back: "Cota",
   },
 } as const;
 
@@ -51,6 +53,16 @@ export default function CotaBridgePage() {
 
   return (
     <main className="safe-top safe-bottom mx-auto flex w-full max-w-xl flex-col gap-5 px-5 py-8">
+      {/* The way back, which this page did not have.
+    
+          Every other /cota/* page carries one and these two did not, which is
+          survivable in a browser and a dead end in the app: the WebView has no
+          chrome, so there is no back gesture, no address bar and no tab —
+          reaching the bridge meant force-quitting to get out. Reported from a
+          phone. A plain <a>, matching deposit and swap exactly. */}
+      <a href="/cota" className="text-ink-dim w-fit text-sm hover:underline">
+        ← {t.back}
+      </a>
       <header className="flex flex-col gap-2">
         <h1 className="text-ink text-2xl font-black tracking-tight">
           {t.title}

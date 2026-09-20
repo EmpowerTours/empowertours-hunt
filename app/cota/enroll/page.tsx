@@ -57,6 +57,7 @@ const FEE_BPS = DEFAULT_BUILDER_FEE_PER_100K / 10; // 20 per_100k -> 2 bps
 const T = {
   es: {
     title: "Autoriza tu clave",
+    back: "Cota",
     intro:
       "Esto crea una clave de trading para Perpl que puede abrir y cerrar posiciones dentro de tu Cota. Por tu seguridad, la clave nunca puede sacar dinero de tu cuenta — sólo TÚ puedes retirar, desde tu propia wallet. Se guarda de forma segura para que el agente Cota opere dentro de tu correa; sigue sin poder retirar.",
     signin: "Inicia sesión para autorizar",
@@ -85,6 +86,7 @@ const T = {
   },
   en: {
     title: "Authorize your key",
+    back: "Cota",
     intro:
       "This creates a Perpl trading key that can open and close positions within your Cota. For your safety the key can never move money out of your account — only YOU can withdraw, from your own wallet. A copy is held securely so the Cota agent can trade within your leash; it still can never withdraw.",
     signin: "Sign in to authorize",
@@ -334,6 +336,10 @@ export default function CotaEnrollPage() {
 
   return (
     <main className="safe-top safe-bottom mx-auto flex w-full max-w-md flex-col gap-5 px-5 py-8">
+      {/* Same dead end as the bridge page had — see the note there. */}
+      <a href="/cota" className="text-ink-dim w-fit text-sm hover:underline">
+        ← {t.back}
+      </a>
       <header className="flex items-center justify-between">
         <h1 className="text-ink text-2xl font-black tracking-tight">
           {t.title}
