@@ -66,7 +66,13 @@ export function SpawnPanel({
         </Note>
       ) : null}
 
-      {live.length === 0 ? (
+      {/* Only when nothing else already explains the emptiness. An error has
+          the real reason — "sign in to receive spawns" — and stacking the
+          generic "drops appear near you at random" under it told a signed-out
+          player two different stories about the same blank scope. Reported
+          from a phone, alongside the two notes running together where the
+          locating panel had just been. */}
+      {live.length === 0 && error === null ? (
         <div className="border-hull-line bg-hull rounded-2xl border p-4">
           <p className="text-ink-faint text-sm leading-snug">
             {stopped && scanReason

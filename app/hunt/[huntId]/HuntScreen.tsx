@@ -106,7 +106,21 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   const [spawns, setSpawns] = useState<PublicSpawn[]>([]);
   const [scanReason, setScanReason] = useState<string | null>(null);
   const [scanStopped, setScanStopped] = useState(false);
-  const [spawnError, setSpawnError] = useState<string | null>(null);
+  // A REASON, not a sentence.
+  //
+  // This used to hold the translated string, set inside an effect whose deps
+  // are [huntId, scanEnabled, scanTick] — so switching language re-rendered
+  // every label around it and left this one frozen in the old locale. Reported
+  // from a phone: an English screen showing "Inicia sesión para recibir
+  // premios." Storing the key and translating at render makes that
+  // unrepresentable rather than merely fixed.
+  //
+  // `message` carries server text, which has no key to translate.
+  const [spawnError, setSpawnError] = useState<
+    | { key: "signInForSpawns" | "spawnFeedUnreachable" }
+    | { message: string }
+    | null
+  >(null);
   const [selectedSpawnId, setSelectedSpawnId] = useState<string | null>(null);
   const spawnReason = useSpawnReason();
   const tPayout = useTranslations("payout");
@@ -163,6 +177,25 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     fixRef.current = fix;
   }, [fix]);
 
+  /**
+   * Start the moment there is a position, not on the next tick.
+   *
+   * The check-in above is driven by `scanTick` alone, for the good reason
+   * documented there. The cost was a dead first half-minute: on open the
+   * effect runs once with no fix and returns, the fix lands two seconds later,
+   * and nothing re-runs it until the 30s interval fires. Reported from a
+   * phone — the "getting your hunt ready" bar finishes and then the game
+   * simply does not start.
+   *
+   * Depending on a BOOLEAN rather than on `fix` is what makes this safe. It
+   * flips once, when the first fix arrives, so it cannot reintroduce the
+   * regression that made `fix` a ref: a walking player's ±2m updates leave
+   * `hasFix` true and fire nothing. It is a dependency of the check-in effect
+   * below rather than a setState here, because a setState in an effect body
+   * is a cascading render and the lint rightly refuses it.
+   */
+  const hasFix = fix !== null;
+
   const lastCheckInRef = useRef(0);
 
   useEffect(() => {
@@ -182,6 +215,12 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         // A refused check-in is worth showing: it is almost always GPS
         // accuracy, which the player can fix by stepping outside.
         if (!r.ok && r.reason) setScanReason(r.reason);
+        // Scan NOW rather than at the next 30s tick. Until the check-in lands
+        // the scan can only answer `no_verified_position`, so the first useful
+        // scan is this one — waiting for the interval is the other half of the
+        // dead first half-minute. Safe from looping: this re-runs the effect,
+        // but the cooldown guard above has just been stamped, so it returns.
+        setScanTick((n) => n + 1);
       })
       .catch(() => {
         // Leave the cooldown unspent so the next tick retries promptly.
@@ -189,7 +228,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     return () => {
       ignore = true;
     };
-  }, [scanEnabled, huntId, cooldownSeconds, scanTick]);
+  }, [scanEnabled, huntId, cooldownSeconds, scanTick, hasFix]);
 
   useEffect(() => {
     if (!scanEnabled) return;
@@ -205,14 +244,16 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         if (controller.signal.aborted) return;
         if (e instanceof ApiError && e.status === 401) {
           setScanStopped(true);
-          setSpawnError(tHunt("signInForSpawns"));
+          setSpawnError({ key: "signInForSpawns" });
           return;
         }
         // A 429 here is self-inflicted only if something else is scanning; back
         // off rather than hammering a money-path limiter.
         if (e instanceof ApiError && e.status === 429) return;
         setSpawnError(
-          e instanceof ApiError ? e.message : tHunt("spawnFeedUnreachable"),
+          e instanceof ApiError
+            ? { message: e.message }
+            : { key: "spawnFeedUnreachable" },
         );
       });
     return () => controller.abort();
@@ -331,16 +372,22 @@ export function HuntScreen({ huntId }: { huntId: string }) {
                 },
           );
         } else {
-          setSpawnError(spawnReason(result.reason));
+          setSpawnError({ message: spawnReason(result.reason) });
         }
       } catch (e: unknown) {
-        setSpawnError(
-          e instanceof SignerMissingError
-            ? tPayout("signerMissing")
-            : e instanceof ApiError
-              ? e.message
-              : tPayout("failed"),
-        );
+        // Resolved here rather than keyed, and that is fine: these are set by
+        // a deliberate tap and cleared by the next scan, so they cannot sit on
+        // screen across a language switch. The 401 above can — it also sets
+        // scanStopped, so the effect never runs again to replace it — which is
+        // why that one, and only that one, has to carry a key.
+        setSpawnError({
+          message:
+            e instanceof SignerMissingError
+              ? tPayout("signerMissing")
+              : e instanceof ApiError
+                ? e.message
+                : tPayout("failed"),
+        });
       } finally {
         setCollectingId(null);
         setScanTick((n) => n + 1);
@@ -448,7 +495,13 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         collectingId={collectingId}
         scanReason={scanReason}
         stopped={scanStopped}
-        error={spawnError}
+        error={
+          spawnError === null
+            ? null
+            : "key" in spawnError
+              ? tHunt(spawnError.key)
+              : spawnError.message
+        }
         signingAvailable={signer !== null}
       />
 
