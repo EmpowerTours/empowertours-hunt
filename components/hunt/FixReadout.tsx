@@ -98,36 +98,62 @@ export function FixReadout({
 
   return (
     <div className="space-y-3">
-      <div className="border-hull-line bg-hull flex items-center gap-4 rounded-2xl border p-4">
-        <div className="min-w-0 flex-1">
-          <div className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
-            {tGps("accuracy")}
-          </div>
-          <div className="font-mono text-2xl leading-none" style={{ color }}>
-            {fix ? `±${Math.round(fix.accuracyM)} m` : "—"}
-          </div>
-          <div className="text-ink-faint mt-1 font-mono text-xs">
-            {fix
-              ? `${formatAge(now - fix.at)} · ${tGps("needs", { meters: maxAccuracyM })}`
-              : tGps("needs", { meters: maxAccuracyM })}
-          </div>
-        </div>
+      {/* ONE LINE, and it used to be four.
+    
+          This panel sits directly under the scope because a player waiting on
+          a lock otherwise sees a black circle and concludes the app is broken
+          — reported from the street, and that placement stays. What could not
+          stay was the size: a label, a 2xl number, a subtitle and a 56px bar
+          came to 95px, which on the 360x740 floor was most of the room left
+          for the spawn list. Every fact it stated is still here, on one row.
+    
+          The bar went horizontal rather than away: the number is the precise
+          answer, but the bar against the threshold is what tells someone at a
+          glance whether walking will help. */}
+      <div
+        role="group"
+        aria-label={tGps("accuracy")}
+        className="border-hull-line bg-hull flex items-center gap-2 rounded-2xl border px-3 py-2.5"
+      >
+        <span
+          className="size-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: color }}
+          aria-hidden
+        />
+        <span
+          className="shrink-0 font-mono text-base leading-none"
+          style={{ color }}
+        >
+          {fix ? `±${Math.round(fix.accuracyM)} m` : "—"}
+        </span>
 
-        {/* Accuracy against the threshold, as a bar. Full bar = at the limit. */}
-        <div
-          className="bg-hull-2 h-14 w-3 overflow-hidden rounded-full"
+        {/* Threshold first, age second, because this line truncates at 360px
+            and the two are not equally worth keeping. "needs ±30 m" is why a
+            claim will be refused; the age is context. Measured in Spanish,
+            the longer locale: the pair fits exactly, so one more character —
+            a two-digit age, a three-digit threshold — starts cutting, and
+            this order means it cuts the part nobody walks home over. */}
+        <span className="text-ink-faint min-w-0 flex-1 truncate font-mono text-xs">
+          {fix
+            ? `${tGps("needs", { meters: maxAccuracyM })} · ${formatAge(now - fix.at)}`
+            : tGps("needs", { meters: maxAccuracyM })}
+        </span>
+
+        {/* Accuracy against the threshold. Full bar = at the limit. */}
+        <span
+          className="bg-hull-2 h-1.5 w-10 shrink-0 overflow-hidden rounded-full"
           aria-hidden
         >
-          <div
-            className="w-full rounded-full transition-[height]"
+          <span
+            className="block h-full rounded-full transition-[width]"
             style={{
-              height: fix
+              width: fix
                 ? `${Math.min(100, (fix.accuracyM / maxAccuracyM) * 100)}%`
                 : "0%",
               backgroundColor: color,
             }}
           />
-        </div>
+        </span>
 
         {(status === "denied" ||
           status === "timeout" ||
@@ -135,7 +161,7 @@ export function FixReadout({
           <button
             type="button"
             onClick={onRetry}
-            className="border-hull-line text-ink min-h-14 shrink-0 rounded-xl border-2 px-4 font-mono text-sm tracking-wider uppercase"
+            className="border-hull-line text-ink min-h-11 shrink-0 rounded-xl border-2 px-3 font-mono text-xs tracking-wider uppercase"
           >
             {tGps("retry")}
           </button>
