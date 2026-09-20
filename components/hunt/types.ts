@@ -227,6 +227,20 @@ export interface SessionPlayerView {
 /* --- Progress ------------------------------------------------------------- */
 
 /** One payout, as the player sees it — with the receipt when there is one. */
+/** One work the hunter holds, as the wallet screen shows it. */
+export interface PlayerEdition {
+  id: string;
+  masterId: string;
+  tier: string;
+  status: string;
+  /** WMON-wei as a decimal string. Zero for a giveaway. */
+  paidWei: string;
+  licenseId: string | null;
+  /** The transfer that delivered it. Null while PENDING. */
+  txHash: string | null;
+  at: string;
+}
+
 export interface PlayerPayout {
   id: string;
   status: string;
@@ -239,6 +253,8 @@ export interface PlayerPayout {
 
 export interface PlayerProgress {
   payouts?: PlayerPayout[];
+  /** Works this passkey holds, newest first. */
+  editions?: PlayerEdition[];
   /** The player's own address, as the server knows it. */
   walletAddress?: string | null;
   /**

@@ -1,5 +1,7 @@
 "use client";
 
+import { createWalletClient, http } from "viem";
+import { monad, monadRpcUrl } from "@/lib/monad";
 import type { ClaimMessage, ClaimSigner } from "@/components/hunt/types";
 import {
   accountFromPrfOutput,
@@ -360,3 +362,46 @@ export const claimSigner: ClaimSigner = async (message: ClaimMessage) => {
     passkey?.session.end();
   }
 };
+
+/**
+ * Send native MON from the player's passkey wallet.
+ *
+ * The one transaction a hunter ever signs themselves. Everything else in this
+ * app is either an off-chain signature (a claim) or something the treasury or
+ * the relayer does for them; buying an edition is the exception, because the
+ * money is theirs and nobody can move it on their behalf without an allowance
+ * — and an allowance on a wallet belonging to somebody who does not know what
+ * one is was the shape of the v3 audit's critical finding.
+ *
+ * Same lifecycle as `claimSigner`: derive the key, use it, end the session in
+ * a finally. Holding a key open between purchases to save a Face ID prompt
+ * would trade exactly the property that makes this wallet safe.
+ *
+ * Returns the transaction hash. The caller hands that to the server, which
+ * verifies payer, recipient, amount and confirmations on chain before any
+ * licence moves — see lib/editions/payment.ts.
+ */
+export async function payFromPasskey(
+  to: `0x${string}`,
+  valueWei: bigint,
+): Promise<`0x${string}`> {
+  let passkey: PasskeyAccount | null = null;
+  try {
+    passkey = await signInAccount();
+    const wallet = createWalletClient({
+      account: passkey.account,
+      chain: monad,
+      transport: http(monadRpcUrl()),
+    });
+    return await wallet.sendTransaction({
+      to,
+      value: valueWei,
+      // Left to the node. Monad charges the full gas LIMIT with no refund, so
+      // a hand-set limit is a hand-set price; the estimate for a bare
+      // transfer is 21,000 and padding it would cost the hunter real MON.
+      chain: monad,
+    });
+  } finally {
+    passkey?.session.end();
+  }
+}

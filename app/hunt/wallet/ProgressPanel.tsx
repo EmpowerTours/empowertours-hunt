@@ -11,7 +11,11 @@ import {
   turboProgressPercent,
   weiOrZero,
 } from "@/components/hunt/format";
-import type { PlayerPayout, PlayerProgress } from "@/components/hunt/types";
+import type {
+  PlayerEdition,
+  PlayerPayout,
+  PlayerProgress,
+} from "@/components/hunt/types";
 import { Note, Panel, Stat } from "@/components/ui/primitives";
 import { Sheet, SheetOpener } from "@/components/ui/Sheet";
 
@@ -213,6 +217,10 @@ export function ProgressPanel() {
           for a thing whose whole claim is that it can be verified. Every sent
           payout links to the transaction; one still moving says so plainly
           rather than showing a dead link. */}
+      {progress.editions && progress.editions.length > 0 ? (
+        <Editions editions={progress.editions} />
+      ) : null}
+
       {progress.payouts && progress.payouts.length > 0 ? (
         <Payouts payouts={progress.payouts} />
       ) : null}
@@ -326,6 +334,97 @@ function Payouts({ payouts }: { payouts: readonly PlayerPayout[] }) {
         <ul className="space-y-2">
           {payouts.map((p) => (
             <PayoutRow key={p.id} payout={p} />
+          ))}
+        </ul>
+      </Sheet>
+    </>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Works this hunter holds.
+
+   Above the payouts, because a record with a name and a cover is the thing
+   somebody wants to look at; a list of transaction hashes is the thing they
+   want to be able to check. Same sheet as the payouts list, so the two panels
+   behave identically — see components/ui/Sheet.tsx.
+
+   PENDING rows are shown. A hunter who has paid should see the thing they
+   bought while the relayer is still delivering it rather than a gap where it
+   ought to be.
+--------------------------------------------------------------------------- */
+
+const EDITIONS_PREVIEW = 3;
+
+function EditionRow({ edition }: { edition: PlayerEdition }) {
+  const t = useTranslations("wallet");
+  const sent = edition.status === "SENT" && edition.txHash;
+  return (
+    <li className="border-hull-line flex items-center justify-between gap-3 border-b pb-2 last:border-0 last:pb-0">
+      <div className="min-w-0">
+        <div className="text-ink truncate font-mono text-sm">
+          #{edition.masterId}
+          {edition.tier === "COLLECTOR" ? " · collector" : ""}
+        </div>
+        <div className="text-ink-faint font-mono text-[11px]">
+          {weiOrZero(edition.paidWei) === 0n
+            ? t("editionFree")
+            : `${formatMon(weiOrZero(edition.paidWei))} MON`}
+          {" · "}
+          {new Date(edition.at).toLocaleDateString()}
+        </div>
+      </div>
+      {sent ? (
+        <a
+          href={`https://monadscan.com/tx/${edition.txHash}`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-spawn shrink-0 font-mono text-xs underline"
+        >
+          {t("receipt")}
+        </a>
+      ) : (
+        <span className="text-ink-faint shrink-0 font-mono text-xs">
+          {t("onItsWay")}
+        </span>
+      )}
+    </li>
+  );
+}
+
+function Editions({ editions }: { editions: readonly PlayerEdition[] }) {
+  const t = useTranslations("wallet");
+  const [open, setOpen] = useState(false);
+  const hidden = editions.length - EDITIONS_PREVIEW;
+
+  return (
+    <>
+      <Panel className="border-phosphor/40">
+        <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
+          {t("editions")}
+        </div>
+        <ul className="mt-3 space-y-2">
+          {editions.slice(0, EDITIONS_PREVIEW).map((e) => (
+            <EditionRow key={e.id} edition={e} />
+          ))}
+        </ul>
+        {hidden > 0 ? (
+          <SheetOpener onClick={() => setOpen(true)}>
+            {t("editionsSeeAll", { count: editions.length })}
+          </SheetOpener>
+        ) : null}
+      </Panel>
+
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        label={t("editions")}
+        closeLabel={t("close")}
+        heading={t("editionsCount", { count: editions.length })}
+      >
+        <ul className="space-y-2">
+          {editions.map((e) => (
+            <EditionRow key={e.id} edition={e} />
           ))}
         </ul>
       </Sheet>

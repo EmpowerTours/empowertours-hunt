@@ -43,44 +43,62 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "slow down" }, { status: 429 });
     }
 
-    const [row, sent, pending, findCount, spawnCount, payouts] = await Promise.all([
-      prisma.player.findUniqueOrThrow({
-        where: { id: player.id },
-        select: {
-          creditBalanceWei: true,
-          turboUsername: true,
-          walletAddress: true,
-        },
-      }),
-      prisma.payout.aggregate({
-        where: { playerId: player.id, status: "SENT" },
-        _sum: { amountMonWei: true },
-      }),
-      prisma.payout.aggregate({
-        where: { playerId: player.id, status: { in: [...PENDING_STATUSES] } },
-        _sum: { amountMonWei: true },
-      }),
-      prisma.find.count({ where: { playerId: player.id } }),
-      prisma.spawn.count({
-        where: { playerId: player.id, collectedAt: { not: null } },
-      }),
-      // The receipts. A screen that says "3 MON settled" and offers no way to
-      // check it asks the player to take the app's word for it — the wrong
-      // posture for something whose whole claim is that it can be verified.
-      prisma.payout.findMany({
-        where: { playerId: player.id },
-        orderBy: { createdAt: "desc" },
-        take: 25,
-        select: {
-          id: true,
-          status: true,
-          amountMonWei: true,
-          txHash: true,
-          sentAt: true,
-          createdAt: true,
-        },
-      }),
-    ]);
+    const [row, sent, pending, findCount, spawnCount, payouts, editions] =
+      await Promise.all([
+        prisma.player.findUniqueOrThrow({
+          where: { id: player.id },
+          select: {
+            creditBalanceWei: true,
+            turboUsername: true,
+            walletAddress: true,
+          },
+        }),
+        prisma.payout.aggregate({
+          where: { playerId: player.id, status: "SENT" },
+          _sum: { amountMonWei: true },
+        }),
+        prisma.payout.aggregate({
+          where: { playerId: player.id, status: { in: [...PENDING_STATUSES] } },
+          _sum: { amountMonWei: true },
+        }),
+        prisma.find.count({ where: { playerId: player.id } }),
+        prisma.spawn.count({
+          where: { playerId: player.id, collectedAt: { not: null } },
+        }),
+        // The receipts. A screen that says "3 MON settled" and offers no way to
+        // check it asks the player to take the app's word for it — the wrong
+        // posture for something whose whole claim is that it can be verified.
+        prisma.payout.findMany({
+          where: { playerId: player.id },
+          orderBy: { createdAt: "desc" },
+          take: 25,
+          select: {
+            id: true,
+            status: true,
+            amountMonWei: true,
+            txHash: true,
+            sentAt: true,
+            createdAt: true,
+          },
+        }),
+        // Works this passkey holds, newest first. PENDING is included on
+        // purpose: a hunter who has paid should see the thing they bought while
+        // the relayer is still delivering it, not a gap.
+        prisma.editionClaim.findMany({
+          where: { playerId: player.id, status: { in: ["PENDING", "SENT"] } },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            masterId: true,
+            tier: true,
+            status: true,
+            paidWei: true,
+            licenseId: true,
+            transferTxHash: true,
+            createdAt: true,
+          },
+        }),
+      ]);
 
     // Read last and separately: an RPC hiccup must not cost the player the
     // rest of this screen.
@@ -118,6 +136,16 @@ export async function GET(req: Request) {
         // than showing an empty link, because a dead link reads as a failure.
         txHash: p.txHash,
         at: (p.sentAt ?? p.createdAt).toISOString(),
+      })),
+      editions: editions.map((e) => ({
+        id: e.id,
+        masterId: e.masterId,
+        tier: e.tier,
+        status: e.status,
+        paidWei: e.paidWei.toFixed(0),
+        licenseId: e.licenseId,
+        txHash: e.transferTxHash,
+        at: e.createdAt.toISOString(),
       })),
     });
   } catch (err) {

@@ -122,7 +122,11 @@
     "noHandleBody": "El crédito se acumula de todos modos, pero solo se puede canjear una vez que se vincule un usuario del registro TURBO a esta cartera.",
     "payoutsSeeAll": "Ver los {count} pagos",
     "payoutsCount": "{count, plural, one {# pago} other {# pagos}}",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "editions": "Tu colección",
+    "editionsSeeAll": "Ver las {count} obras",
+    "editionsCount": "{count, plural, one {# obra} other {# obras}}",
+    "editionFree": "gratis"
   },
   "huntList": {
     "pageTitle": "Búsquedas",

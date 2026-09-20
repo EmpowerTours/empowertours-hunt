@@ -122,7 +122,11 @@
     "noHandleBody": "Credit accrues either way, but it can only be redeemed once a TURBO registry handle is linked to this wallet.",
     "payoutsSeeAll": "See all {count} payouts",
     "payoutsCount": "{count, plural, one {# payout} other {# payouts}}",
-    "close": "Close"
+    "close": "Close",
+    "editions": "Your collection",
+    "editionsSeeAll": "See all {count} works",
+    "editionsCount": "{count, plural, one {# work} other {# works}}",
+    "editionFree": "free"
   },
   "huntList": {
     "pageTitle": "Hunts",

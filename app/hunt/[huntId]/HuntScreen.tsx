@@ -15,6 +15,11 @@ import {
 } from "@/components/hunt/ClaimButton";
 import { FindReveal } from "@/components/hunt/FindReveal";
 import { FixReadout } from "@/components/hunt/FixReadout";
+import {
+  EditionCard,
+  type EditionOfferView,
+} from "@/components/hunt/EditionCard";
+import { payFromPasskey } from "@/lib/auth/signIn";
 import { SpawnPanel } from "@/components/hunt/SpawnPanel";
 import {
   ApiError,
@@ -134,6 +139,69 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     tone: "success" | "warn";
   } | null>(null);
   const [scanTick, setScanTick] = useState(0);
+
+  /* --- Editions ---------------------------------------------------------
+     A chance encounter, not a place. Polled on the same tick as the spawn
+     scan because the server decides whether one is due — the client cannot
+     know, so asking IS the trigger. Everything about where the hunter is
+     standing is irrelevant here; see lib/hunt/edition.ts. */
+  const [edition, setEdition] = useState<{
+    offer: EditionOfferView;
+    payTo: string | null;
+    alreadyHeld: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!huntActive) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`/api/hunt/${huntId}/edition`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          offered?: boolean;
+          payTo?: string | null;
+          alreadyHeld?: boolean;
+          edition?: EditionOfferView;
+        };
+        if (body.offered && body.edition) {
+          setEdition({
+            offer: body.edition,
+            payTo: body.payTo ?? null,
+            alreadyHeld: body.alreadyHeld ?? false,
+          });
+        }
+      } catch {
+        // A missed poll is a non-event: the next tick asks again, and an
+        // encounter nobody was shown is simply one that did not happen.
+      }
+    })();
+    return () => controller.abort();
+  }, [huntId, huntActive, scanTick]);
+
+  const answerEdition = useCallback(
+    async (answer: "yes" | "no", paymentTxHash?: string) => {
+      const id = edition?.offer.id;
+      // Close on "no" immediately. A dismissal that waits on the network
+      // feels broken while a spawn is ticking down behind the card.
+      if (answer === "no") setEdition(null);
+      if (!id) return { ok: true };
+      try {
+        const res = await fetch(`/api/hunt/${huntId}/edition/answer`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ editionId: id, answer, paymentTxHash }),
+        });
+        const body = (await res.json()) as { ok?: boolean; reason?: string };
+        return { ok: body.ok === true, reason: body.reason };
+      } catch {
+        return { ok: false, reason: "network" };
+      }
+    },
+    [edition, huntId],
+  );
 
   // Whether the hunt even has spawns is only knowable from hunt metadata that
   // does not exist yet, so the first scan runs regardless and the server's own
@@ -569,6 +637,18 @@ export function HuntScreen({ huntId }: { huntId: string }) {
       <div className="shrink-0 pb-1">
         <ClaimButton gate={gate} onClaim={() => void onClaim()} />
       </div>
+
+      {/* The encounter. Sits above the scope and below the collect toast, so
+          a payout confirmation is never hidden by a sales pitch. */}
+      {edition ? (
+        <EditionCard
+          offer={edition.offer}
+          payTo={edition.payTo}
+          alreadyHeld={edition.alreadyHeld}
+          onAnswer={answerEdition}
+          pay={payFromPasskey}
+        />
+      ) : null}
 
       {/* A claim confirmation must POP UP where the player is looking — pinned to
           the top of the viewport, not buried at the bottom of the scroll where
