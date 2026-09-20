@@ -518,6 +518,38 @@ model Hunt {
   // Minimum seconds between spawns granted to the same player.
   spawnCooldownSeconds Int @default(600)
 
+  // --- Editions ------------------------------------------------------------
+  // Findable fcempowertours works. Separate from the spawn knobs on purpose:
+  // an edition and a spawn are different products with different economics —
+  // a spawn GIVES 1 MON and should be frequent, an edition ASKS for money and
+  // should not interrupt a walk every ten minutes. Reusing the spawn columns
+  // would have meant tuning one by breaking the other.
+
+  /// Off by default. An existing hunt gains nothing until somebody turns this
+  /// on, which is the same posture spawnEnabled takes.
+  editionsEnabled Boolean @default(false)
+
+  /// Placement annulus. Tighter than the spawn one by default: a hunter is
+  /// being asked to spend, so the walk should be a short deliberate detour
+  /// rather than the 600m a free drop can justify.
+  editionMinRadiusM Int @default(60)
+  editionMaxRadiusM Int @default(300)
+
+  /// Longer than a spawn's. An edition is a decision, not a pickup, and one
+  /// every ten minutes would turn the scope into a shop.
+  editionTtlSeconds      Int @default(1800)
+  editionCooldownSeconds Int @default(1800)
+
+  /// Headroom left on top of the price before an edition is offered, in wei.
+  ///
+  /// The hunter signs the payment themselves, so they need the price PLUS
+  /// enough to send it. A wallet holding exactly the price cannot spend it —
+  /// the transfer costs gas, and Monad charges the full gas LIMIT with no
+  /// refund, so whatever the signing code pads its estimate to is what they
+  /// pay. Default 0.05 MON is roughly 23x a 21,000-gas transfer at 102 gwei,
+  /// which is deliberate slack rather than a tight fit.
+  editionGasBufferWei Decimal @default(50000000000000000) @db.Decimal(78, 0)
+
   // How stale PlayerHunt.lastVerified* may be and still anchor a spawn. Spawns
   // are placed relative to the last position the verifier ACCEPTED, so an old
   // fix would let a player collect around somewhere they have since left.

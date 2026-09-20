@@ -19,6 +19,14 @@ CREATE TYPE "EditionClaimStatus" AS ENUM ('PENDING', 'SENT', 'FAILED');
 -- DropForeignKey
 ALTER TABLE "DimeClaim" DROP CONSTRAINT "DimeClaim_playerId_fkey";
 
+-- AlterTable
+ALTER TABLE "Hunt" ADD COLUMN     "editionCooldownSeconds" INTEGER NOT NULL DEFAULT 1800,
+ADD COLUMN     "editionGasBufferWei" DECIMAL(78,0) NOT NULL DEFAULT 50000000000000000,
+ADD COLUMN     "editionMaxRadiusM" INTEGER NOT NULL DEFAULT 300,
+ADD COLUMN     "editionMinRadiusM" INTEGER NOT NULL DEFAULT 60,
+ADD COLUMN     "editionTtlSeconds" INTEGER NOT NULL DEFAULT 1800,
+ADD COLUMN     "editionsEnabled" BOOLEAN NOT NULL DEFAULT false;
+
 -- DropTable
 DROP TABLE "DimeClaim";
 
@@ -108,9 +116,9 @@ ALTER TABLE "EditionClaim" ADD CONSTRAINT "EditionClaim_playerId_fkey" FOREIGN K
 ALTER TABLE "EditionClaim" ADD CONSTRAINT "EditionClaim_editionId_fkey" FOREIGN KEY ("editionId") REFERENCES "Edition"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- An edition whose terms and price disagree must be unrepresentable, not merely
--- unusual. Written as an explicit ACCEPT of the two legal shapes rather than a
--- rejection of the illegal ones, per AGENTS.md rule 2 — so a NULL on either
--- side lands outside the constraint instead of slipping through a comparison.
+-- unusual. An explicit ACCEPT of the two legal shapes, per AGENTS.md rule 2, so
+-- a NULL on either side lands outside the constraint rather than slipping
+-- through a comparison.
 ALTER TABLE "Edition" ADD CONSTRAINT "Edition_terms_price_agree" CHECK (
   ("terms" = 'FREE'     AND "priceWei" IS NULL) OR
   ("terms" = 'PURCHASE' AND "priceWei" IS NOT NULL AND "priceWei" > 0)
