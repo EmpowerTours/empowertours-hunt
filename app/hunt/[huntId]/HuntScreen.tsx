@@ -425,8 +425,26 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         };
 
   return (
-    <main className="safe-top safe-bottom mx-auto flex w-full max-w-md flex-col gap-4 px-4 pb-6">
-      <header className="flex items-center justify-between gap-3 pt-2">
+    /* -----------------------------------------------------------------------
+       An app shell, not a document.
+
+       Measured on the live screen at 375px: 1054px of content against 629px of
+       viewport. Every phone scrolled — the worst offender being the scope,
+       which is a square sized to the viewport WIDTH, so a bigger phone made
+       the page taller rather than roomier. The claim button, the one control
+       that moves money, sat below the fold on every device.
+
+       So the page is now exactly one viewport and never scrolls. Three things
+       are pinned — the header, the scope and the claim button — and everything
+       whose height depends on the world (the GPS notes, the spawn list, the
+       band readout, refusals) lives in a single flexible region that scrolls
+       on its own. That fits by construction at any size instead of by an
+       arithmetic that the next panel breaks.
+
+       Floor is 360x740. The scope stays the hero at full width there.
+    ----------------------------------------------------------------------- */
+    <main className="safe-top safe-bottom mx-auto flex h-dvh w-full max-w-md flex-col gap-3 overflow-hidden px-4">
+      <header className="flex shrink-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-ink truncate text-lg font-semibold">
             {hunt?.name ?? tHunt("titleFallback")}
@@ -436,6 +454,11 @@ export function HuntScreen({ huntId }: { huntId: string }) {
             {compass.heading === null ? tHunt("northUp") : tHunt("headingUp")}
           </p>
         </div>
+        {/* The wallet link alone. The language pill was tried here and the
+            header could not afford it: at 360px it crushed the hunt name to
+            "Bús..." and wrapped the status onto three lines, costing 25px to
+            save 30. It lives at the foot of the scroller instead, where the
+            flexible region absorbs it for nothing. */}
         <Link
           href="/hunt/wallet"
           className="border-hull-line text-ink-dim flex min-h-11 shrink-0 items-center rounded-xl border px-3 font-mono text-xs tracking-widest uppercase"
@@ -444,91 +467,108 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         </Link>
       </header>
 
-      <RadarScope
-        headingDeg={compass.heading}
-        band={hint.band}
-        complete={hint.complete}
-        rangeMeters={rangeMeters}
-        fix={fix}
-        spawns={marks}
-        selectedSpawnId={selectedSpawnId}
-        onSelectSpawn={setSelectedSpawnId}
-        now={now}
-      />
+      {/* The hero, and still full width on the 360x740 floor: 46dvh is 340px
+          there against the 328px the column gives it, so the cap does not
+          bind. It binds on something shorter — a small phone in landscape, a
+          split view — where a width-square scope would otherwise take the
+          whole screen and push the claim button out. */}
+      <div className="mx-auto w-full max-w-[min(100%,46dvh)] shrink-0">
+        <RadarScope
+          headingDeg={compass.heading}
+          band={hint.band}
+          complete={hint.complete}
+          rangeMeters={rangeMeters}
+          fix={fix}
+          spawns={marks}
+          selectedSpawnId={selectedSpawnId}
+          onSelectSpawn={setSelectedSpawnId}
+          now={now}
+        />
+      </div>
 
-      {/* Offered whenever there is no heading and the player has not refused.
+      {/* The one scrolling region. Everything in here can grow without
+          pushing the claim button off the screen. */}
+      <div className="relative min-h-0 flex-1 space-y-3 overflow-y-auto">
+        {/* Offered whenever there is no heading and the player has not refused.
           Safe on every platform: on iOS it opens the permission prompt, and
           elsewhere it re-subscribes, which is what some Androids need before
           the absolute event starts arriving at all. */}
-      {compass.heading === null && !compass.denied ? (
-        <button
-          onClick={compass.request}
-          className="border-hull-line text-ink bg-hull min-h-12 w-full rounded-2xl border-2 px-4 text-sm font-semibold"
-        >
-          {tGps("compass")}
-        </button>
-      ) : null}
+        {compass.heading === null && !compass.denied ? (
+          <button
+            onClick={compass.request}
+            className="border-hull-line text-ink bg-hull min-h-12 w-full rounded-2xl border-2 px-4 text-sm font-semibold"
+          >
+            {tGps("compass")}
+          </button>
+        ) : null}
 
-      {/* Directly under the scope, and above everything else, because these two
+        {/* Directly under the scope, and above everything else, because these two
           are what explain a dish that looks dead. Buried below the fold — which
           is where they were — a player waiting on a GPS lock sees a black
           circle and concludes the app is broken. Reported from the street. */}
-      <FixReadout
-        fix={fix}
-        status={geo.status}
-        // The hook's own MESSAGES map stays English: lib/ has non-UI callers and
-        // a status string is data. Only what reaches the screen is translated,
-        // and only when the hook had something to say at all.
-        message={geo.message === null ? null : tGps(geo.status)}
-        maxAccuracyM={maxAccuracyM}
-        now={now}
-        since={geo.since}
-        onRetry={geo.retry}
-      />
+        <FixReadout
+          fix={fix}
+          status={geo.status}
+          // The hook's own MESSAGES map stays English: lib/ has non-UI callers and
+          // a status string is data. Only what reaches the screen is translated,
+          // and only when the hook had something to say at all.
+          message={geo.message === null ? null : tGps(geo.status)}
+          maxAccuracyM={maxAccuracyM}
+          now={now}
+          since={geo.since}
+          onRetry={geo.retry}
+        />
 
-      <SpawnPanel
-        marks={marks}
-        now={now}
-        selectedId={selectedSpawnId}
-        onSelect={setSelectedSpawnId}
-        onCollect={(id) => void onCollect(id)}
-        collectingId={collectingId}
-        scanReason={scanReason}
-        stopped={scanStopped}
-        error={
-          spawnError === null
-            ? null
-            : "key" in spawnError
-              ? tHunt(spawnError.key)
-              : spawnError.message
-        }
-        signingAvailable={signer !== null}
-      />
+        <SpawnPanel
+          marks={marks}
+          now={now}
+          selectedId={selectedSpawnId}
+          onSelect={setSelectedSpawnId}
+          onCollect={(id) => void onCollect(id)}
+          collectingId={collectingId}
+          scanReason={scanReason}
+          stopped={scanStopped}
+          error={
+            spawnError === null
+              ? null
+              : "key" in spawnError
+                ? tHunt(spawnError.key)
+                : spawnError.message
+          }
+          signingAvailable={signer !== null}
+        />
 
-      <BandReadout
-        band={hint.band}
-        complete={hint.complete}
-        cacheless={hint.cacheless}
-        remaining={hint.remaining}
-        status={hint.status}
-        error={hint.error}
-      />
+        <BandReadout
+          band={hint.band}
+          complete={hint.complete}
+          cacheless={hint.cacheless}
+          remaining={hint.remaining}
+          status={hint.status}
+          error={hint.error}
+        />
 
-      <ClaimButton gate={gate} onClaim={() => void onClaim()} />
+        {refusalText ? (
+          <Note tone="warn" title={refusalText.title}>
+            {refusalText.body}
+          </Note>
+        ) : null}
 
-      {refusalText ? (
-        <Note tone="warn" title={refusalText.title}>
-          {refusalText.body}
-        </Note>
-      ) : null}
+        {claimError ? (
+          <Note tone="warn" title={tHunt("claimNotSentTitle")}>
+            {claimError}
+          </Note>
+        ) : null}
 
-      {claimError ? (
-        <Note tone="warn" title={tHunt("claimNotSentTitle")}>
-          {claimError}
-        </Note>
-      ) : null}
+        <LanguageSwitch className="flex justify-end pb-1" />
+      </div>
 
-      <LanguageSwitch className="flex justify-end" />
+      {/* Pinned to the bottom of the viewport, outside the scroller.
+          This is the only control that moves money, and it was previously
+          below the fold on every phone measured — reachable only by scrolling
+          past the spawn list, which grows exactly when claiming matters most. */}
+      <div className="shrink-0 pb-1">
+        <ClaimButton gate={gate} onClaim={() => void onClaim()} />
+      </div>
 
       {/* A claim confirmation must POP UP where the player is looking — pinned to
           the top of the viewport, not buried at the bottom of the scroll where
