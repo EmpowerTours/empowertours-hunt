@@ -44,4 +44,19 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Hunt is a GPS game, and in a WebView that is not a page-level concern.
+         Capacitor's BridgeWebChromeClient.onGeolocationPermissionsShowPrompt
+         answers navigator.geolocation by launching a RUNTIME request for
+         exactly these two permissions. Android denies a runtime request for a
+         permission the manifest never declared — immediately, with no dialog —
+         so without these lines the callback is invoked with `false` and every
+         fix fails as PERMISSION_DENIED. The page cannot tell that apart from a
+         player refusing, so it is silent as well as fatal.
+
+         Coarse is listed alongside fine because that handler accepts coarse
+         alone on Android 12+ (a player may grant "approximate"), and because a
+         fine-only declaration makes the approximate/precise toggle disappear. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 </manifest>

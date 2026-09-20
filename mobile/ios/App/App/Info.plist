@@ -26,6 +26,17 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Hunt is a GPS game. WKWebView will not serve navigator.geolocation to
+	     the page unless the host app carries a purpose string, and iOS treats a
+	     missing one as a programmer error: the request is refused outright, so
+	     the radar never gets a fix and the page sees an ordinary denial. Same
+	     failure as the Android manifest permissions, same silence.
+
+	     WhenInUse, not Always: every fix is taken with the app open and in the
+	     player's hand. Background location would be a larger permission for no
+	     feature, and App Review asks why. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>EmpowerTours uses your location to tell you how close you are to a nearby reward, and to verify a find when you claim one.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
