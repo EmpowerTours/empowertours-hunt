@@ -68,6 +68,9 @@ const T = {
     stepApprove: "2/3 Autorizando USDC…",
     stepConvert: "3/3 Convirtiendo a AUSD…",
     viewBookTx: "Ver la operación en el libro",
+    viaPool: "Vía Kuru (ruta por pool)",
+    poolNote:
+      "Kuru enrutó esta cantidad por un pool en vez del libro, porque ahí el precio es mejor para ti. Siguen siendo tres firmas.",
   },
   en: {
     title: "Swap MON for AUSD",
@@ -104,6 +107,9 @@ const T = {
     stepApprove: "2/3 Approving USDC…",
     stepConvert: "3/3 Converting to AUSD…",
     viewBookTx: "View the order-book trade",
+    viaPool: "Via Kuru (routed through a pool)",
+    poolNote:
+      "Kuru routed this size through a pool rather than the order book, because the price there is better for you. Still three signatures.",
   },
 } as const;
 
@@ -128,7 +134,9 @@ export default function SwapPage() {
   // Which on-ramp the quote came from. Kuru is preferred because the trade
   // lands on its order book at 0 bps; the desk is the fallback for when Kuru's
   // API or route is unavailable, and it depends on nothing but Monad.
-  const [route, setRoute] = useState<"kuru" | "desk">("desk");
+  const [route, setRoute] = useState<"kuru-book" | "kuru-pool" | "desk">(
+    "desk",
+  );
   const [step, setStep] = useState<KuruStep | null>(null);
   const [bookTx, setBookTx] = useState<string | null>(null);
 
@@ -205,24 +213,25 @@ export default function SwapPage() {
               tokenOut: USDC,
               amount: value,
             });
-            // Only take the Kuru route if the trade really lands on the book.
-            // If their router moved it to an AMM, the desk is the honest
-            // choice: this page says "via Kuru's order book" and that has to
-            // be true when it says it.
-            if (leg1.usesOrderBook) {
-              const leg2 = await kuruQuote({
-                token,
-                userAddress: address,
-                tokenIn: USDC,
-                tokenOut: AUSD_TOKEN,
-                amount: leg1.output,
-              });
-              if (!cancelled) {
-                setQuote(leg2.output);
-                setRoute("kuru");
-              }
-              return;
+            // Kuru is taken whichever venue it picks, because its price beats
+            // the desk's 1% either way. What changes is only what this page is
+            // allowed to SAY: the route is chosen per quote and measured here
+            // — 6 of 7 sizes sampled on mainnet crossed the order book, and
+            // 10 MON went to a pool because the pool priced better at that
+            // size. Falling back to the desk on that would charge the hunter
+            // 1% to protect a claim, which is backwards.
+            const leg2 = await kuruQuote({
+              token,
+              userAddress: address,
+              tokenIn: USDC,
+              tokenOut: AUSD_TOKEN,
+              amount: leg1.output,
+            });
+            if (!cancelled) {
+              setQuote(leg2.output);
+              setRoute(leg1.usesOrderBook ? "kuru-book" : "kuru-pool");
             }
+            return;
           } catch {
             // Fall through to the desk. Kuru being down is not an error the
             // hunter needs to read about; it is why the desk exists.
@@ -265,7 +274,7 @@ export default function SwapPage() {
     }
     setPhase("swapping");
     try {
-      if (route === "kuru") {
+      if (route !== "desk") {
         const { account } = await signInAccount();
         const r = await swapMonToAusdViaKuru({
           account,
@@ -465,12 +474,20 @@ export default function SwapPage() {
                   hunter in signatures. Three prompts with no explanation is how
                   someone abandons halfway and is left holding USDC. */}
               <div className="flex items-center gap-2">
-                <Pill color={route === "kuru" ? "#46ffbe" : "#47645d"}>
-                  {route === "kuru" ? t.viaBook : t.viaDesk}
+                <Pill color={route === "desk" ? "#47645d" : "#46ffbe"}>
+                  {route === "kuru-book"
+                    ? t.viaBook
+                    : route === "kuru-pool"
+                      ? t.viaPool
+                      : t.viaDesk}
                 </Pill>
               </div>
               <p className="text-ink-faint text-xs leading-snug">
-                {route === "kuru" ? t.bookNote : t.deskNote}
+                {route === "kuru-book"
+                  ? t.bookNote
+                  : route === "kuru-pool"
+                    ? t.poolNote
+                    : t.deskNote}
               </p>
               {/* The desk float only constrains the DESK route. Warning about
                   it while Kuru is quoting would be false — Kuru has no float. */}
