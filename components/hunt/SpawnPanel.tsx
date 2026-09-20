@@ -98,17 +98,17 @@ export function SpawnPanel({
           return (
             <li key={mark.spawn.id}>
               <div
-                className={`bg-hull rounded-2xl border p-3 ${
+                className={`bg-hull rounded-2xl border px-3 py-2.5 ${
                   selected ? "border-spawn/70" : "border-hull-line"
                 }`}
               >
                 <button
                   type="button"
                   onClick={() => onSelect(mark.spawn.id)}
-                  className="flex min-h-14 w-full items-center gap-3 text-left"
+                  className="flex min-h-12 w-full items-center gap-3 text-left"
                 >
                   <span
-                    className="border-spawn/60 text-spawn flex size-11 shrink-0 items-center justify-center rounded-full border-2 font-mono text-xs"
+                    className="border-spawn/60 text-spawn flex size-10 shrink-0 items-center justify-center rounded-full border-2 font-mono text-xs"
                     aria-hidden
                   >
                     {compassPoint(mark.bearingDeg)}
@@ -147,11 +147,17 @@ export function SpawnPanel({
                       </p>
                     ) : null}
                   </>
-                ) : (
-                  <p className="text-ink-faint mt-2 font-mono text-xs">
+                ) : selected ? (
+                  /* Only for the drop the player has actually tapped.
+                     The row already carries the distance and the bearing; this
+                     adds how much of that is left before collect unlocks, which
+                     is worth a line for ONE spawn and is three redundant lines
+                     when three are in range. Tapping a blip is the gesture that
+                     asks for detail, so detail is what it gets. */
+                  <p className="text-ink-faint mt-1.5 font-mono text-xs">
                     {t("walkCloser", { distance: formatMeters(stillToWalk) })}
                   </p>
-                )}
+                ) : null}
               </div>
             </li>
           );

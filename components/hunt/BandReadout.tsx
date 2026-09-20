@@ -73,28 +73,49 @@ export function BandReadout({
             ? t("waiting")
             : t(GLOSS_KEY[band]);
 
+  // On a spawn-only hunt this panel is the claim button said twice.
+  //
+  // It renders "SPAWNS ONLY" at 3xl over "No hidden caches on this hunt. Walk
+  // and rewards drop near you.", directly above a disabled claim button
+  // reading "SPAWNS ONLY" over "No caches to claim here — walk and rewards
+  // drop near you." Same state, same sentence, 109px apart — and beneath it a
+  // heat ladder for a mechanic this hunt does not have. Seen on a phone with
+  // the panel clipped mid-word, which is how the duplication got noticed.
+  //
+  // The claim button carries this state, so here it is nothing.
+  if (cacheless) return null;
+
   return (
     <div
-      className="border-hull-line bg-hull rounded-2xl border p-4"
+      className="border-hull-line bg-hull rounded-2xl border px-3 py-2.5"
       style={{ borderColor: `${style.color}55` }}
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <div
-          className="font-mono text-3xl leading-none font-bold tracking-[0.12em]"
+      {/* One row, matching the GPS readout above it: dot, reading, gloss,
+          count. The 3xl band word was the loudest thing on a screen whose
+          subject is the scope. */}
+      <div className="flex items-center gap-2">
+        <span
+          className="size-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: style.color }}
+          aria-hidden
+        />
+        <span
+          className="shrink-0 font-mono text-base leading-none font-bold tracking-[0.12em]"
           style={{ color: style.color }}
         >
           {label}
-        </div>
-        <div className="text-ink-dim shrink-0 font-mono text-xs tracking-[0.16em] uppercase">
+        </span>
+        <span className="text-ink-faint min-w-0 flex-1 truncate text-xs leading-snug">
+          {gloss}
+        </span>
+        <span className="text-ink-dim shrink-0 font-mono text-[11px] tracking-[0.14em] uppercase">
           {complete ? t("zeroLeft") : t("remaining", { count: remaining })}
-        </div>
+        </span>
       </div>
-
-      <p className="text-ink mt-2 text-sm leading-snug">{gloss}</p>
 
       {/* The heat ladder, so a player can see where the current reading sits
           without being told a distance. */}
-      <div className="mt-3 flex gap-1" aria-hidden>
+      <div className="mt-2 flex gap-1" aria-hidden>
         {(["cold", "cool", "warm", "hot", "burning"] as const).map((b) => {
           const s = bandStyle(b);
           const active = !complete && band === b;
