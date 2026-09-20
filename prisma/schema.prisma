@@ -189,7 +189,8 @@ model Player {
   warranties     PlantWarranty[]
   createdHunts   Hunt[]              @relation("HuntCreator")
   surveyedZones  Zone[]
-  dimeClaim      DimeClaim?
+  editions       Edition[]
+  editionClaims  EditionClaim[]
   perpKey        PerpKey?
   cotaFills      CotaFill[]
   cotaOrders     CotaOrder[]
@@ -358,6 +359,13 @@ model CotaOrder {
   createdAt DateTime @default(now())
 
   @@index([playerId, account, resolvedAt])
+  /// Declared here only to MATCH the index that migration
+  /// 20260915000000_cota_order_dead already created in SQL. The schema never
+  /// knew about it, so `prisma migrate dev` wanted to DROP it — and it backs
+  /// the trades-per-day ceiling count, which filters on exactly these three
+  /// to exclude orders the venue never forwarded. Dropping it would have put
+  /// a sequential scan inside a money-path bound.
+  @@index([playerId, account, deadAt])
 }
 
 /// One agent decision, kept so a hunter can read what their agent has been doing.
@@ -549,6 +557,7 @@ model Hunt {
   credits      CreditLedger[]
   zones        Zone[]
   warranties   PlantWarranty[]
+  editions     Edition[]
 
   @@index([createdByPlayerId])
   @@index([active])
@@ -1374,34 +1383,121 @@ enum ZoneSource {
   WALKED
 }
 
-/// One free "Dime Que Sí" music-licence claim per player.
+/// A copy of an fcempowertours work, placed in the world to be found.
 ///
-/// The relayer (a funded hot wallet) buys the licence on the music v3
-/// SalesController — which refuses a zero price, so "free" is an app flow, not
-/// a contract feature — and transfers it to this player's passkey wallet. The
-/// player pays no gas and holds no WMON; the relayer does both transactions.
+/// NOT a Spawn, deliberately. A spawn GIVES native MON and every budget,
+/// per-payout cap and rolling 24h ceiling in this schema exists to bound money
+/// leaving the treasury. An edition points the other way: it either gives a
+/// licence — which is not fungible and cannot be partially paid — or it ASKS
+/// the hunter for money. Sharing one model would make every one of those
+/// ceilings ambiguous about which direction it bounds.
 ///
-/// `playerId` is UNIQUE: one claim per passkey, forever. Without it a single
-/// wallet claims the whole supply, which is the only thing that turns a free
+/// "Edition" rather than "pressing": the registry holds MUSIC and ART masters
+/// (V3_DESIGN mints with MUSIC_ROYALTY or ART_ROYALTY), and an edition is the
+/// right word for a copy of either.
+///
+/// Coordinates are PUBLIC, like a Spawn and unlike a Cache. You see it on the
+/// scope and walk to it; the defence is a short TTL and movement plausibility,
+/// not secrecy. See the Spawn model for the same reasoning.
+model Edition {
+  id     String @id @default(cuid())
+  hunt   Hunt   @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  huntId String
+
+  /// The player this edition was placed for. Another player cannot take it.
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  /// The contract the work lives in. Today always the v3 LicenseRegistry, so
+  /// it could have been implied — it is stored because an itinerary NFT may
+  /// later come from a different contract, possibly from an app that is not
+  /// fcempowertours at all. One column now, no migration then.
+  collection String
+
+  /// The master id within that collection. NOT a foreign key: the catalogue is
+  /// another system's and is read on chain.
+  masterId String
+
+  /// Mirrored from chain so the scope can draw a track differently from an
+  /// image without an RPC call per blip. The chain stays authoritative.
+  kind EditionKind
+
+  lat          Float
+  lng          Float
+  radiusMeters Int   @default(25)
+
+  terms EditionTerms
+
+  /// WMON wei, and NULL only when terms is FREE. A PURCHASE with no price must
+  /// be unrepresentable, so this is checked in code AND by a database CHECK
+  /// constraint in the migration — reject by default, per AGENTS.md rule 2.
+  priceWei Decimal? @db.Decimal(78, 0)
+
+  expiresAt DateTime
+  /// Atomic single-taker guard, exactly as Spawn does it: a conditional
+  /// UPDATE ... WHERE takenAt IS NULL AND expiresAt > now() picks the winner.
+  /// Never a read-then-write.
+  takenAt   DateTime?
+  createdAt DateTime  @default(now())
+
+  claim EditionClaim?
+
+  @@index([playerId, expiresAt])
+  @@index([huntId, createdAt])
+  @@index([takenAt])
+}
+
+enum EditionKind {
+  MUSIC
+  ART
+}
+
+enum EditionTerms {
+  /// The relayer buys it and gives it away. SalesController refuses a zero
+  /// price, so "free" is an app flow paid by the relayer, never a contract
+  /// feature.
+  FREE
+  /// The hunter pays, out of hunt earnings they have not withdrawn.
+  PURCHASE
+}
+
+/// One edition of a given work per passkey, FOREVER.
+///
+/// Generalises the old DimeClaim, which was the same machinery keyed to a
+/// single hardcoded song. The rule that matters is the unique index: without
+/// it one wallet takes the whole supply, which is the only thing that turns a
 /// drop into a drained relayer.
-model DimeClaim {
+///
+/// The row is written BEFORE any chain work, so a concurrent double-claim hits
+/// the constraint rather than the relayer, and is then advanced by the
+/// outcome.
+model EditionClaim {
   id String @id @default(cuid())
 
   player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  playerId String @unique
+  playerId String
 
-  /// The wallet the licence was sent to, snapshotted — the player's address at
-  /// claim time, so a later wallet change cannot rewrite who claimed.
+  /// The edition that was taken, when it came from a find. Nullable so a claim
+  /// can exist without one if a work is ever granted another way.
+  edition   Edition? @relation(fields: [editionId], references: [id])
+  editionId String?  @unique
+
+  collection String
+  masterId   String
+
+  /// Snapshotted at claim time, so a later wallet change cannot rewrite who
+  /// claimed. Same reasoning as the old DimeClaim.
   walletAddress String
 
-  /// The licence token id, once the relayer has bought and transferred it.
+  /// What the hunter actually paid, in WMON wei. Zero for a FREE edition.
+  /// Recorded rather than derived: the price on the contract can move, and a
+  /// receipt has to say what was charged that day.
+  paidWei Decimal @db.Decimal(78, 0)
+
+  /// The licence token id, once bought and transferred.
   licenseId String?
 
-  /// PENDING at first touch, SENT once the transfer confirms, FAILED if the
-  /// relayer could not complete. A claim is recorded BEFORE the chain work so
-  /// the unique constraint blocks a concurrent double-claim; the row is then
-  /// advanced by the outcome.
-  status DimeClaimStatus @default(PENDING)
+  status EditionClaimStatus @default(PENDING)
 
   purchaseTxHash String? @unique
   transferTxHash String? @unique
@@ -1410,10 +1506,11 @@ model DimeClaim {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([playerId, collection, masterId])
   @@index([status, createdAt])
 }
 
-enum DimeClaimStatus {
+enum EditionClaimStatus {
   PENDING
   SENT
   FAILED

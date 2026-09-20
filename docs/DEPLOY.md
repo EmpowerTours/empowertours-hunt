@@ -47,6 +47,11 @@ HINT_GRID_SECRET=             # unsalted hints are a cache-location oracle
 # --- Keeper (required for payouts to leave the queue) ---
 CRON_SECRET=                  # MIN 16 CHARS; must match the GitHub secret
 
+# --- Editions (optional; unset = no works are placed) ---
+EDITION_RELAYER_PRIVATE_KEY=  # funded hot wallet, buys and transfers licences
+EDITION_SALES_CONTROLLER=     # v3 SalesController
+EDITION_LICENSE_REGISTRY=     # v3 LicenseRegistry
+
 # --- Origins ---
 NEXT_PUBLIC_APP_URL=https://hunt.empowertours.xyz   # no trailing slash
 ALLOWED_ORIGINS=              # optional; authoritative when set
@@ -62,6 +67,7 @@ NEXT_PUBLIC_IPFS_GATEWAY=     # optional; has a default
 | `ADMIN_BOOTSTRAP_ADDRESS` | Promotes exactly one wallet to OWNER so there's a way into a fresh database. It **is** a one-time coupon: `resolveAdmin` creates the row only when `adminUser.count()` is 0, checked inside the same transaction, so once any admin exists this variable can never mint another. It is armed only while the table is EMPTY — which is exactly when removing it locks you out for good. Log in once, confirm the OWNER row, then remove it. |
 | `SPAWN_SEED_SECRET` | Spawn seeds are `HMAC-SHA256(secret, spawnId)`. Unset means the route 503s rather than draw money from a predictable source. **Changing it invalidates the reveal for existing spawns.** |
 | `CRON_SECRET` | Under 16 chars, `/api/cron/*` refuse to run. Must match `secrets.CRON_SECRET` in GitHub. |
+| `EDITION_*` | All three or none. `relayerConfig()` returns null unless every one is present and well-formed, and the placement route then offers no works rather than crashing. The relayer wallet's balance is the hard ceiling on the whole giveaway, on chain, independent of any app bug. |
 | `HUNT_TREASURY_PRIVATE_KEY` | Signs real MON with no human in the loop once a payout is APPROVED. See §5. |
 
 ## 3. Migrate

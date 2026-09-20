@@ -143,6 +143,13 @@ AUTH_SESSION_SECRET=            # REQUIRED, >= 32 chars. No session can be
 ALLOWED_ORIGINS=                # optional but recommended; without it the
                                 # origin check falls back to trusting Host
 CRON_SECRET=                    # bearer for /api/cron/*
+
+# Editions — findable fcempowertours works. All three or none: a relayer that
+# can buy but not transfer strands licences in the hot wallet.
+EDITION_RELAYER_PRIVATE_KEY=    # funded hot wallet. Its balance IS the ceiling
+EDITION_SALES_CONTROLLER=       # v3 SalesController
+EDITION_LICENSE_REGISTRY=       # v3 LicenseRegistry; an Edition row naming a
+                                # different collection is REFUSED, not guessed
 ```
 
 ## Testing

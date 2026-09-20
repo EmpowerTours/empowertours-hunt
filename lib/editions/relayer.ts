@@ -10,14 +10,27 @@ import { privateKeyToAccount } from "viem/accounts";
 import { monad } from "@/lib/monad";
 
 // ---------------------------------------------------------------------------
-// The relayer that gives a "Dime Que Sí" licence away for free.
+// The relayer that puts an fcempowertours licence into a hunter's wallet.
 //
-// The music v3 SalesController refuses a zero price (ZeroPrice), so "free" is
-// not a contract setting — it is this flow: a funded hot wallet BUYS the
-// licence at the nominal standard price and TRANSFERS it to the claimer, who
-// pays no gas and holds no WMON. Because the artist and treasury on that master
-// are both us, the nominal WMON round-trips; the real cost is gas on two
-// transactions.
+// Generalised 2026-09-20 from a single hardcoded song ("Dime Que Sí") to any
+// master in the v3 registry — music or art, free or paid. The master is now a
+// PER-CALL argument rather than an env var, because which work a hunter found
+// is decided by the edition draw, not by deployment configuration.
+//
+// The v3 SalesController refuses a zero price (ZeroPrice), so "free" is not a
+// contract setting — it is this flow: a funded hot wallet BUYS the licence and
+// TRANSFERS it to the hunter, who pays no gas, holds no WMON and grants no
+// allowance. That last part is not incidental: the v3 audit's critical finding
+// was bounded by "the victim's outstanding WMON allowance", so the design that
+// never creates one on a player's wallet cannot inherit the shape of it.
+//
+// Who actually pays depends on the terms, and this module does not decide:
+//   FREE      the relayer's own balance, and the nominal WMON round-trips when
+//             the artist and treasury on that master are both us.
+//   PURCHASE  the hunter's unwithdrawn hunt earnings, debited by the caller
+//             BEFORE this runs. This module only ever spends relayer funds; it
+//             is the caller's job to have taken the money first and to put it
+//             back if `ok` comes out false.
 //
 // ## Bounded by construction
 //
@@ -46,7 +59,20 @@ const LICENSE_ABI = parseAbi([
 export interface RelayerConfig {
   privateKey: Hex;
   salesController: Address;
+  /**
+   * The registry this relayer is wired to. An Edition row carries its own
+   * `collection`, and `relayLicense` REFUSES when the two disagree — buying
+   * from one registry and transferring from another is how a licence goes to
+   * nobody, and a mismatch means the catalogue read and the deployment have
+   * drifted.
+   */
   licenseRegistry: Address;
+}
+
+/** Which work to buy. Supplied per call, from the Edition the hunter took. */
+export interface LicenseOrder {
+  /** Must equal the configured licenseRegistry. Checked, not assumed. */
+  collection: Address;
   masterId: bigint;
   /** Licence metadata uri, passed straight to purchase(). */
   licenseUri: string;
@@ -61,11 +87,9 @@ export interface RelayerConfig {
  * buy but not transfer would strand licences in the hot wallet.
  */
 export function relayerConfig(): RelayerConfig | null {
-  const privateKey = process.env.DIME_RELAYER_PRIVATE_KEY;
-  const salesController = process.env.DIME_SALES_CONTROLLER;
-  const licenseRegistry = process.env.DIME_LICENSE_REGISTRY;
-  const masterId = process.env.DIME_MASTER_ID;
-  const licenseUri = process.env.DIME_LICENSE_URI ?? "";
+  const privateKey = process.env.EDITION_RELAYER_PRIVATE_KEY;
+  const salesController = process.env.EDITION_SALES_CONTROLLER;
+  const licenseRegistry = process.env.EDITION_LICENSE_REGISTRY;
 
   if (
     !privateKey ||
@@ -73,9 +97,7 @@ export function relayerConfig(): RelayerConfig | null {
     !salesController ||
     !/^0x[0-9a-fA-F]{40}$/.test(salesController) ||
     !licenseRegistry ||
-    !/^0x[0-9a-fA-F]{40}$/.test(licenseRegistry) ||
-    !masterId ||
-    !/^\d+$/.test(masterId)
+    !/^0x[0-9a-fA-F]{40}$/.test(licenseRegistry)
   ) {
     return null;
   }
@@ -84,8 +106,6 @@ export function relayerConfig(): RelayerConfig | null {
     privateKey: privateKey as Hex,
     salesController: salesController as Address,
     licenseRegistry: licenseRegistry as Address,
-    masterId: BigInt(masterId),
-    licenseUri,
   };
 }
 
@@ -118,11 +138,23 @@ export interface RelayResult {
  * throws past the queue — the caller records the failure and the claimer is
  * told to try again, rather than the row being left in a state nobody can read.
  */
-export function relayFreeLicense(
+export function relayLicense(
   cfg: RelayerConfig,
+  order: LicenseOrder,
   recipient: Address,
 ): Promise<RelayResult> {
   return enqueue(async () => {
+    // Reject by default. A row naming a registry this relayer was not
+    // configured for is a drift between the catalogue and the deployment, and
+    // the failure mode of guessing is a purchase from one contract and a
+    // transfer attempt against another.
+    if (order.collection.toLowerCase() !== cfg.licenseRegistry.toLowerCase()) {
+      return {
+        ok: false,
+        error: `collection ${order.collection} is not this relayer's registry ${cfg.licenseRegistry}`,
+      };
+    }
+
     const account = privateKeyToAccount(cfg.privateKey);
     const transport = http(process.env.MONAD_RPC_URL);
     const wallet = createWalletClient({ account, chain: monad, transport });
@@ -135,7 +167,7 @@ export function relayFreeLicense(
         address: cfg.salesController,
         abi: SALES_ABI,
         functionName: "purchase",
-        args: [cfg.masterId, false, cfg.licenseUri],
+        args: [order.masterId, false, order.licenseUri],
       });
       purchaseTxHash = hash;
       const receipt = await pub.waitForTransactionReceipt({ hash });
