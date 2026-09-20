@@ -58,6 +58,7 @@ CREATE TABLE "EditionClaim" (
     "paidWei" DECIMAL(78,0) NOT NULL,
     "licenseId" TEXT,
     "status" "EditionClaimStatus" NOT NULL DEFAULT 'PENDING',
+    "paymentTxHash" TEXT,
     "purchaseTxHash" TEXT,
     "transferTxHash" TEXT,
     "failReason" TEXT,
@@ -78,6 +79,9 @@ CREATE INDEX "Edition_takenAt_idx" ON "Edition"("takenAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "EditionClaim_editionId_key" ON "EditionClaim"("editionId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EditionClaim_paymentTxHash_key" ON "EditionClaim"("paymentTxHash");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "EditionClaim_purchaseTxHash_key" ON "EditionClaim"("purchaseTxHash");
@@ -107,12 +111,6 @@ ALTER TABLE "EditionClaim" ADD CONSTRAINT "EditionClaim_editionId_fkey" FOREIGN 
 -- unusual. Written as an explicit ACCEPT of the two legal shapes rather than a
 -- rejection of the illegal ones, per AGENTS.md rule 2 — so a NULL on either
 -- side lands outside the constraint instead of slipping through a comparison.
---
---   FREE     -> no price at all. The relayer pays; a price would be ignored,
---               and an ignored number in a money column is a lie in waiting.
---   PURCHASE -> a price, and a positive one. SalesController refuses a zero
---               price anyway, so a zero here could only ever fail at the venue
---               after the hunter had already been told they could buy it.
 ALTER TABLE "Edition" ADD CONSTRAINT "Edition_terms_price_agree" CHECK (
   ("terms" = 'FREE'     AND "priceWei" IS NULL) OR
   ("terms" = 'PURCHASE' AND "priceWei" IS NOT NULL AND "priceWei" > 0)

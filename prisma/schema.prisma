@@ -1522,6 +1522,20 @@ model EditionClaim {
 
   status EditionClaimStatus @default(PENDING)
 
+  /// The HUNTER's payment — the one transaction they sign themselves, sending
+  /// native MON to the relayer.
+  ///
+  /// UNIQUE, and that is the whole anti-replay control: without it the same
+  /// confirmed transfer could be presented against two claims and buy two
+  /// licences for one payment. The server verifies sender, recipient, value
+  /// and confirmation on chain before advancing, but uniqueness is what makes
+  /// a second attempt impossible rather than merely unlikely.
+  ///
+  /// Null for a FREE edition and for the /dime giveaway, where the hunter
+  /// pays nothing and signs nothing on chain.
+  paymentTxHash String? @unique
+
+  /// The RELAYER's two transactions: buying the licence, then sending it on.
   purchaseTxHash String? @unique
   transferTxHash String? @unique
   failReason     String?
