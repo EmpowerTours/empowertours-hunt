@@ -91,13 +91,20 @@ workflows:
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
 
     publishing:
-      # TestFlight is deliberately OFF for the first run. It needs an App Store
-      # Connect app record for this bundle id, which does not exist yet, and a
-      # failed publish after a successful build reads like a failed build.
-      # Once the record exists, add:
-      #   app_store_connect:
-      #     auth: integration
-      #     submit_to_testflight: true
+      # ON as of 2026-09-19. It was off for the first run because the App Store
+      # Connect record for this bundle id did not exist yet, and a failed
+      # publish after a successful build reads like a failed build. The record
+      # exists now and a build has been installed from TestFlight on a real
+      # iPhone, so the precondition the comment described is met.
+      #
+      # `auth: integration` reuses the App Store Connect key named under
+      # `integrations.app_store_connect` above — no Apple ID password and no
+      # 2FA in the build. If that integration is named something other than
+      # "codemagic" this step fails loudly, which is the right failure: the
+      # build artifact is still produced and only the upload is missing.
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
       email:
         recipients:
           - admin@empowertours.xyz
