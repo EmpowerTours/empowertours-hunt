@@ -13,6 +13,7 @@ import {
 } from "@/components/hunt/format";
 import type { PlayerPayout, PlayerProgress } from "@/components/hunt/types";
 import { Note, Panel, Stat } from "@/components/ui/primitives";
+import { Sheet, SheetOpener } from "@/components/ui/Sheet";
 
 /* ---------------------------------------------------------------------------
    Two balances that must never be conflated.
@@ -294,23 +295,6 @@ function Payouts({ payouts }: { payouts: readonly PlayerPayout[] }) {
   const [open, setOpen] = useState(false);
   const hidden = payouts.length - PAYOUTS_PREVIEW;
 
-  // Escape closes, and the page behind must not scroll while it is open —
-  // a scrolling backdrop under a scrolling panel is how a phone loses track
-  // of which one your thumb meant.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
-    };
-  }, [open]);
-
   return (
     <>
       <Panel>
@@ -323,55 +307,28 @@ function Payouts({ payouts }: { payouts: readonly PlayerPayout[] }) {
           ))}
         </ul>
         {hidden > 0 ? (
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="border-hull-line text-ink active:bg-hull-2 mt-3 min-h-14 w-full rounded-2xl border-2 px-4 font-mono text-sm tracking-wider uppercase"
-          >
+          <SheetOpener onClick={() => setOpen(true)}>
             {t("payoutsSeeAll", { count: payouts.length })}
-          </button>
+          </SheetOpener>
         ) : null}
         <p className="text-ink-faint mt-3 text-xs leading-snug">
           {t("payoutsNote")}
         </p>
       </Panel>
 
-      {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("payouts")}
-            // The backdrop closes; a tap inside must not travel up to it.
-            onClick={(e) => e.stopPropagation()}
-            className="border-hull-line bg-hull flex max-h-[80dvh] w-full max-w-md flex-col rounded-2xl border-2 shadow-2xl"
-          >
-            <div className="border-hull-line flex items-center justify-between gap-3 border-b p-4">
-              <span className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
-                {t("payoutsCount", { count: payouts.length })}
-              </span>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label={t("close")}
-                autoFocus
-                className="border-hull-line text-ink flex size-11 shrink-0 items-center justify-center rounded-xl border-2 text-lg"
-              >
-                ✕
-              </button>
-            </div>
-            {/* The one scrolling region on the page while this is open. */}
-            <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
-              {payouts.map((p) => (
-                <PayoutRow key={p.id} payout={p} />
-              ))}
-            </ul>
-          </div>
-        </div>
-      ) : null}
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        label={t("payouts")}
+        closeLabel={t("close")}
+        heading={t("payoutsCount", { count: payouts.length })}
+      >
+        <ul className="space-y-2">
+          {payouts.map((p) => (
+            <PayoutRow key={p.id} payout={p} />
+          ))}
+        </ul>
+      </Sheet>
     </>
   );
 }
