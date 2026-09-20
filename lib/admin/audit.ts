@@ -22,6 +22,9 @@ export type AuditAction =
   | "payout.send"
   | "payout.reconcile"
   | "payout.transition.denied"
+  // Settling a redemption pays a member's TURBO month with treasury WMON.
+  // Same irreversibility as payout.send, so the same trail.
+  | "redemption.settle"
   | "player.suspend"
   | "player.unsuspend"
   | "player.credit.adjust"
@@ -45,7 +48,8 @@ export interface AuditEntry {
   adminId: string;
   action: AuditAction;
   targetType:
-    "Payout" | "Player" | "Hunt" | "Cache" | "Zone" | "AdminUser" | "Session";
+    "Payout" | "Player" | "Hunt" | "Cache" | "Zone" | "AdminUser" | "Session"
+    | "Redemption";
   targetId: string;
   detail?: string;
   ip?: string;

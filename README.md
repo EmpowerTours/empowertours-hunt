@@ -117,7 +117,7 @@ HINT_GRID_SECRET=
 # Bearer for /api/cron/*. Routes refuse to run if unset.
 CRON_SECRET=
 
-NEXT_PUBLIC_TURBO_COHORT_ADDRESS=0xEae06514a0d3daf610cC0778B27f387018521Ab5
+NEXT_PUBLIC_TURBO_COHORT_ADDRESS=0x13a63A60b0E0104911e845a7e944646045C1558F
 NEXT_PUBLIC_TOURS_TOKEN_ADDRESS=0x45b76a127167fD7FC7Ed264ad490144300eCfcBF
 ```
 
@@ -143,7 +143,7 @@ be driven by `.github/workflows/keeper.yml` hitting `/api/cron/*` with
 ## Related
 
 - `~/projects/turbo-empowertours` — the cohort this funnels into.
-  `TurboCohort` `0xEae06514a0d3daf610cC0778B27f387018521Ab5`, TOURS
+  `TurboCohort` `0x13a63A60b0E0104911e845a7e944646045C1558F`, TOURS
   `0x45b76a127167fD7FC7Ed264ad490144300eCfcBF`, both Monad mainnet.
 
 ## Hackathon submission notes
