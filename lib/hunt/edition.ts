@@ -1,44 +1,28 @@
-// The edition mechanic — random, VISIBLE, ephemeral drops of an fcempowertours
-// work that a hunter can take.
+// The edition mechanic — a chance ENCOUNTER with an fcempowertours work.
 //
-// Written as a pure module for the same reason lib/hunt/spawn.ts and
-// lib/hunt/validator.ts are: the decision logic takes no DB, no network and no
-// clock, so a dispute is answered by replaying stored rows through these
-// functions rather than by anyone's recollection.
+// Not a spawn, and not a place. A card appears over the scope — "you bumped
+// into an artist selling their music" — and the hunter answers yes or no from
+// wherever they are standing. Nobody walks to it.
 //
-// WHAT THIS IS NOT
+// WHY NONE OF SPAWN'S ANTI-SPOOFING IS HERE
 //
-// It is not a spawn. A spawn GIVES native MON and every budget, per-payout cap
-// and rolling 24h ceiling in the schema exists to bound money leaving the
-// treasury. An edition either gives a licence — not fungible, not partially
-// payable — or ASKS the hunter for money. Same finding mechanics, opposite
-// direction of value.
+// Spawns check GPS accuracy, clock skew, plausible speed and proximity
+// because a spawn pays the TREASURY's money for reaching a place: faking a
+// position steals. An edition takes the HUNTER's money. A spoofer who fakes
+// their way into an encounter has bought something. So those checks are
+// absent by reasoning, not by omission — copying them across would have been
+// cargo cult, and would have made an offer harder to accept than a payout is
+// to claim.
 //
-// WHAT IT DELIBERATELY REUSES
+// WHAT IS STILL PURE AND WHY
 //
-// Placement, secrecy posture and the commit-reveal are spawn's, unchanged:
-//
-//   * placement is an annulus around `PlayerHunt.lastVerifiedLat/Lng` — the
-//     last position the VERIFIER accepted, never a self-reported one. The
-//     caller passes that origin; this module never guesses it.
-//   * a minimum radius, so taking one always costs real movement.
-//   * coordinates are public the moment the blip is drawn, so the control is
-//     movement and money, not concealment.
-//   * commit-reveal over the seed, so the drop was demonstrably fixed before
-//     the player moved.
-//
-// WHERE IT DIFFERS FROM A SPAWN, AND WHY IT MATTERS
-//
-// For a spawn the seed decides position AND amount. For an edition the seed
-// decides position AND WHICH WORK — the price is not random, it comes from the
-// venue. So the reveal proves the placement and the choice of work, and the
-// price is proven a different way: it is written onto the row at placement and
-// honoured for the life of the drop (see quoting, below).
+// The decision logic takes no DB, no network and no clock, so a dispute is
+// answered by replaying stored rows rather than by anyone's recollection —
+// the same reason lib/hunt/spawn.ts and lib/hunt/validator.ts are written
+// this way.
 
-import { attemptSeed, destinationPoint, uniformBigInt } from "@/lib/hunt/spawn";
-import type { LatLng } from "@/lib/geo/distance";
+import { uniformBigInt } from "@/lib/hunt/spawn";
 import { affordableWithGas } from "@/lib/editions/payment";
-import { isWalkable, type WalkableArea } from "@/lib/geo/polygon";
 
 // ---------------------------------------------------------------------------
 // Reasons
@@ -52,8 +36,6 @@ export const EDITION_DENY_REASONS = [
   "editions_disabled",
   "player_not_active",
   "hunt_not_active",
-  "no_verified_position",
-  "stale_verified_position",
   "edition_cooldown",
   "edition_already_active",
   // Every work in the catalogue is already owned by this passkey. The rule is
@@ -75,22 +57,21 @@ export type EditionDenyReason = (typeof EDITION_DENY_REASONS)[number];
 export const EDITION_REJECT_REASONS = [
   "player_not_active",
   "hunt_not_active",
-  "gps_accuracy_too_low",
-  "clock_skew",
-  "implausible_speed",
   "edition_not_found",
   "edition_expired",
   "edition_already_taken",
-  "out_of_range",
-  // The passkey already holds this work. Enforced by the unique index on
-  // EditionClaim, so this is what that constraint violation is rendered as.
+  // They said no. Kept distinct from expiry so the UI can tell "you declined"
+  // from "it timed out" rather than guessing.
+  "edition_dismissed",
+  // The passkey already holds this work at this tier. Enforced by the unique
+  // index on EditionClaim, so this is what that violation is rendered as.
   "already_owned",
-  // Decided by the atomic conditional UPDATE that debits hunt earnings, not
-  // here — same convention spawn.ts uses for its ceiling reasons.
-  "insufficient_earnings",
-  // The venue would not sell at the quoted price. Kept distinct from a generic
-  // failure because it is the one rejection that is nobody's fault and is
-  // fixed by re-placing rather than by the hunter doing anything.
+  // Their wallet cannot cover price + gas. Named for the wallet, not for
+  // "earnings": payouts land in the hunter's own wallet and there is no
+  // internal balance to run short of.
+  "insufficient_funds",
+  // The venue would not sell at the quoted price. Distinct because it is
+  // nobody's fault and is fixed by re-offering, not by the hunter acting.
   "price_moved",
   "contended",
 ] as const;
@@ -159,48 +140,34 @@ export function canonicalOrder(
 // ---------------------------------------------------------------------------
 
 export interface EditionDrawParams {
-  origin: LatLng;
-  minRadiusM: number;
-  maxRadiusM: number;
   /**
    * What this player may be offered: the catalogue MINUS everything their
-   * passkey already holds. Filtering before the draw rather than re-rolling
-   * after it keeps the draw uniform over what is actually available — a
-   * re-roll would quietly over-weight whatever sits next to an owned work in
-   * the canonical order.
+   * passkey already holds and everything they cannot pay for. Filtering
+   * BEFORE the draw rather than re-rolling after it keeps the draw uniform
+   * over what is actually available — a re-roll would quietly over-weight
+   * whatever sits next to an excluded work in the canonical order.
    */
   catalogue: readonly EditionOffer[];
 }
 
 export interface EditionDraw {
-  lat: number;
-  lng: number;
   offer: EditionOffer;
-  bearingDeg: number;
-  distanceM: number;
 }
 
-const toDeg = (r: number) => (r * 180) / Math.PI;
-
 /**
- * The whole draw, as one pure function of the seed.
+ * Which work they bumped into, as one pure function of the seed.
  *
- * Given a revealed seed, the same origin, the same radii and the same
- * catalogue, anyone recomputes the same position and the same work. That is
- * the promise the commitment makes.
+ * Deterministic so the choice can be replayed when somebody asks why they
+ * were offered a particular record. It is NOT a fairness commitment the way a
+ * spawn's seed is: a spawn's seed fixes an AMOUNT that the treasury would
+ * otherwise be free to choose after the fact, whereas an edition's price is
+ * the venue's public number and the catalogue is public too. There is nothing
+ * here to cheat, so there is no commit-reveal — and no seedCommit column.
  */
 export function deriveEdition(
   seed: string,
   params: EditionDrawParams,
 ): EditionDraw {
-  const { origin, minRadiusM, maxRadiusM } = params;
-  if (!(Number.isFinite(minRadiusM) && minRadiusM >= 0)) {
-    throw new RangeError("minRadiusM must be a non-negative number");
-  }
-  if (!(Number.isFinite(maxRadiusM) && maxRadiusM >= minRadiusM)) {
-    throw new RangeError("maxRadiusM must be >= minRadiusM");
-  }
-
   const catalogue = canonicalOrder(params.catalogue);
   if (catalogue.length === 0) {
     // The caller decides whether this is "exhausted" or "unavailable"; it has
@@ -208,37 +175,10 @@ export function deriveEdition(
     // invent a work is the point.
     throw new RangeError("deriveEdition: catalogue is empty");
   }
-
-  // A different label from every spawn draw, so the work chosen here cannot be
-  // inferred from a spawn's bearing or amount under the same seed.
-  const bearingRad =
-    (Number(uniformBigInt(seed, "edition:bearing", 0n, 2n ** 32n - 1n)) /
-      2 ** 32) *
-    2 *
-    Math.PI;
-
-  // Area-uniform within the annulus, exactly as spawn.ts does it. Drawing the
-  // radius linearly clusters drops near the inner edge, which over time
-  // teaches players that walking the minimum distance is enough.
-  const u =
-    Number(uniformBigInt(seed, "edition:radius", 0n, 2n ** 32n - 1n)) / 2 ** 32;
-  const distanceM = Math.sqrt(
-    minRadiusM ** 2 + u * (maxRadiusM ** 2 - minRadiusM ** 2),
-  );
-
   const index = Number(
     uniformBigInt(seed, "edition:work", 0n, BigInt(catalogue.length - 1)),
   );
-  const offer = catalogue[index]!;
-
-  const point = destinationPoint(origin, bearingRad, distanceM);
-  return {
-    lat: point.lat,
-    lng: point.lng,
-    offer,
-    bearingDeg: toDeg(bearingRad),
-    distanceM,
-  };
+  return { offer: catalogue[index]! };
 }
 
 // ---------------------------------------------------------------------------
@@ -340,56 +280,75 @@ export function heldKey(offer: {
   return `${offer.collection}/${offer.masterId}/${offer.tier}`;
 }
 
-export type EditionPlacement =
-  | { ok: true; draw: EditionDraw; attempts: number }
-  | { ok: false; attempts: number };
+// ---------------------------------------------------------------------------
+// Eligibility
+// ---------------------------------------------------------------------------
+
+export interface EditionEligibilityContext {
+  serverNow: Date;
+  playerActive: boolean;
+  huntActive: boolean;
+  editionsEnabled: boolean;
+  /** When this player was last offered an edition in this hunt. */
+  lastEditionAt: Date | null;
+  editionCooldownSeconds: number;
+  /** One live card at a time. Spawns are counted separately, on purpose. */
+  hasActiveEdition: boolean;
+  /** How many works they could actually be offered right now. */
+  placeableCount: number;
+  /** True when the catalogue could not be read at all. */
+  catalogueUnavailable: boolean;
+}
+
+export type EditionEligibility =
+  { ok: true } | { ok: false; reason: EditionDenyReason };
 
 /**
- * Draw an edition that lands somewhere a person can actually walk.
+ * May this player be offered an edition right now?
  *
- * Exactly `deriveSpawnInArea`'s contract, and deliberately the same shape: a
- * bare `deriveEdition` places a point on an abstract disc and will happily put
- * a drop in the river or inside a house. This redraws until the point is
- * inside the hunt's surveyed area.
+ * INDEPENDENT OF SPAWNS, deliberately. A hunter may be walking toward money
+ * and be offered a record at the same time: they are different products with
+ * different cadences, and making one block the other would mean every
+ * encounter costs a spawn — turning a 1 MON purchase into a 2 MON one without
+ * saying so.
  *
- * `attemptSeed` is imported from spawn.ts rather than reimplemented. It is
- * part of the reveal promise — given the revealed seed anyone can replay
- * attempts 0..n and confirm both where the accepted drop landed and that the
- * rejected ones really were unwalkable — and two copies of that derivation
- * would eventually disagree and quietly break replay for one of them.
+ * NO POSITION IS REQUIRED. An edition is not placed anywhere, so there is no
+ * origin to anchor and nothing a spoofed position could win: the hunter is
+ * being asked to SPEND. Requiring a fresh verified fix would only mean an
+ * offer is harder to receive than a payout is to claim.
  *
- * DECLINES RATHER THAN LOOPS, for the same reason spawns do: a player at the
- * edge of the hull would otherwise spin this forever. Missing one cycle is a
- * non-event.
+ * Reject by default, in the order that gives the most useful answer.
+ * `catalogue_exhausted` and `catalogue_unavailable` stay distinct to the end,
+ * because "you own everything" and "we could not ask" are different facts and
+ * only one of them is the player's business.
  */
-export function deriveEditionInArea(
-  seed: string,
-  params: EditionDrawParams,
-  area: WalkableArea,
-  maxAttempts = 10,
-  allowUnsurveyed = false,
-): EditionPlacement {
-  if (!(Number.isInteger(maxAttempts) && maxAttempts >= 1)) {
-    throw new RangeError("maxAttempts must be a positive integer");
+export function evaluateEditionEligibility(
+  ctx: EditionEligibilityContext,
+): EditionEligibility {
+  if (!ctx.editionsEnabled) return { ok: false, reason: "editions_disabled" };
+  if (!ctx.playerActive) return { ok: false, reason: "player_not_active" };
+  if (!ctx.huntActive) return { ok: false, reason: "hunt_not_active" };
+
+  if (ctx.hasActiveEdition) {
+    return { ok: false, reason: "edition_already_active" };
   }
 
-  // Only when there is NO survey at all. An exclude ring is somebody saying
-  // "not there"; a hunt with excludes but no includes is a survey in progress.
-  const unsurveyed =
-    area.include.length === 0 && area.exclude.length === 0 && allowUnsurveyed;
-  if (unsurveyed) {
-    return {
-      ok: true,
-      draw: deriveEdition(attemptSeed(seed, 0), params),
-      attempts: 1,
-    };
-  }
-
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const draw = deriveEdition(attemptSeed(seed, attempt), params);
-    if (isWalkable({ lat: draw.lat, lng: draw.lng }, area)) {
-      return { ok: true, draw, attempts: attempt + 1 };
+  if (ctx.lastEditionAt !== null) {
+    const sinceS =
+      (ctx.serverNow.getTime() - ctx.lastEditionAt.getTime()) / 1000;
+    if (!(sinceS >= ctx.editionCooldownSeconds)) {
+      return { ok: false, reason: "edition_cooldown" };
     }
   }
-  return { ok: false, attempts: maxAttempts };
+
+  // Unavailable before exhausted: a failed read must never be reported to a
+  // player as "you already own everything".
+  if (ctx.catalogueUnavailable) {
+    return { ok: false, reason: "catalogue_unavailable" };
+  }
+  if (ctx.placeableCount <= 0) {
+    return { ok: false, reason: "catalogue_exhausted" };
+  }
+
+  return { ok: true };
 }

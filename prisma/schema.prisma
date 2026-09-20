@@ -519,7 +519,7 @@ model Hunt {
   spawnCooldownSeconds Int @default(600)
 
   // --- Editions ------------------------------------------------------------
-  // Findable fcempowertours works. Separate from the spawn knobs on purpose:
+  // Chance encounters with fcempowertours works. Separate from the spawn knobs:
   // an edition and a spawn are different products with different economics —
   // a spawn GIVES 1 MON and should be frequent, an edition ASKS for money and
   // should not interrupt a walk every ten minutes. Reusing the spawn columns
@@ -529,16 +529,16 @@ model Hunt {
   /// on, which is the same posture spawnEnabled takes.
   editionsEnabled Boolean @default(false)
 
-  /// Placement annulus. Tighter than the spawn one by default: a hunter is
-  /// being asked to spend, so the walk should be a short deliberate detour
-  /// rather than the 600m a free drop can justify.
-  editionMinRadiusM Int @default(60)
-  editionMaxRadiusM Int @default(300)
+  /// Longer than a spawn's 90s, because this is a decision and not a pickup:
+  /// 120m is about 90 seconds of walking, and then they have to read the
+  /// card, hear the preview and sign a payment. Short enough that an ignored
+  /// edition clears rather than cluttering the scope.
+  editionTtlSeconds Int @default(300)
 
-  /// Longer than a spawn's. An edition is a decision, not a pickup, and one
-  /// every ten minutes would turn the scope into a shop.
-  editionTtlSeconds      Int @default(1800)
-  editionCooldownSeconds Int @default(1800)
+  /// One every ten minutes against a spawn every sixty seconds. The
+  /// simulation in lib/hunt/edition.sim.test.ts uses this cadence: often
+  /// enough to matter, rare enough that the scope stays a game and not a shop.
+  editionCooldownSeconds Int @default(600)
 
   /// Headroom left on top of the price before an edition is offered, in wei.
   ///
@@ -1428,9 +1428,16 @@ enum ZoneSource {
 /// (V3_DESIGN mints with MUSIC_ROYALTY or ART_ROYALTY), and an edition is the
 /// right word for a copy of either.
 ///
-/// Coordinates are PUBLIC, like a Spawn and unlike a Cache. You see it on the
-/// scope and walk to it; the defence is a short TTL and movement plausibility,
-/// not secrecy. See the Spawn model for the same reasoning.
+/// AN ENCOUNTER, NOT A PLACE. It has no coordinates and nobody walks to it:
+/// it appears as a card over the scope — "you bumped into an artist selling
+/// their music" — and is answered yes or no from wherever the hunter is
+/// standing.
+///
+/// That is why none of the spawn anti-spoofing lives here. Those checks —
+/// accuracy, speed, proximity — exist because a spawn pays the TREASURY's
+/// money for reaching a place, so faking a position steals. An edition takes
+/// the HUNTER's money, so a spoofer gains nothing by faking anything, and
+/// inheriting the checks would have been cargo cult.
 model Edition {
   id     String @id @default(cuid())
   hunt   Hunt   @relation(fields: [huntId], references: [id], onDelete: Cascade)
@@ -1454,10 +1461,6 @@ model Edition {
   /// image without an RPC call per blip. The chain stays authoritative.
   kind EditionKind
 
-  lat          Float
-  lng          Float
-  radiusMeters Int   @default(25)
-
   /// Which tier this drop offers. The venue prices the two separately and
   /// caps the collector one, so they are different products and a hunter may
   /// hold one of each.
@@ -1470,12 +1473,16 @@ model Edition {
   /// constraint in the migration — reject by default, per AGENTS.md rule 2.
   priceWei Decimal? @db.Decimal(78, 0)
 
-  expiresAt DateTime
+  expiresAt   DateTime
   /// Atomic single-taker guard, exactly as Spawn does it: a conditional
   /// UPDATE ... WHERE takenAt IS NULL AND expiresAt > now() picks the winner.
   /// Never a read-then-write.
-  takenAt   DateTime?
-  createdAt DateTime  @default(now())
+  takenAt     DateTime?
+  /// They said no. Recorded rather than left to expire so the same card is
+  /// not shown again the moment they close it — declining is an answer, and
+  /// re-asking would read as nagging.
+  dismissedAt DateTime?
+  createdAt   DateTime  @default(now())
 
   claim EditionClaim?
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canAfford,
-  deriveEditionInArea,
+  evaluateEditionEligibility,
+  type EditionEligibilityContext,
   canonicalOrder,
   deriveEdition,
   heldKey,
@@ -9,15 +10,19 @@ import {
   quotedPrice,
   type EditionOffer,
 } from "./edition";
-import { haversineMeters } from "@/lib/geo/distance";
 
 /* ---------------------------------------------------------------------------
    What these tests are for.
 
-   The commit-reveal promises that the drop — position AND which work — was
-   fixed before the player moved. That promise is only worth anything if a
-   revealed seed genuinely reproduces the same draw, so most of what follows is
-   about replay rather than about happy paths.
+   An edition is an ENCOUNTER, not a place — a card over the scope, answered
+   yes or no from wherever the hunter is standing. So there is nothing here
+   about position, proximity or walkable ground: those guard a spawn paying
+   the treasury's money for reaching somewhere, and an edition takes the
+   hunter's money instead.
+
+   What is still worth pinning is that the choice of work replays from its
+   seed, and that nothing can be offered which the hunter already owns or
+   cannot pay for.
 --------------------------------------------------------------------------- */
 
 const REG = "0x42EbcD44C2295702130f0A641633c691bA5f9480";
@@ -37,52 +42,26 @@ function offer(
   };
 }
 
-const ORIGIN = { lat: 17.5506, lng: -99.5006 };
 const PARAMS = {
-  origin: ORIGIN,
-  minRadiusM: 40,
-  maxRadiusM: 300,
   catalogue: [offer("m1"), offer("m2"), offer("m3"), offer("m4")],
 };
 
 describe("deriveEdition", () => {
   it("is a pure function of the seed", () => {
-    const a = deriveEdition("seed-one", PARAMS);
-    const b = deriveEdition("seed-one", PARAMS);
-    expect(a).toEqual(b);
+    expect(deriveEdition("seed-one", PARAMS)).toEqual(
+      deriveEdition("seed-one", PARAMS),
+    );
   });
 
-  it("gives a different draw for a different seed", () => {
-    const a = deriveEdition("seed-one", PARAMS);
-    const b = deriveEdition("seed-two", PARAMS);
-    expect({ lat: a.lat, lng: a.lng }).not.toEqual({ lat: b.lat, lng: b.lng });
-  });
-
-  // The reveal is worthless if the caller's ordering can change the answer:
-  // "the seed chose index 3" proves nothing when index 3 was a different work
+  // "The seed chose index 3" proves nothing if index 3 was a different work
   // yesterday. This is the test that makes canonicalOrder load-bearing.
   it("picks the same work however the catalogue was ordered", () => {
     const shuffled = {
-      ...PARAMS,
       catalogue: [offer("m3"), offer("m1"), offer("m4"), offer("m2")],
     };
-    const a = deriveEdition("replay-me", PARAMS);
-    const b = deriveEdition("replay-me", shuffled);
-    expect(b.offer.masterId).toBe(a.offer.masterId);
-    expect(b.lat).toBe(a.lat);
-    expect(b.lng).toBe(a.lng);
-  });
-
-  it("lands inside the annulus, never on top of the player", () => {
-    for (let i = 0; i < 200; i += 1) {
-      const d = deriveEdition(`walk-${i}`, PARAMS);
-      const metres = haversineMeters(ORIGIN, { lat: d.lat, lng: d.lng });
-      expect(metres).toBeGreaterThanOrEqual(PARAMS.minRadiusM - 0.5);
-      expect(metres).toBeLessThanOrEqual(PARAMS.maxRadiusM + 0.5);
-      // And the reported distance must match where it actually put the point,
-      // or the card lies about how far the walk is.
-      expect(Math.abs(metres - d.distanceM)).toBeLessThan(0.5);
-    }
+    expect(deriveEdition("replay-me", shuffled).offer.masterId).toBe(
+      deriveEdition("replay-me", PARAMS).offer.masterId,
+    );
   });
 
   it("reaches every work in the catalogue", () => {
@@ -94,25 +73,16 @@ describe("deriveEdition", () => {
   });
 
   it("only ever offers a work that was in the catalogue", () => {
-    const only = { ...PARAMS, catalogue: [offer("solo")] };
+    const only = { catalogue: [offer("solo")] };
     for (let i = 0; i < 20; i += 1) {
       expect(deriveEdition(`s-${i}`, only).offer.masterId).toBe("solo");
     }
   });
 
   it("refuses to invent a work when the catalogue is empty", () => {
-    expect(() => deriveEdition("x", { ...PARAMS, catalogue: [] })).toThrow(
+    expect(() => deriveEdition("x", { catalogue: [] })).toThrow(
       /catalogue is empty/,
     );
-  });
-
-  it("rejects impossible radii rather than drawing something", () => {
-    expect(() => deriveEdition("x", { ...PARAMS, minRadiusM: -1 })).toThrow(
-      RangeError,
-    );
-    expect(() =>
-      deriveEdition("x", { ...PARAMS, minRadiusM: 500, maxRadiusM: 100 }),
-    ).toThrow(RangeError);
   });
 });
 
@@ -227,61 +197,68 @@ describe("placeableFor", () => {
   });
 });
 
-describe("deriveEditionInArea", () => {
-  // A ring that contains the origin and a generous area around it.
-  const wide = {
-    include: [
-      [
-        { lat: 17.54, lng: -99.51 },
-        { lat: 17.56, lng: -99.51 },
-        { lat: 17.56, lng: -99.49 },
-        { lat: 17.54, lng: -99.49 },
-      ],
-    ],
-    exclude: [],
+describe("evaluateEditionEligibility", () => {
+  const NOW = new Date("2026-09-20T12:00:00Z");
+  const base: EditionEligibilityContext = {
+    serverNow: NOW,
+    playerActive: true,
+    huntActive: true,
+    editionsEnabled: true,
+    lastEditionAt: null,
+    editionCooldownSeconds: 600,
+    hasActiveEdition: false,
+    placeableCount: 3,
+    catalogueUnavailable: false,
   };
-  const nowhere = { include: [], exclude: [] };
+  const deny = (over: Partial<EditionEligibilityContext>) => {
+    const r = evaluateEditionEligibility({ ...base, ...over });
+    return r.ok ? "ALLOWED" : r.reason;
+  };
 
-  it("places inside a surveyed area", () => {
-    const r = deriveEditionInArea("seed", PARAMS, wide);
-    expect(r.ok).toBe(true);
+  it("allows a live player with something to offer", () => {
+    expect(evaluateEditionEligibility(base).ok).toBe(true);
   });
 
-  // An unsurveyed hunt places NOTHING unless it has opted in — isWalkable
-  // reads an empty hull as "nowhere approved", not "anywhere goes".
-  it("declines on an unsurveyed hunt by default", () => {
-    const r = deriveEditionInArea("seed", PARAMS, nowhere);
-    expect(r).toEqual({ ok: false, attempts: 10 });
+  it("refuses when editions are switched off", () => {
+    expect(deny({ editionsEnabled: false })).toBe("editions_disabled");
   });
 
-  it("places on an unsurveyed hunt only when opted in", () => {
-    expect(deriveEditionInArea("seed", PARAMS, nowhere, 10, true).ok).toBe(
-      true,
+  it("refuses a suspended player and a closed hunt", () => {
+    expect(deny({ playerActive: false })).toBe("player_not_active");
+    expect(deny({ huntActive: false })).toBe("hunt_not_active");
+  });
+
+  it("refuses while one is already live, and during the cooldown", () => {
+    expect(deny({ hasActiveEdition: true })).toBe("edition_already_active");
+    expect(deny({ lastEditionAt: new Date(NOW.getTime() - 60_000) })).toBe(
+      "edition_cooldown",
     );
   });
 
-  // Excludes are somebody saying "not there". A survey in progress must not be
-  // overridden by the unsurveyed opt-in.
-  it("never applies the opt-in to a hunt that has exclude rings", () => {
-    const excluded = { include: [], exclude: wide.include };
-    expect(deriveEditionInArea("seed", PARAMS, excluded, 3, true).ok).toBe(
-      false,
+  it("allows once the cooldown has elapsed exactly", () => {
+    expect(deny({ lastEditionAt: new Date(NOW.getTime() - 600_000) })).toBe(
+      "ALLOWED",
     );
   });
 
-  it("declines rather than looping forever", () => {
-    const r = deriveEditionInArea("seed", PARAMS, nowhere, 3);
-    expect(r).toEqual({ ok: false, attempts: 3 });
+  // "We could not ask" must never reach a player as "you own everything".
+  it("keeps unavailable distinct from exhausted", () => {
+    expect(deny({ catalogueUnavailable: true, placeableCount: 0 })).toBe(
+      "catalogue_unavailable",
+    );
+    expect(deny({ placeableCount: 0 })).toBe("catalogue_exhausted");
   });
 
-  it("rejects a nonsense attempt count", () => {
-    expect(() => deriveEditionInArea("s", PARAMS, wide, 0)).toThrow(RangeError);
+  // Independence is the point: a live spawn is not in this context at all.
+  it("needs no position at all", () => {
+    expect(
+      Object.keys(base).some((k) => /lat|lng|verified|radius/i.test(k)),
+    ).toBe(false);
   });
 
-  // Replay: the same seed and area must reproduce the same accepted drop.
-  it("is reproducible from the seed", () => {
-    const a = deriveEditionInArea("replay", PARAMS, wide);
-    const b = deriveEditionInArea("replay", PARAMS, wide);
-    expect(a).toEqual(b);
+  it("does not consider spawns", () => {
+    expect(
+      Object.keys(base).some((k) => k.toLowerCase().includes("spawn")),
+    ).toBe(false);
   });
 });

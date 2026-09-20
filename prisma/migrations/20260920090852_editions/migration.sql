@@ -20,11 +20,9 @@ CREATE TYPE "EditionClaimStatus" AS ENUM ('PENDING', 'SENT', 'FAILED');
 ALTER TABLE "DimeClaim" DROP CONSTRAINT "DimeClaim_playerId_fkey";
 
 -- AlterTable
-ALTER TABLE "Hunt" ADD COLUMN     "editionCooldownSeconds" INTEGER NOT NULL DEFAULT 1800,
+ALTER TABLE "Hunt" ADD COLUMN     "editionCooldownSeconds" INTEGER NOT NULL DEFAULT 600,
 ADD COLUMN     "editionGasBufferWei" DECIMAL(78,0) NOT NULL DEFAULT 50000000000000000,
-ADD COLUMN     "editionMaxRadiusM" INTEGER NOT NULL DEFAULT 300,
-ADD COLUMN     "editionMinRadiusM" INTEGER NOT NULL DEFAULT 60,
-ADD COLUMN     "editionTtlSeconds" INTEGER NOT NULL DEFAULT 1800,
+ADD COLUMN     "editionTtlSeconds" INTEGER NOT NULL DEFAULT 300,
 ADD COLUMN     "editionsEnabled" BOOLEAN NOT NULL DEFAULT false;
 
 -- DropTable
@@ -41,14 +39,12 @@ CREATE TABLE "Edition" (
     "collection" TEXT NOT NULL,
     "masterId" TEXT NOT NULL,
     "kind" "EditionKind" NOT NULL,
-    "lat" DOUBLE PRECISION NOT NULL,
-    "lng" DOUBLE PRECISION NOT NULL,
-    "radiusMeters" INTEGER NOT NULL DEFAULT 25,
     "tier" "EditionTier" NOT NULL,
     "terms" "EditionTerms" NOT NULL,
     "priceWei" DECIMAL(78,0),
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "takenAt" TIMESTAMP(3),
+    "dismissedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Edition_pkey" PRIMARY KEY ("id")

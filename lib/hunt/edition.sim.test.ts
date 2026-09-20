@@ -5,7 +5,6 @@ import {
   quotedPrice,
   type EditionOffer,
 } from "./edition";
-import { haversineMeters } from "@/lib/geo/distance";
 
 /* ---------------------------------------------------------------------------
    A SIMULATION, not a test of correctness.
@@ -106,11 +105,7 @@ function walk(
       continue;
     }
 
-    const draw = deriveEdition(`hunter-1:${minute}`, {
-      ...DRAW,
-      catalogue: available,
-    });
-    metresWalked += haversineMeters(ORIGIN, { lat: draw.lat, lng: draw.lng });
+    const draw = deriveEdition(`hunter-1:${minute}`, { catalogue: available });
 
     const price = quotedPrice(draw.offer);
     const { ok } = canAfford(earnedWei, price);
