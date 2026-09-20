@@ -119,7 +119,10 @@
     "turboHandle": "Usuario TURBO",
     "turboHandleNote": "El crédito se canjea contra esta identidad de builder.",
     "noHandleTitle": "Sin usuario TURBO vinculado",
-    "noHandleBody": "El crédito se acumula de todos modos, pero solo se puede canjear una vez que se vincule un usuario del registro TURBO a esta cartera."
+    "noHandleBody": "El crédito se acumula de todos modos, pero solo se puede canjear una vez que se vincule un usuario del registro TURBO a esta cartera.",
+    "payoutsSeeAll": "Ver los {count} pagos",
+    "payoutsCount": "{count, plural, one {# pago} other {# pagos}}",
+    "close": "Cerrar"
   },
   "huntList": {
     "pageTitle": "Búsquedas",

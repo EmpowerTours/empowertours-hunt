@@ -119,7 +119,10 @@
     "turboHandle": "TURBO handle",
     "turboHandleNote": "Credit redeems against this builder identity.",
     "noHandleTitle": "No TURBO handle linked",
-    "noHandleBody": "Credit accrues either way, but it can only be redeemed once a TURBO registry handle is linked to this wallet."
+    "noHandleBody": "Credit accrues either way, but it can only be redeemed once a TURBO registry handle is linked to this wallet.",
+    "payoutsSeeAll": "See all {count} payouts",
+    "payoutsCount": "{count, plural, one {# payout} other {# payouts}}",
+    "close": "Close"
   },
   "huntList": {
     "pageTitle": "Hunts",

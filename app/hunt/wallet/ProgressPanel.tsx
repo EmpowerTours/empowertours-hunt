@@ -11,7 +11,7 @@ import {
   turboProgressPercent,
   weiOrZero,
 } from "@/components/hunt/format";
-import type { PlayerProgress } from "@/components/hunt/types";
+import type { PlayerPayout, PlayerProgress } from "@/components/hunt/types";
 import { Note, Panel, Stat } from "@/components/ui/primitives";
 
 /* ---------------------------------------------------------------------------
@@ -213,48 +213,7 @@ export function ProgressPanel() {
           payout links to the transaction; one still moving says so plainly
           rather than showing a dead link. */}
       {progress.payouts && progress.payouts.length > 0 ? (
-        <Panel>
-          <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
-            {t("payouts")}
-          </div>
-          <ul className="mt-3 space-y-2">
-            {progress.payouts.map((p) => {
-              const sent = p.txHash !== null && p.txHash.length > 0;
-              return (
-                <li
-                  key={p.id}
-                  className="border-hull-line flex items-center justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
-                >
-                  <div>
-                    <div className="text-ink font-mono text-sm">
-                      {formatMon(weiOrZero(p.amountMonWei))} MON
-                    </div>
-                    <div className="text-ink-faint font-mono text-[11px]">
-                      {new Date(p.at).toLocaleString()}
-                    </div>
-                  </div>
-                  {sent ? (
-                    <a
-                      href={`https://monadscan.com/tx/${p.txHash}`}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="text-spawn shrink-0 font-mono text-xs underline"
-                    >
-                      {t("receipt")}
-                    </a>
-                  ) : (
-                    <span className="text-ink-faint shrink-0 font-mono text-xs">
-                      {t("onItsWay")}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          <p className="text-ink-faint mt-3 text-xs leading-snug">
-            {t("payoutsNote")}
-          </p>
-        </Panel>
+        <Payouts payouts={progress.payouts} />
       ) : null}
 
       <div className="grid grid-cols-2 gap-3">
@@ -280,5 +239,139 @@ export function ProgressPanel() {
         <Note title={t("noHandleTitle")}>{t("noHandleBody")}</Note>
       )}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Receipts, without owning the screen.
+
+   The point of this list is verifiability: "3 MON settled" with nothing to
+   check it against asks the player to trust the app, which is the wrong
+   posture for a thing whose whole claim is that it can be verified. But a
+   hunter with thirty payouts got a page they had to scroll past to reach
+   anything else, and the stats below it were effectively hidden.
+
+   So: the newest few inline, the rest behind a button, and the full list in an
+   overlay that scrolls on its own. The receipts are still one tap away and the
+   page stays the size of a screen.
+--------------------------------------------------------------------------- */
+
+const PAYOUTS_PREVIEW = 3;
+
+function PayoutRow({ payout }: { payout: PlayerPayout }) {
+  const t = useTranslations("wallet");
+  const sent = payout.txHash !== null && payout.txHash.length > 0;
+  return (
+    <li className="border-hull-line flex items-center justify-between gap-3 border-b pb-2 last:border-0 last:pb-0">
+      <div>
+        <div className="text-ink font-mono text-sm">
+          {formatMon(weiOrZero(payout.amountMonWei))} MON
+        </div>
+        <div className="text-ink-faint font-mono text-[11px]">
+          {new Date(payout.at).toLocaleString()}
+        </div>
+      </div>
+      {sent ? (
+        <a
+          href={`https://monadscan.com/tx/${payout.txHash}`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-spawn shrink-0 font-mono text-xs underline"
+        >
+          {t("receipt")}
+        </a>
+      ) : (
+        <span className="text-ink-faint shrink-0 font-mono text-xs">
+          {t("onItsWay")}
+        </span>
+      )}
+    </li>
+  );
+}
+
+function Payouts({ payouts }: { payouts: readonly PlayerPayout[] }) {
+  const t = useTranslations("wallet");
+  const [open, setOpen] = useState(false);
+  const hidden = payouts.length - PAYOUTS_PREVIEW;
+
+  // Escape closes, and the page behind must not scroll while it is open —
+  // a scrolling backdrop under a scrolling panel is how a phone loses track
+  // of which one your thumb meant.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
+  return (
+    <>
+      <Panel>
+        <div className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
+          {t("payouts")}
+        </div>
+        <ul className="mt-3 space-y-2">
+          {payouts.slice(0, PAYOUTS_PREVIEW).map((p) => (
+            <PayoutRow key={p.id} payout={p} />
+          ))}
+        </ul>
+        {hidden > 0 ? (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="border-hull-line text-ink active:bg-hull-2 mt-3 min-h-14 w-full rounded-2xl border-2 px-4 font-mono text-sm tracking-wider uppercase"
+          >
+            {t("payoutsSeeAll", { count: payouts.length })}
+          </button>
+        ) : null}
+        <p className="text-ink-faint mt-3 text-xs leading-snug">
+          {t("payoutsNote")}
+        </p>
+      </Panel>
+
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("payouts")}
+            // The backdrop closes; a tap inside must not travel up to it.
+            onClick={(e) => e.stopPropagation()}
+            className="border-hull-line bg-hull flex max-h-[80dvh] w-full max-w-md flex-col rounded-2xl border-2 shadow-2xl"
+          >
+            <div className="border-hull-line flex items-center justify-between gap-3 border-b p-4">
+              <span className="text-ink-dim font-mono text-[11px] tracking-[0.24em] uppercase">
+                {t("payoutsCount", { count: payouts.length })}
+              </span>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label={t("close")}
+                autoFocus
+                className="border-hull-line text-ink flex size-11 shrink-0 items-center justify-center rounded-xl border-2 text-lg"
+              >
+                ✕
+              </button>
+            </div>
+            {/* The one scrolling region on the page while this is open. */}
+            <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
+              {payouts.map((p) => (
+                <PayoutRow key={p.id} payout={p} />
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
