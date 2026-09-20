@@ -5,6 +5,7 @@ import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
 import { monad, monadRpcUrl } from "@/lib/monad";
 import { readCatalogue } from "@/lib/editions/catalogue";
+import { relayerConfig } from "@/lib/editions/relayer";
 import {
   deriveEdition,
   evaluateEditionEligibility,
@@ -204,6 +205,7 @@ export async function GET(
     );
     return NextResponse.json({
       offered: true,
+      payTo: relayerConfig()?.relayerAddress ?? null,
       edition: view(created, {
         name: d?.name ?? `#${created.masterId}`,
         imageUrl: d?.imageUrl ?? null,

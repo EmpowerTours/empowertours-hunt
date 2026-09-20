@@ -52,12 +52,25 @@ const SALES_ABI = parseAbi([
   "event LicensePurchased(uint256 indexed licenseId, uint256 indexed masterTokenId, address indexed buyer, uint256 price, bool isCollector)",
 ]);
 
+const PRICING_ABI = parseAbi([
+  "function pricing(uint256) view returns (uint256 price, uint256 collectorPrice, bool salesPaused)",
+]);
+
 const LICENSE_ABI = parseAbi([
   "function transferFrom(address from, address to, uint256 tokenId)",
 ]);
 
 export interface RelayerConfig {
   privateKey: Hex;
+  /**
+   * The relayer's public address, derived from the key at config time.
+   *
+   * This is what a hunter sends their payment TO, so it has to reach the
+   * client — which is exactly why it is derived here rather than left for a
+   * caller to work out from the key. A caller that needed the key to learn
+   * the address would be a caller holding the key for no other reason.
+   */
+  relayerAddress: Address;
   salesController: Address;
   /**
    * The registry this relayer is wired to. An Edition row carries its own
@@ -113,6 +126,7 @@ export function relayerConfig(): RelayerConfig | null {
 
   return {
     privateKey: privateKey as Hex,
+    relayerAddress: privateKeyToAccount(privateKey as Hex).address,
     salesController: salesController as Address,
     licenseRegistry: licenseRegistry as Address,
   };
@@ -249,4 +263,56 @@ export function relayLicense(
       };
     }
   });
+}
+
+/**
+ * Is this work actually buyable right now, at the price we quoted?
+ *
+ * Called BEFORE the hunter's payment is accepted, not after the relayer tries
+ * to buy. `salesPaused` lives in SalesController.pricing and is NOT exposed by
+ * the catalogue endpoint, so a paused work looks perfectly offerable to hunt:
+ * still active, still priced. Without this the sequence would be "take their
+ * money, fail, give it back", which is a bad minute for somebody who just
+ * paid and a second money movement for us.
+ *
+ * Also re-reads the price. The row's price is what the hunter is charged and
+ * is honoured regardless — this only catches the case where the venue has
+ * moved so far that the purchase could not complete at all.
+ *
+ * Fails CLOSED: an RPC error answers "not buyable". Refusing an offer costs a
+ * hunter nothing; accepting money for something we cannot deliver costs them
+ * real MON and us a refund.
+ */
+export async function isBuyable(
+  cfg: RelayerConfig,
+  masterId: bigint,
+  isCollector: boolean,
+  quotedWei: bigint,
+): Promise<{ ok: true } | { ok: false; reason: "price_moved" }> {
+  try {
+    const pub = createPublicClient({
+      chain: monad,
+      transport: http(process.env.MONAD_RPC_URL),
+    });
+    const [price, collectorPrice, salesPaused] = await pub.readContract({
+      address: cfg.salesController,
+      abi: PRICING_ABI,
+      functionName: "pricing",
+      args: [masterId],
+    });
+    if (salesPaused) return { ok: false, reason: "price_moved" };
+
+    const live = isCollector ? collectorPrice : price;
+    // Zero reverts at the venue with ZeroPrice, so it is unbuyable whatever
+    // the row says.
+    if (live === 0n) return { ok: false, reason: "price_moved" };
+    // Dearer than quoted means the relayer would have to make up the
+    // difference out of its own balance. Cheaper is fine — the hunter is
+    // charged what the card said and the surplus stays with the relayer,
+    // which is the party that took the TTL risk.
+    if (live > quotedWei) return { ok: false, reason: "price_moved" };
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "price_moved" };
+  }
 }
