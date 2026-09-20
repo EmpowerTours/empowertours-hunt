@@ -150,6 +150,12 @@ EDITION_RELAYER_PRIVATE_KEY=    # funded hot wallet. Its balance IS the ceiling
 EDITION_SALES_CONTROLLER=       # v3 SalesController
 EDITION_LICENSE_REGISTRY=       # v3 LicenseRegistry; an Edition row naming a
                                 # different collection is REFUSED, not guessed
+
+# /dime — the cold-traffic giveaway landing page. One work, one campaign.
+# Unset = the page is closed rather than broken.
+DIME_GIVEAWAY_MASTER_ID=        # the master being given away
+DIME_GIVEAWAY_LICENSE_URI=      # optional; passed to purchase()
+DIME_MAX_CLAIMS=                # optional, default 2000. Scoped to that work
 ```
 
 ## Testing
