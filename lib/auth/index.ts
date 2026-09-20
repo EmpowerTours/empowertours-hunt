@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
 import { readCookie, readSession, SESSION_COOKIE } from "./mera";
-import { resolveWalletFromPrivyToken } from "./privy";
 import {
   verifyClaimSignature,
   type SignedClaim,
@@ -10,14 +9,15 @@ import {
 // ---------------------------------------------------------------------------
 // The auth boundary.
 //
-// Routes import from HERE and nowhere else. Neither Mera nor Privy may leak
-// into a route: the moment a route knows which provider authenticated a caller,
-// swapping providers stops being a config change and becomes a refactor of
-// every endpoint — and mera is explicitly in PREVIEW, so that swap has to stay
-// cheap.
+// Routes import from HERE and nowhere else. The provider must not leak into a
+// route: the moment a route knows HOW a caller authenticated, swapping that out
+// stops being a config change and becomes a refactor of every endpoint — and
+// mera is explicitly in PREVIEW, so that swap has to stay cheap. The boundary
+// stays even though there is now only one provider behind it; that is the
+// point of a boundary.
 //
 // Everything in this file fails CLOSED. Every failure — a forged cookie, an
-// expired one, a Privy outage, unset env, a database error — becomes an
+// expired one, unset env, a database error — becomes an
 // AuthError, which a route renders as 401. There is no branch that returns an
 // anonymous-but-allowed caller, which is why requirePlayer throws rather than
 // returning null: a nullable return invites `if (player) { ... }` with no else.
@@ -41,58 +41,34 @@ export interface SessionPlayer {
   suspendedAt: Date | null;
 }
 
-export type AuthProvider = "mera" | "privy";
-
 /**
- * Which providers may authenticate, in order.
+ * The passkey session, and nothing else.
  *
- * AUTH_PROVIDERS is a comma-separated list; the default tries the mera session
- * cookie first and falls back to Privy. This is the knob that matters: if
- * mera's preview API breaks the browser half, set AUTH_PROVIDERS=privy and
- * logins keep working without a deploy of any route.
+ * A Privy fallback used to sit behind this, for phones that could not do
+ * WebAuthn. It was removed 2026-09-19 because it could not do the job it was
+ * there for: the wallet on this app IS the passkey — the PRF output for
+ * (credential, rpId, salt) run through BIP-39 (lib/auth/derive.ts) — so a
+ * player who came in through Privy would have been handed a DIFFERENT wallet
+ * with a different balance, silently. A fallback that answers "you are signed
+ * in" with the wrong address is worse than no fallback.
+ *
+ * It was also already inert: resolveWalletFromPrivyToken returned null without
+ * NEXT_PUBLIC_PRIVY_APP_ID, and no such id was ever built into the deployed
+ * client, so no player has ever authenticated this way in production.
+ *
+ * The real fallback for a phone whose credential manager refuses the app is
+ * the one that ships: the native Credential Manager path
+ * (lib/auth/native-passkey.ts) and, failing that, the prompt to open the site
+ * in Chrome — both of which reach the SAME passkey and therefore the same
+ * wallet.
  */
-export function enabledProviders(): AuthProvider[] {
-  const raw = process.env.AUTH_PROVIDERS;
-  if (!raw) return ["mera", "privy"];
-
-  const parsed = raw
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter((s): s is AuthProvider => s === "mera" || s === "privy");
-
-  // An unparseable value must not silently disable auth, and must not silently
-  // enable a provider the operator meant to turn off. Fall back to the default.
-  return parsed.length > 0 ? parsed : ["mera", "privy"];
-}
-
 async function resolveWallet(req: Request): Promise<string> {
-  const providers = enabledProviders();
-  let lastReason = "unauthenticated";
+  const token = readCookie(req, SESSION_COOKIE);
+  if (!token) throw new AuthError("unauthenticated");
 
-  for (const provider of providers) {
-    if (provider === "mera") {
-      const token = readCookie(req, SESSION_COOKIE);
-      if (!token) continue;
-      const result = readSession(token);
-      if (result.ok) return result.wallet;
-      lastReason = result.reason;
-      continue;
-    }
-
-    // Privy's own cookie name. Also accepted as a bearer header, which is how
-    // a native client that cannot hold cookies authenticates.
-    const header = req.headers.get("authorization");
-    const bearer =
-      header && header.startsWith("Bearer ") ? header.slice(7).trim() : null;
-    const token = readCookie(req, "privy-token") ?? bearer;
-    if (!token) continue;
-
-    const result = await resolveWalletFromPrivyToken(token);
-    if (result.ok) return result.wallet;
-    lastReason = result.reason;
-  }
-
-  throw new AuthError(lastReason);
+  const result = readSession(token);
+  if (!result.ok) throw new AuthError(result.reason);
+  return result.wallet;
 }
 
 /**

@@ -121,7 +121,10 @@ export default async function PlayerDetailPage({
           v={
             player.passkeyCredentialId
               ? "Mera passkey"
-              : "injected wallet / Privy"
+              : // Privy was removed 2026-09-19 and never authenticated anyone
+                // in production, but rows predating the passkey flow still
+                // have no credential id. Say what is actually known.
+                "no passkey on record"
           }
         />
         <KeyVal k="joined" v={timestamp(player.createdAt)} />

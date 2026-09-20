@@ -23,7 +23,6 @@
     "@category-labs/mera": "0.2.0",
     "@noble/curves": "^2.4.0",
     "@prisma/client": "^6.3.0",
-    "@privy-io/server-auth": "^1.21.0",
     "@scure/bip32": "^1.7.0",
     "@scure/bip39": "^1.6.0",
     "@upstash/ratelimit": "^2.0.8",

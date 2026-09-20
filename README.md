@@ -111,10 +111,8 @@ ALLOWED_ORIGINS=
 # who has read the source. Snapping still defeats averaging without it.
 HINT_GRID_SECRET=
 
-# Player auth: Mera passkey primary, Privy fallback, behind one interface.
-AUTH_PROVIDER=mera
-NEXT_PUBLIC_PRIVY_APP_ID=
-PRIVY_APP_SECRET=
+# Player auth: Mera passkey. The wallet IS the passkey, so there is no
+# second provider — see lib/auth/index.ts resolveWallet.
 
 # Bearer for /api/cron/*. Routes refuse to run if unset.
 CRON_SECRET=

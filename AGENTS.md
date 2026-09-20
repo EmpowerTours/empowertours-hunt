@@ -39,7 +39,7 @@ add TOURS code without being asked.
 6. **Nothing irreversible happens without a bound.** Sending MON is gated by
    per-payout cap, per-player rolling 24h cap, per-hunt budget, and auto-approval
    policy. A flagged attempt never auto-approves.
-7. **No secrets in code.** `HUNT_TREASURY_PRIVATE_KEY`, `PRIVY_APP_SECRET`,
+7. **No secrets in code.** `HUNT_TREASURY_PRIVATE_KEY`, `COTA_KEY_ENC_SECRET`,
    `UPSTASH_*` come from env. Never log them, never echo them.
 8. **Do not weaken a control to make a test pass.** Fix the test.
 
@@ -100,8 +100,11 @@ export function requirePlayer(req: Request): Promise<SessionPlayer>;
 export function verifySignedClaim(payload: SignedClaim): Promise<string>;
 ```
 
-Player auth is **Mera passkey first, Privy fallback**, behind this interface so
-neither leaks into a route. Admin auth is separate and never uses Mera.
+Player auth is **Mera passkey only**, behind this interface so the provider
+never leaks into a route. There is deliberately no fallback provider: the
+wallet IS the passkey (PRF -> BIP-39, `lib/auth/derive.ts`), so a second
+provider would hand the same person a different wallet. Admin auth is separate
+and never uses Mera.
 
 ## EIP-712 signed claims
 
@@ -137,11 +140,8 @@ UPSTASH_REDIS_REST_TOKEN=       # store cannot stop replay across instances,
                                 # so the nonce store refuses to build without it
 AUTH_SESSION_SECRET=            # REQUIRED, >= 32 chars. No session can be
                                 # minted or verified without it.
-AUTH_PROVIDERS=                 # optional, default "mera,privy"
 ALLOWED_ORIGINS=                # optional but recommended; without it the
                                 # origin check falls back to trusting Host
-NEXT_PUBLIC_PRIVY_APP_ID=
-PRIVY_APP_SECRET=
 CRON_SECRET=                    # bearer for /api/cron/*
 ```
 

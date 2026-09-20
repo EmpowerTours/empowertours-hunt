@@ -14,10 +14,6 @@
 // so the assignment is real, not cosmetic.
 (process.env as Record<string, string>).NODE_ENV ??= "test";
 
-// Only the mera cookie provider. Leaving Privy enabled would have every
-// unauthenticated request reach out to Privy's API and fail slowly.
-process.env.AUTH_PROVIDERS = "mera";
-
 process.env.AUTH_SESSION_SECRET ??= "integration-session-secret-".padEnd(48, "x");
 process.env.ADMIN_SESSION_SECRET ??= "integration-admin-secret-".padEnd(48, "x");
 process.env.SPAWN_SEED_SECRET ??= "integration-spawn-seed-".padEnd(48, "x");

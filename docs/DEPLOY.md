@@ -14,7 +14,6 @@ deployment refuses to work instead of quietly running without auth.
 - **Railway Postgres plugin** — it exposes `DATABASE_URL`, which is what
   `prisma/schema.prisma` reads.
 - **Upstash Redis** database, for rate limiting.
-- **Privy application** — you need the app id and the app secret.
 
 ## 2. Environment
 
@@ -29,10 +28,7 @@ UPSTASH_REDIS_REST_URL=https://example.upstash.io
 UPSTASH_REDIS_REST_TOKEN=
 
 # --- Player auth (required) ---
-NEXT_PUBLIC_PRIVY_APP_ID=
-PRIVY_APP_SECRET=
 AUTH_SESSION_SECRET=          # MIN 32 CHARS
-AUTH_PROVIDERS=mera,privy     # optional; valid values: mera, privy
 
 # --- Admin auth (required to reach /admin) ---
 ADMIN_SESSION_SECRET=         # MIN 32 CHARS
@@ -67,7 +63,6 @@ NEXT_PUBLIC_IPFS_GATEWAY=     # optional; has a default
 | `SPAWN_SEED_SECRET` | Spawn seeds are `HMAC-SHA256(secret, spawnId)`. Unset means the route 503s rather than draw money from a predictable source. **Changing it invalidates the reveal for existing spawns.** |
 | `CRON_SECRET` | Under 16 chars, `/api/cron/*` refuse to run. Must match `secrets.CRON_SECRET` in GitHub. |
 | `HUNT_TREASURY_PRIVATE_KEY` | Signs real MON with no human in the loop once a payout is APPROVED. See §5. |
-| `AUTH_PROVIDERS` | The outage knob. If mera's preview API breaks the browser half, set this to `privy` and logins keep working with no redeploy. |
 
 ## 3. Migrate
 
