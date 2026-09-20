@@ -187,6 +187,34 @@ else
     pass "no hardcoded key material"
 fi
 
+# NO DEAD ENDS UNDER /cota.
+#
+# The app is a Capacitor WebView with no browser chrome: no back gesture, no
+# address bar, no tab strip. A page with no link out is not "one tap from the
+# back button" there, it is a page you leave by force-quitting the app.
+#
+# It has happened twice — /cota/bridge and /cota/enroll both shipped without a
+# way back, and the bridge one was found by a player tapping "Bring AUSD from
+# another chain" and getting stuck. Hence a check rather than a habit.
+#
+# Deliberately narrow: only cota SUBpages, only the literal href="/cota". It is
+# not trying to prove general reachability, it is pinning the one convention
+# every sibling already follows. /dime is excluded on purpose — it is a
+# standalone campaign page reached from a link, not part of app navigation.
+if [ -d app/cota ]; then
+    DEAD=""
+    for f in $(find app/cota -mindepth 2 -name page.tsx 2>/dev/null | sort); do
+        grep -q 'href="/cota"' "$f" || DEAD="$DEAD $f"
+    done
+    if [ -n "$DEAD" ]; then
+        fail "cota subpage with no way back (WebView has no back button):$DEAD"
+    else
+        pass "every /cota subpage links home"
+    fi
+else
+    skip "no app/cota in this repo"
+fi
+
 # NOTE: a "no --broadcast" check deliberately does NOT live here. Every contracts
 # repo has a human-run deploy script, and fcempowertours broadcasts from a keeper
 # workflow by design, so a universal version fires constantly on correct code.
