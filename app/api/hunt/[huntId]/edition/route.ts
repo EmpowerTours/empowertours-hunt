@@ -1,0 +1,220 @@
+import { NextResponse } from "next/server";
+import { createPublicClient, http } from "viem";
+import { prisma } from "@/lib/db/prisma";
+import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
+import { checkLimit } from "@/lib/ratelimit";
+import { monad, monadRpcUrl } from "@/lib/monad";
+import { readCatalogue } from "@/lib/editions/catalogue";
+import {
+  deriveEdition,
+  evaluateEditionEligibility,
+  heldKey,
+  placeableFor,
+  quotedPrice,
+} from "@/lib/hunt/edition";
+import { toWei } from "@/lib/wei";
+import { randomBytes } from "node:crypto";
+
+// ---------------------------------------------------------------------------
+// GET /api/hunt/[huntId]/edition — "have I bumped into anyone?"
+//
+// Polled alongside the spawn scan. Returns the live card if there is one, or
+// a reason there is not, and creates one when the player is due.
+//
+// ## Why this is a GET that writes
+//
+// It mirrors the spawn scan, which has the same shape for the same reason:
+// the client cannot know whether it is due an encounter, so asking IS the
+// trigger. The write is idempotent in the way that matters — an existing live
+// card is returned rather than a second one created, and the cooldown is the
+// bound on how often one can appear.
+//
+// ## What is deliberately NOT checked
+//
+// No GPS accuracy, no clock skew, no plausible speed, no proximity, no
+// verified position. Those guard a spawn, which pays the TREASURY for
+// reaching a place; faking a position there steals. An edition takes the
+// HUNTER's money, so a spoofer who fakes an encounter has bought something.
+// See lib/hunt/edition.ts.
+// ---------------------------------------------------------------------------
+
+/** What the card needs, and nothing the hunter has no business seeing. */
+function view(
+  e: {
+    id: string;
+    collection: string;
+    masterId: string;
+    kind: string;
+    tier: string;
+    terms: string;
+    priceWei: unknown;
+    expiresAt: Date;
+  },
+  display: { name: string; imageUrl: string | null; previewUrl: string | null },
+) {
+  return {
+    id: e.id,
+    collection: e.collection,
+    masterId: e.masterId,
+    kind: e.kind,
+    tier: e.tier,
+    terms: e.terms,
+    priceWei: e.priceWei === null ? null : String(e.priceWei),
+    expiresAt: e.expiresAt.toISOString(),
+    ...display,
+  };
+}
+
+export async function GET(
+  req: Request,
+  ctx: { params: Promise<{ huntId: string }> },
+) {
+  try {
+    const { huntId } = await ctx.params;
+    const player = await requirePlayer(req);
+
+    // Shares the spawn bucket: both are polled on the same loop, and a script
+    // hammering this would hammer that too.
+    const limit = await checkLimit("spawn", {
+      playerId: player.id,
+      ip: clientIp(req),
+    });
+    if (!limit.ok) {
+      return NextResponse.json({ error: "slow down" }, { status: 429 });
+    }
+
+    const now = new Date();
+    const hunt = await prisma.hunt.findUnique({ where: { id: huntId } });
+    if (!hunt) {
+      return NextResponse.json({ error: "hunt not found" }, { status: 404 });
+    }
+
+    // A live card is one that has not been answered either way and has not
+    // timed out. `dismissedAt` counts as answered — declining must not leave
+    // the card hanging around blocking the next one.
+    const live = await prisma.edition.findFirst({
+      where: {
+        huntId,
+        playerId: player.id,
+        takenAt: null,
+        dismissedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const catalogue = await readCatalogue();
+    const entries = catalogue.ok ? catalogue.entries : [];
+    const byMaster = new Map(
+      entries.map((e) => [`${e.collection}/${e.masterId}/${e.tier}`, e]),
+    );
+
+    if (live) {
+      const d = byMaster.get(
+        `${live.collection}/${live.masterId}/${live.tier}`,
+      );
+      return NextResponse.json({
+        offered: true,
+        edition: view(live, {
+          // The venue may have dropped the work since the card was created.
+          // The card still stands — the price was quoted and is honoured —
+          // so fall back to the id rather than hiding a live offer.
+          name: d?.name ?? `#${live.masterId}`,
+          imageUrl: d?.imageUrl ?? null,
+          previewUrl: d?.previewUrl ?? null,
+        }),
+      });
+    }
+
+    // Everything this passkey already holds, at the tier it holds it. Tier is
+    // in the key so owning the standard licence does not bar the collector.
+    const claims = await prisma.editionClaim.findMany({
+      where: { playerId: player.id, status: { in: ["PENDING", "SENT"] } },
+      select: { collection: true, masterId: true, tier: true },
+    });
+    const held = new Set(claims.map((c) => heldKey(c)));
+
+    // Their own wallet, read from chain. There is no internal balance: hunt
+    // payouts land in the hunter's wallet, so this IS the spendable figure.
+    // An RPC hiccup means zero placeable rather than a crash — they are told
+    // nothing is on offer, which is true enough for one poll.
+    let balanceWei = 0n;
+    try {
+      const client = createPublicClient({
+        chain: monad,
+        transport: http(monadRpcUrl()),
+      });
+      balanceWei = await client.getBalance({
+        address: player.walletAddress as `0x${string}`,
+      });
+    } catch {
+      // Stays 0n.
+    }
+
+    const gasBuffer = toWei(hunt.editionGasBufferWei);
+    const placeable = placeableFor(entries, held, balanceWei, gasBuffer);
+
+    const lastEdition = await prisma.edition.findFirst({
+      where: { huntId, playerId: player.id },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+
+    const eligibility = evaluateEditionEligibility({
+      serverNow: now,
+      playerActive: player.active && player.suspendedAt === null,
+      huntActive: hunt.active,
+      editionsEnabled: hunt.editionsEnabled,
+      lastEditionAt: lastEdition?.createdAt ?? null,
+      editionCooldownSeconds: hunt.editionCooldownSeconds,
+      hasActiveEdition: false, // already returned above when there was one
+      placeableCount: placeable.length,
+      catalogueUnavailable: !catalogue.ok,
+    });
+
+    if (!eligibility.ok) {
+      return NextResponse.json({ offered: false, reason: eligibility.reason });
+    }
+
+    const draw = deriveEdition(`edn_${randomBytes(16).toString("hex")}`, {
+      catalogue: placeable,
+    });
+    const price = quotedPrice(draw.offer);
+
+    // The price is written onto the row, not re-read when they answer. A
+    // hunter shown 300 WMON must be charged 300 WMON; the relayer absorbs any
+    // movement at the venue inside the TTL, which is the right party — it
+    // chose the TTL and the hunter cannot see the venue at all.
+    const created = await prisma.edition.create({
+      data: {
+        huntId,
+        playerId: player.id,
+        collection: draw.offer.collection,
+        masterId: draw.offer.masterId,
+        kind: draw.offer.kind,
+        tier: draw.offer.tier,
+        terms: draw.offer.terms,
+        priceWei: draw.offer.terms === "FREE" ? null : price.toString(),
+        expiresAt: new Date(now.getTime() + hunt.editionTtlSeconds * 1000),
+      },
+    });
+
+    const d = byMaster.get(
+      `${draw.offer.collection}/${draw.offer.masterId}/${draw.offer.tier}`,
+    );
+    return NextResponse.json({
+      offered: true,
+      edition: view(created, {
+        name: d?.name ?? `#${created.masterId}`,
+        imageUrl: d?.imageUrl ?? null,
+        previewUrl: d?.previewUrl ?? null,
+      }),
+    });
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: "sign in first" }, { status: 401 });
+    }
+    console.error("[hunt/edition] failed", err);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
+  }
+}
