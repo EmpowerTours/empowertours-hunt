@@ -3,6 +3,8 @@ import {
   canAfford,
   canonicalOrder,
   deriveEdition,
+  heldKey,
+  placeableFor,
   quotedPrice,
   type EditionOffer,
 } from "./edition";
@@ -178,5 +180,48 @@ describe("canAfford", () => {
 
   it("refuses a negative price rather than crediting the hunter", () => {
     expect(() => canAfford(100n, -1n)).toThrow(RangeError);
+  });
+});
+
+describe("placeableFor", () => {
+  const ONE_MON = 1_000_000_000_000_000_000n;
+  const GAS = ONE_MON / 20n; // 0.05 MON of headroom
+  const cheap = offer("dime", { priceWei: ONE_MON });
+  const dear = offer("suddenly", { priceWei: 300n * ONE_MON });
+  const gift = offer("promo", { terms: "FREE", priceWei: null });
+  const none = new Set<string>();
+
+  it("offers only what the hunter can pay for, gas included", () => {
+    // Exactly the price is NOT enough — sending it costs gas.
+    expect(placeableFor([cheap, dear], none, ONE_MON, GAS)).toEqual([]);
+    expect(
+      placeableFor([cheap, dear], none, ONE_MON + GAS, GAS).map(
+        (o) => o.masterId,
+      ),
+    ).toEqual(["dime"]);
+  });
+
+  // The whole point of a giveaway is reaching someone with nothing.
+  it("offers a FREE work at a zero balance", () => {
+    expect(placeableFor([cheap, dear, gift], none, 0n, GAS)).toEqual([gift]);
+  });
+
+  it("never offers a work the passkey already holds", () => {
+    const held = new Set([heldKey(cheap)]);
+    expect(placeableFor([cheap], held, 1000n * ONE_MON, GAS)).toEqual([]);
+  });
+
+  // Tier is in the key, so owning the standard must not bar the collector.
+  it("still offers the other tier of a work they hold", () => {
+    const std = offer("dime", { tier: "STANDARD", priceWei: ONE_MON });
+    const col = offer("dime", { tier: "COLLECTOR", priceWei: 2n * ONE_MON });
+    const held = new Set([heldKey(std)]);
+    expect(
+      placeableFor([std, col], held, 1000n * ONE_MON, GAS).map((o) => o.tier),
+    ).toEqual(["COLLECTOR"]);
+  });
+
+  it("returns nothing rather than throwing when all are unaffordable", () => {
+    expect(placeableFor([dear], none, 0n, GAS)).toEqual([]);
   });
 });

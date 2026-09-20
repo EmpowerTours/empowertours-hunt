@@ -37,6 +37,7 @@
 
 import { destinationPoint, uniformBigInt } from "@/lib/hunt/spawn";
 import type { LatLng } from "@/lib/geo/distance";
+import { affordableWithGas } from "@/lib/editions/payment";
 
 // ---------------------------------------------------------------------------
 // Reasons
@@ -282,4 +283,58 @@ export function canAfford(
   if (!(priceWei >= 0n)) throw new RangeError("canAfford: negative price");
   const ok = unwithdrawnWei >= priceWei;
   return { ok, shortfallWei: ok ? 0n : priceWei - unwithdrawnWei };
+}
+
+/**
+ * What this hunter may actually be offered.
+ *
+ * Two filters, and the caller applies both before handing the catalogue to
+ * `deriveEdition`: works their passkey already holds, and works they cannot
+ * pay for. Filtering BEFORE the draw rather than re-rolling after it keeps the
+ * draw uniform over what is available — a re-roll would quietly over-weight
+ * whatever sits next to an excluded work in the canonical order.
+ *
+ * ## Why affordability is a placement filter and not only a card warning
+ *
+ * Measured with lib/hunt/edition.sim.test.ts. At the original 35-300 WMON
+ * catalogue, filtering by affordability changed almost nothing: it converted
+ * "a card you cannot tap" into "no card at all" and the wasted encounters
+ * stayed wasted. Adding one 1 MON work flipped it — actionable encounters in
+ * the first hour went from 17% to 33%. The filter is worth having once
+ * something cheap exists; it was not before.
+ *
+ * It does NOT remove the need for the card to show a shortfall. An edition is
+ * placed when affordable and walked to two minutes later, by which time the
+ * hunter may have spent the money elsewhere. Placement is a courtesy; the card
+ * is the correctness.
+ *
+ * `gasBufferWei` is why balance alone is not the test: the hunter signs the
+ * payment themselves, so they need the price PLUS enough to send it. A wallet
+ * holding exactly the price cannot pay it.
+ */
+export function placeableFor(
+  catalogue: readonly EditionOffer[],
+  held: ReadonlySet<string>,
+  balanceWei: bigint,
+  gasBufferWei: bigint,
+): EditionOffer[] {
+  return catalogue.filter((o) => {
+    // Key must match EditionClaim's unique index, or a hunter is offered
+    // something they already own — or barred from a tier they do not.
+    if (held.has(`${o.collection}/${o.masterId}/${o.tier}`)) return false;
+    // A FREE work costs the hunter nothing and needs no gas from them: the
+    // relayer signs both transactions. So balance never excludes it, which is
+    // what lets a hunter with zero MON still be given something.
+    if (o.terms === "FREE") return true;
+    return affordableWithGas(balanceWei, quotedPrice(o), gasBufferWei).ok;
+  });
+}
+
+/** The key `placeableFor` expects in `held`, so callers cannot format it wrong. */
+export function heldKey(offer: {
+  collection: string;
+  masterId: string;
+  tier: EditionTier;
+}): string {
+  return `${offer.collection}/${offer.masterId}/${offer.tier}`;
 }

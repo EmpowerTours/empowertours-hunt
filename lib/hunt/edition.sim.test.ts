@@ -34,6 +34,7 @@ const MON_USD = 0.024638; // Kuru MON_USDC mid, read this session
 
 /** The six active masters, exactly as the live endpoint returned them. */
 const LIVE: ReadonlyArray<{ id: string; name: string; wmon: number }> = [
+  { id: "13", name: "Dime Que Si", wmon: 1 },
   { id: "12", name: "Suddenly", wmon: 300 },
   { id: "11", name: "Money Making Machine", wmon: 300 },
   { id: "10", name: "Sloppy", wmon: 35 },
