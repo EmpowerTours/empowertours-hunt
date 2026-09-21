@@ -117,6 +117,19 @@ export async function GET(
       );
       return NextResponse.json({
         offered: true,
+        // ---- The SAME payTo the new-card branch sends, and its absence here
+        // made every purchase impossible after the first poll.
+        //
+        // HuntScreen re-runs this fetch on every scan tick and stores
+        // `payTo: body.payTo ?? null`. A card lives 300s, so the first tick
+        // created it and returned payTo, and the very next tick returned this
+        // branch without one — overwriting it with null. EditionCard then bails
+        // at `if (!payTo)` before it ever signs, so the hunter taps BUY, sees
+        // "something went wrong", and no money moves and no claim row is
+        // written. Reproduced on master 8 at 35 MON against a 95 MON wallet.
+        //
+        // A response that offers a card MUST carry everywhere to pay it.
+        payTo: relayerConfig()?.relayerAddress ?? null,
         edition: view(live, {
           // The venue may have dropped the work since the card was created.
           // The card still stands — the price was quoted and is honoured —
