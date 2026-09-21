@@ -376,7 +376,18 @@ export default function SpotPage() {
   }, [address, input, side, t.noAmount, refresh]);
 
   const fmt = (v: bigint | null, dp: number) =>
-    v === null ? "—" : (Number(v) / 10 ** dp).toFixed(dp === 18 ? 4 : 4);
+    v === null ? "—" : (Number(v) / 10 ** dp).toFixed(4);
+
+  /**
+   * A level's worth, never rounded to "$0".
+   *
+   * toFixed(0) turned a real 0.000001 x 100,000 MON bid — ten cents of genuine
+   * resting depth — into "$0" on a phone. A level that reads as worthless when
+   * it is not is the same failure as mis-scaling the size: wrong in the
+   * direction that makes a trader ignore depth that is actually there.
+   */
+  const usd = (n: number) =>
+    n >= 1 ? `$${n.toFixed(0)}` : n > 0 ? `$${n.toFixed(2)}` : "$0";
 
   const maxMon =
     monBal !== null && monBal > GAS_RESERVE ? monBal - GAS_RESERVE : 0n;
@@ -567,7 +578,7 @@ export default function SpotPage() {
                     {l.sizeMon.toFixed(0)} MON
                   </span>
                   <span className="text-ink-faint">
-                    ${l.notionalUsd.toFixed(0)}
+                    {usd(l.notionalUsd)}
                   </span>
                 </div>
               ))}
@@ -583,7 +594,7 @@ export default function SpotPage() {
                     {l.sizeMon.toFixed(0)} MON
                   </span>
                   <span className="text-ink-faint">
-                    ${l.notionalUsd.toFixed(0)}
+                    {usd(l.notionalUsd)}
                   </span>
                 </div>
               ))}
