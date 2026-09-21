@@ -39,6 +39,7 @@ export function CacheManager({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [draft, setDraft] = useState({
     lat: "",
     lng: "",
@@ -47,6 +48,54 @@ export function CacheManager({
     label: "",
     blurb: "",
   });
+
+  /**
+   * Fill lat/lng from the device.
+   *
+   * Seeding happens ON FOOT. Whoever plants a cache is standing at the spot,
+   * and without this they read coordinates off another app and retype them
+   * into a six-column admin grid — which is how a cache ends up a street away
+   * from the thing it was meant to mark, or on the wrong side of a river.
+   *
+   * enableHighAccuracy because the claim radius defaults to 25m and a
+   * network-derived fix can be off by more than that, which would plant a
+   * cache nobody can stand close enough to claim.
+   *
+   * Six decimal places ~ 0.1m. More would be transcribing noise; fewer would
+   * quantise the position to something coarser than the claim radius.
+   */
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setError("This browser will not share a location.");
+      return;
+    }
+    setLocating(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        setDraft((d) => ({
+          ...d,
+          lat: pos.coords.latitude.toFixed(6),
+          lng: pos.coords.longitude.toFixed(6),
+        }));
+        // Say how good the fix is rather than filling the boxes silently. A
+        // 60m fix will plant a cache 60m from where the planter is standing,
+        // and they are the only person who can judge whether that matters
+        // here — they can see the street.
+        if (pos.coords.accuracy > 25) {
+          setError(
+            `Filled, but this fix is +/-${Math.round(pos.coords.accuracy)}m — wider than the ${draft.radiusMeters}m claim radius. Move into the open and press it again.`,
+          );
+        }
+      },
+      (err) => {
+        setLocating(false);
+        setError(`Could not read a location: ${err.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
+    );
+  }
 
   async function create() {
     setBusy("new");
@@ -95,6 +144,14 @@ export function CacheManager({
           </button>
         ) : (
           <div className="rounded border border-slate-700 bg-slate-900/60 p-3">
+            <button
+              type="button"
+              onClick={useMyLocation}
+              disabled={locating}
+              className="mb-2 w-full rounded border border-emerald-700 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-200 hover:bg-emerald-900/50 disabled:opacity-50 md:w-auto"
+            >
+              {locating ? "Reading GPS…" : "Use my location"}
+            </button>
             <div className="grid gap-2 md:grid-cols-3 lg:grid-cols-6">
               <label className="text-[10px] uppercase tracking-wider text-slate-500">
                 lat
