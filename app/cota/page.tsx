@@ -404,8 +404,43 @@ export default function CotaPage() {
               ? "Operar bajo tu correa →"
               : "Trade under your leash →"}
           </a>
+          {/* Exposure. Only meaningful once there is a Perpl position, so it
+              lives inside the live block — but it had no link at all until
+              now, which made a whole screen unreachable. */}
+          <a
+            href="/cota/risk"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Ver mi riesgo y exposición →"
+              : "See my risk and exposure →"}
+          </a>
         </div>
       )}
+
+      {/* Spot sits OUTSIDE the mode toggle, deliberately.
+          Everything above is the Perpl ladder: get AUSD, fund an account,
+          enrol a key, trade under a leash. Spot needs none of it — no AUSD, no
+          Perpl account, no leash, just the wallet the passkey already derived.
+          Putting it inside the live block would have hidden it behind a toggle
+          that defaults to "practice", from exactly the hunter it is for: one
+          who wants out of MON, or into it, without any of the machinery. It
+          was unreachable from here until now for that reason. */}
+      <a
+        href="/cota/spot"
+        className="border-hull-line text-ink flex min-h-14 w-full flex-col items-center justify-center rounded-2xl border px-5 py-2 text-sm font-medium"
+      >
+        <span>
+          {lang === "es"
+            ? "Spot: MON ↔ USDC en el libro de Kuru →"
+            : "Spot: MON ↔ USDC on Kuru's order book →"}
+        </span>
+        <span className="text-ink-faint text-xs font-normal">
+          {lang === "es"
+            ? "Sin cuenta Perpl, sin AUSD — solo tu wallet"
+            : "No Perpl account, no AUSD — just your wallet"}
+        </span>
+      </a>
 
       {auth.status !== "signed-in" ? (
         <Panel className="space-y-3">

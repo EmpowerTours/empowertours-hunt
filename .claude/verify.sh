@@ -211,6 +211,22 @@ if [ -d app/cota ]; then
     else
         pass "every /cota subpage links home"
     fi
+
+    # ...and the reverse. A subpage that links home but that nothing links TO
+    # is shipped and unreachable. /cota/spot was exactly that: built, tested,
+    # deployed, and absent from the only page a hunter arrives on, because the
+    # tiles it belonged next to sit behind a mode toggle it does not need.
+    # The "links home" check above passed the whole time.
+    ORPHAN=""
+    for f in $(find app/cota -mindepth 2 -name page.tsx 2>/dev/null | sort); do
+        route=$(dirname "${f#app}")
+        grep -rqF "href=\"$route\"" app components 2>/dev/null || ORPHAN="$ORPHAN $route"
+    done
+    if [ -n "$ORPHAN" ]; then
+        fail "cota subpage nothing links to (shipped and unreachable):$ORPHAN"
+    else
+        pass "every /cota subpage is reachable"
+    fi
 else
     skip "no app/cota in this repo"
 fi
