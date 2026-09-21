@@ -166,7 +166,7 @@ predate 1 September and are the foundation the submission builds on:
 
 `git log --until=2026-08-31` lists them exactly.
 
-### Built during the window (144 commits since 1 September)
+### Built during the window (254 commits since 1 September)
 
 - **Cota** — an EIP-712 bound a hunter signs before software may trade for
   them. One enforcement path (`lib/cota/enforce.ts`) governs paper and live
@@ -239,6 +239,19 @@ predate 1 September and are the foundation the submission builds on:
   yields an AES-256-GCM key, imported non-extractable, that never leaves the
   page — so a hunter's private note on a leash is stored as ciphertext this
   server cannot read. Not "will not": there is no key here to hold.
+- **Installable apps on both platforms**, because a trading product people
+  carry is not a browser tab. `mobile/` is a Capacitor shell (`xyz.empowertours.app`)
+  that opens on the live origin rather than a bundled build — a local scheme is a
+  different origin, and a different origin derives a **different passkey and
+  therefore a different wallet**, so bundling the JS would silently strip a
+  player of their account. Android is a sideloaded APK served from
+  `/download`, which computes and displays its own SHA-256 so the fingerprint on
+  the page is the file, not a number somebody typed; iOS archives, signs and
+  uploads to TestFlight from `.github/workflows/ios.yml`. Both manifests now
+  declare location: a WebView does **not** inherit the browser's permission, and
+  Android denies a runtime request for an undeclared permission instantly, so a
+  GPS game read `PERMISSION_DENIED` in the app while working at the same URL in
+  Chrome.
 - **Check-in** — a verified position without a planted cache, which is what
   makes the game playable anywhere rather than only where somebody has hidden
   something.
@@ -252,11 +265,15 @@ predate 1 September and are the foundation the submission builds on:
 
 Stated because a submission that only lists what works is not a report.
 
-- **A new hunter cannot onboard.** Perpl requires 10 AUSD to open an account and
-  the MON→AUSD desk holds 3.35. AUSD is the illiquid leg on Monad: MON/USDC on
-  Kuru is ~$18k deep at zero fees, MON/AUSD is ~$5, AUSD/USDC is ~$0.13. Nothing
-  on-chain converts MON into AUSD at a useful size, so the desk is a manual
-  subsidy rather than an on-ramp.
+- **Onboarding is a subsidy, not an on-ramp.** Perpl requires 10 AUSD to open an
+  account. The desk `0x273b43e8E69E8c252e8470e9BB3C577331Ec52DE` holds
+  **103.346528 AUSD** and 505 MON, `paused() false` — read from mainnet
+  2026-09-21 — so there is room for about ten accounts, and an earlier revision
+  of this section saying 3.35 and "cannot onboard" was true when written and is
+  no longer. What has not changed is the reason it is a subsidy: AUSD is the
+  illiquid leg on Monad. MON/USDC on Kuru is ~$18k deep at zero fees, MON/AUSD
+  is ~$5, AUSD/USDC is ~$0.13. Nothing on-chain converts MON into AUSD at a
+  useful size, so the eleventh hunter waits on a manual top-up.
 - **Everything is proven on one account.** 5273 is the only account this code has
   ever traded. Anything that only breaks on a second hunter's state is untested.
 - **The agent has no measured edge.** It has been verified to stay inside its
@@ -316,5 +333,5 @@ their own licences. Walkable-area data is imported from **OpenStreetMap**
 
 ```bash
 npm install
-./.claude/verify.sh   # typecheck, lint, 957 tests, production build, secret scan
+./.claude/verify.sh   # typecheck, lint, 1245 tests, production build, secret scan
 ```
