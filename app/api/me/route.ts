@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createPublicClient, http } from "viem";
 import { prisma } from "@/lib/db/prisma";
 import { readTierPriceWei } from "@/lib/hunt/cohort";
+import { readCatalogue } from "@/lib/editions/catalogue";
 import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
 import { monad } from "@/lib/monad";
@@ -122,6 +123,24 @@ export async function GET(req: Request) {
     // "we could not ask" rather than drawing a bar against a guess.
     const turboMonthWei = await readTierPriceWei("EXPLORER");
 
+    // One catalogue read for all edition rows, not one per row — and skipped
+    // entirely when the player owns nothing, so the common case pays nothing.
+    const catalogue = new Map<
+      string,
+      { name: string; imageUrl: string | null }
+    >();
+    if (editions.length > 0) {
+      const cat = await readCatalogue();
+      if (cat.ok) {
+        for (const entry of cat.entries) {
+          catalogue.set(entry.masterId, {
+            name: entry.name,
+            imageUrl: entry.imageUrl,
+          });
+        }
+      }
+    }
+
     return NextResponse.json({
       walletAddress: row.walletAddress,
       /** What the chain says, or null when it could not be asked. */
@@ -144,16 +163,33 @@ export async function GET(req: Request) {
         txHash: p.txHash,
         at: (p.sentAt ?? p.createdAt).toISOString(),
       })),
-      editions: editions.map((e) => ({
-        id: e.id,
-        masterId: e.masterId,
-        tier: e.tier,
-        status: e.status,
-        paidWei: e.paidWei.toFixed(0),
-        licenseId: e.licenseId,
-        txHash: e.transferTxHash,
-        at: e.createdAt.toISOString(),
-      })),
+      editions: editions.map((e) => {
+        // The record, not its id. The wallet showed "#13" — a master token id,
+        // which means nothing to somebody who tapped SÍ on /dime thirty
+        // seconds after arriving from a social post and had never held an NFT.
+        // The name and the cover are the only parts of this row that tell them
+        // what they own.
+        //
+        // readCatalogue is the source because it already resolves the ipfs://
+        // tokenURI to a usable https image and caches for five minutes behind a
+        // single flight. /api/me is polled, so a per-row chain read here would
+        // be the expensive way to learn what the catalogue already knows.
+        const art = catalogue.get(e.masterId);
+        return {
+          id: e.id,
+          masterId: e.masterId,
+          tier: e.tier,
+          status: e.status,
+          paidWei: e.paidWei.toFixed(0),
+          licenseId: e.licenseId,
+          txHash: e.transferTxHash,
+          at: e.createdAt.toISOString(),
+          // Null when the venue dropped the work or could not be read. The UI
+          // falls back to "#id", which is what it always showed.
+          name: art?.name ?? null,
+          imageUrl: art?.imageUrl ?? null,
+        };
+      }),
     });
   } catch (err) {
     if (err instanceof AuthError) {

@@ -245,6 +245,9 @@ export interface PlayerEdition {
   /** The transfer that delivered it. Null while PENDING. */
   txHash: string | null;
   at: string;
+  /** Resolved from the venue catalogue. Null when it could not be read. */
+  name?: string | null;
+  imageUrl?: string | null;
 }
 
 export interface PlayerPayout {

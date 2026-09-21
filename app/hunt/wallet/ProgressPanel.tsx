@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { ApiError, fetchProgress } from "@/components/hunt/client";
+import { thumbUrl } from "@/lib/editions/thumb";
 import {
   formatMon,
   shortAddress,
@@ -376,9 +377,32 @@ function EditionRow({ edition }: { edition: PlayerEdition }) {
   const sent = edition.status === "SENT" && edition.txHash;
   return (
     <li className="border-hull-line flex items-center justify-between gap-3 border-b pb-2 last:border-0 last:pb-0">
-      <div className="min-w-0">
-        <div className="text-ink truncate font-mono text-sm">
-          #{edition.masterId}
+      {/* The cover, at thumbnail size. Asking the gateway for 96px keeps a
+          1024x1024 master off a wallet screen that lists several of them —
+          see lib/editions/thumb.ts. The tinted box behind it is what shows
+          while it loads and what remains if the gateway is unreachable, so a
+          row is never a blank square. */}
+      <div
+        className="border-hull-line bg-hull-raised h-12 w-12 shrink-0 overflow-hidden rounded-lg border"
+        aria-hidden
+      >
+        {edition.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={thumbUrl(edition.imageUrl, 96) ?? undefined}
+            alt=""
+            width={48}
+            height={48}
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        ) : null}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-ink truncate text-sm">
+          {/* The name when we have it, the id when we do not. "#13" is a
+              master token id and means nothing to the person holding it. */}
+          {edition.name ?? `#${edition.masterId}`}
           {edition.tier === "COLLECTOR" ? " · collector" : ""}
         </div>
         <div className="text-ink-faint font-mono text-[11px]">
