@@ -51,6 +51,8 @@ CRON_SECRET=                  # MIN 16 CHARS; must match the GitHub secret
 EDITION_RELAYER_PRIVATE_KEY=  # funded hot wallet, buys and transfers licences
 EDITION_SALES_CONTROLLER=     # v3 SalesController
 EDITION_LICENSE_REGISTRY=     # v3 LicenseRegistry
+EDITION_CATALOGUE_URL=        # https://art.empowertours.xyz/api/catalogue
+EDITION_GAS_RESERVE_WEI=      # optional; default 1e17 (0.1 MON)
 
 # --- Origins ---
 NEXT_PUBLIC_APP_URL=https://hunt.empowertours.xyz   # no trailing slash
@@ -67,7 +69,26 @@ NEXT_PUBLIC_IPFS_GATEWAY=     # optional; has a default
 | `ADMIN_BOOTSTRAP_ADDRESS` | Promotes exactly one wallet to OWNER so there's a way into a fresh database. It **is** a one-time coupon: `resolveAdmin` creates the row only when `adminUser.count()` is 0, checked inside the same transaction, so once any admin exists this variable can never mint another. It is armed only while the table is EMPTY — which is exactly when removing it locks you out for good. Log in once, confirm the OWNER row, then remove it. |
 | `SPAWN_SEED_SECRET` | Spawn seeds are `HMAC-SHA256(secret, spawnId)`. Unset means the route 503s rather than draw money from a predictable source. **Changing it invalidates the reveal for existing spawns.** |
 | `CRON_SECRET` | Under 16 chars, `/api/cron/*` refuse to run. Must match `secrets.CRON_SECRET` in GitHub. |
-| `EDITION_*` | All three or none. `relayerConfig()` returns null unless every one is present and well-formed, and the placement route then offers no works rather than crashing. The relayer wallet's balance is the hard ceiling on the whole giveaway, on chain, independent of any app bug. |
+| `EDITION_*` | `relayerConfig()` returns null unless the key, the controller and the registry are all present and well-formed, and the placement route then offers no works rather than crashing. The relayer wallet's balance is the hard ceiling on the whole giveaway, on chain, independent of any app bug. |
+| `EDITION_CATALOGUE_URL` | Read by `readCatalogue()`, and **not** part of `relayerConfig()`, so a deployment can have all three above and still place nothing. Unset means `catalogue_unavailable` — distinct from an empty catalogue on purpose. Point it at `art.empowertours.xyz`: `music.empowertours.xyz` is **NXDOMAIN** as of 2026-09-20 and the host in the comments of `lib/editions/catalogue.ts` is stale. |
+| `EDITION_GAS_RESERVE_WEI` | MON the relayer keeps back from wrapping, so it can still pay for the purchase it just funded. Monad charges the **full gas limit** with no refund — a relayer that wraps its whole balance strands itself. Measured 2026-09-20 at 102 gwei: approve 60k + deposit 60k + purchase 400k + transferFrom 120k ≈ **0.065 MON per sale**, so the 0.1 MON default is one sale of headroom. |
+
+### What the relayer wallet has to hold
+
+**MON only.** It is paid in native MON by the hunter and settles in WMON at the
+venue, and `relayLicense` bridges the two itself: it wraps the shortfall and
+approves the SalesController for exactly the live price before buying. Seeding
+it with WMON is allowed but unnecessary.
+
+Per standard licence at the current catalogue: the price (Dime Que Sí is
+**0.8 MON**) plus ~0.065 MON of gas. The hunter's own payment lands in this
+wallet before the purchase runs, so in steady state each sale funds its own
+settlement and the wallet only has to carry gas — but it needs the price in
+hand for the FIRST sale, and for every FREE edition, which nobody pays for.
+
+Proceeds do **not** return here: 90% goes to the master's artist and 10% to the
+platform treasury Safe. The relayer converts MON to WMON and hands it on, so
+its MON balance grows and its WMON balance does not. Top it up with MON.
 | `HUNT_TREASURY_PRIVATE_KEY` | Signs real MON with no human in the loop once a payout is APPROVED. See §5. |
 
 ## 3. Migrate

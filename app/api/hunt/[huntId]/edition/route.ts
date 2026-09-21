@@ -5,7 +5,7 @@ import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
 import { monad, monadRpcUrl } from "@/lib/monad";
 import { readCatalogue } from "@/lib/editions/catalogue";
-import { relayerConfig } from "@/lib/editions/relayer";
+import { relayerCapacity, relayerConfig } from "@/lib/editions/relayer";
 import { unexplainedLicences } from "@/lib/editions/ownership";
 import {
   deriveEdition,
@@ -161,7 +161,29 @@ export async function GET(
     }
 
     const gasBuffer = toWei(hunt.editionGasBufferWei);
-    const placeable = placeableFor(entries, held, balanceWei, gasBuffer);
+    let placeable = placeableFor(entries, held, balanceWei, gasBuffer);
+
+    // ---- And what the RELAYER can settle, which is the other half of the
+    // same question and the only one that is asked before the hunter pays.
+    //
+    // EditionCard signs the payment and THEN calls the answer route, so every
+    // refusal the server makes "before taking their money" actually happens
+    // after it has moved. Placement is the last honest gate: a work the
+    // relayer could not buy must never become a card.
+    //
+    // Null means the relayer could not be asked, not that it is broke. That
+    // leaves the list alone rather than emptying it -- an RPC hiccup must not
+    // be reported to a player as "there is nothing here", the same rule the
+    // catalogue follows.
+    const cfgForCapacity = relayerConfig();
+    if (cfgForCapacity !== null) {
+      const capacity = await relayerCapacity(cfgForCapacity);
+      if (capacity !== null) {
+        placeable = placeable.filter(
+          (o) => o.terms === "FREE" || (o.priceWei ?? 0n) <= capacity,
+        );
+      }
+    }
 
     const lastEdition = await prisma.edition.findFirst({
       where: { huntId, playerId: player.id },
