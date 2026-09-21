@@ -3,7 +3,12 @@ import { type Address } from "viem";
 import { prisma } from "@/lib/db/prisma";
 import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
-import { relayerConfig, relayLicense } from "@/lib/editions/relayer";
+import {
+  isBuyable,
+  relayerCapacity,
+  relayerConfig,
+  relayLicense,
+} from "@/lib/editions/relayer";
 
 // ---------------------------------------------------------------------------
 // POST /api/dime/claim — one free licence of the giveaway work, for the
@@ -235,7 +240,34 @@ export async function GET(req: Request) {
   try {
     const cfg = relayerConfig();
     const drop = giveaway();
-    const open = cfg !== null && drop !== null;
+
+    // ---- Configured is not the same as able to pay, and this page is the
+    // one place where that difference is expensive.
+    //
+    // `open` used to mean only "the env vars are present". A relayer with the
+    // key set and an empty wallet therefore showed cold traffic a working SÍ
+    // button that failed on every tap -- and this is a landing page for people
+    // who arrived from a social post, have no wallet and will not try twice.
+    //
+    // The giveaway is FREE, so nobody pays the relayer for these: it funds the
+    // whole price itself, every time. Its balance is the real cap on the drop,
+    // and the button should agree with it.
+    //
+    // `isBuyable` answers both halves at once when handed the capacity as the
+    // quote: it refuses a paused work, a zero price, and any price the relayer
+    // could not cover.
+    let fundable = true;
+    if (cfg !== null && drop !== null) {
+      const capacity = await relayerCapacity(cfg);
+      // Null is "could not ask", not "broke". A transient RPC failure must not
+      // close a live drop -- and if it is wrong, the claim path fails cleanly
+      // and the row is reusable, so the visitor can try again.
+      if (capacity !== null) {
+        fundable = (await isBuyable(cfg, drop.masterId, false, capacity)).ok;
+      }
+    }
+
+    const open = cfg !== null && drop !== null && fundable;
     const key =
       cfg && drop
         ? {

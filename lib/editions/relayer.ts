@@ -290,23 +290,78 @@ export function maxSettleableWei(
  * available" -- the same distinction the catalogue draws between unavailable
  * and exhausted.
  */
-export async function relayerCapacity(
+/**
+ * The dearest work this relayer could settle, cached for 30 seconds.
+ *
+ * Cached because the callers are a placement poll and a PUBLIC LANDING PAGE.
+ * /dime is built for cold traffic off a social post, so its status endpoint is
+ * the most-hit route in the app when it works at all; an uncached balance read
+ * there puts an RPC round trip on every view of a link meant to go viral.
+ *
+ * 30s is chosen against what a stale answer costs: too high and one extra card
+ * is offered that relayLicense then refuses cleanly and retryably; too low and
+ * the cache is decoration. Funds do not move faster than that except while we
+ * are selling, which is the case the backstop covers.
+ *
+ * Null means the relayer could not be ASKED, never that it is empty.
+ */
+let capacityCache: {
+  at: number;
+  who: Address;
+  value: Promise<bigint | null>;
+} | null = null;
+const CAPACITY_TTL_MS = 30_000;
+
+export function resetCapacityCache(): void {
+  capacityCache = null;
+}
+
+/**
+ * The PROMISE is cached, not the resolved value -- the same shape, and for the
+ * same reason, as paymentTokenCache above. Storing the value meant reading the
+ * cache, awaiting three chain reads, then writing it, which eslint's
+ * require-atomic-updates flags: two concurrent callers both miss and both read.
+ * Holding the promise makes every assignment synchronous and collapses the
+ * duplicate read.
+ */
+export function relayerCapacity(
   cfg: RelayerConfig,
+  now: number = Date.now(),
 ): Promise<bigint | null> {
-  try {
-    const transport = http(process.env.MONAD_RPC_URL);
-    const pub = createPublicClient({ chain: monad, transport });
-    const wmon = await paymentTokenOf(pub, cfg.salesController);
-    const funds = await readFunds(
-      pub,
-      wmon,
-      cfg.relayerAddress,
-      cfg.salesController,
-    );
-    return maxSettleableWei(funds, gasReserveWei());
-  } catch {
-    return null;
+  if (
+    capacityCache !== null &&
+    capacityCache.who === cfg.relayerAddress &&
+    now - capacityCache.at < CAPACITY_TTL_MS
+  ) {
+    return capacityCache.value;
   }
+
+  const value = (async (): Promise<bigint | null> => {
+    try {
+      const transport = http(process.env.MONAD_RPC_URL);
+      const pub = createPublicClient({ chain: monad, transport });
+      const wmon = await paymentTokenOf(pub, cfg.salesController);
+      const funds = await readFunds(
+        pub,
+        wmon,
+        cfg.relayerAddress,
+        cfg.salesController,
+      );
+      return maxSettleableWei(funds, gasReserveWei());
+    } catch {
+      // "Could not ask" is not "is broke". The caller decides what to do with
+      // null; it must never be rendered as a fact about the wallet.
+      return null;
+    }
+  })();
+
+  capacityCache = { at: now, who: cfg.relayerAddress, value };
+  // A failure is never kept. Otherwise one RPC blip freezes the answer for the
+  // whole TTL -- the rule readCatalogue follows, for the same reason.
+  void value.then((v) => {
+    if (v === null) capacityCache = null;
+  });
+  return value;
 }
 
 /** Read everything `planFunding` needs, in one batch. */
