@@ -151,6 +151,14 @@ EDITION_SALES_CONTROLLER=       # v3 SalesController
 EDITION_LICENSE_REGISTRY=       # v3 LicenseRegistry; an Edition row naming a
                                 # different collection is REFUSED, not guessed
 
+# Aurora Intents — the any-chain on-ramp. Unset = the funding screen offers
+# only the routes that need no key (Kuru, the desk, the Wormhole bridge).
+AURORA_INTENTS_APP_KEY=         # from studio.aurora.dev. Aurora states this is
+                                # NOT confidential, but our integrator fee
+                                # settles against it, so it stays server-side.
+AURORA_INTENTS_API_URL=         # optional override; default
+                                # https://intents-api.aurora.dev
+
 # /dime — the cold-traffic giveaway landing page. One work, one campaign.
 # Unset = the page is closed rather than broken.
 DIME_GIVEAWAY_MASTER_ID=        # the master being given away
