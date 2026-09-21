@@ -104,12 +104,31 @@ export async function kuruToken(
 }
 
 /**
+ * How much the fill may come in under the quote before the swap reverts.
+ *
+ * NOT `autoSlippage`. Measured on mainnet, autoSlippage leaves 14 bps — and on
+ * Monad that is not enough. Execution is asynchronous: `eth_call` runs against
+ * speculative state roughly three blocks ahead of where the transaction
+ * actually executes, so a simulation cannot see the state the trade lands in.
+ * Add the time a hunter spends confirming with a passkey and the book moves
+ * past 14 bps routinely. A real 5 MON trade reverted exactly this way with
+ * KuruFlowEntrypoint_InsufficientAmountAfterFees (0x5264a63f).
+ *
+ * Widening is the cheaper mistake. A revert on Monad is charged the WHOLE gas
+ * limit with no refund and delivers nothing, so one fill 100 bps worse beats
+ * two reverts and a fill. What makes that honest rather than sloppy is showing
+ * the floor: the screen must print what the hunter will receive AT LEAST, not
+ * only the estimate.
+ */
+export const DEFAULT_SLIPPAGE_BPS = 100;
+
+/**
  * One leg. Returns the transaction Kuru wants us to send, plus what venue it
  * actually goes through.
  *
- * `autoSlippage` and `slippageTolerance` are mutually exclusive in their schema
- * — sending both is rejected — so this exposes only the automatic one, which
- * measured about 13 bps.
+ * `autoSlippage` and `slippageTolerance` are mutually exclusive in Kuru's
+ * schema — a `oneOf`, so sending both is rejected outright. This sends the
+ * explicit one and never the other.
  */
 export async function kuruQuote(args: {
   token: string;
@@ -118,6 +137,8 @@ export async function kuruQuote(args: {
   tokenOut: string;
   /** Smallest units of tokenIn. Native MON is 18dp. */
   amount: bigint;
+  /** Basis points of room under the quote. See DEFAULT_SLIPPAGE_BPS. */
+  slippageBps?: number;
   signal?: AbortSignal;
 }): Promise<KuruQuote> {
   const res = await fetch(`${API}/api/quote`, {
@@ -131,7 +152,7 @@ export async function kuruQuote(args: {
       tokenIn: args.tokenIn,
       tokenOut: args.tokenOut,
       amount: args.amount.toString(),
-      autoSlippage: true,
+      slippageTolerance: args.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
     }),
     signal: args.signal,
     cache: "no-store",

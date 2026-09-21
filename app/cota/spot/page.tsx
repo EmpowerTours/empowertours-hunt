@@ -78,6 +78,7 @@ const T = {
     notEnough: "No tienes suficiente saldo.",
     level: "nivel",
     levels: "niveles",
+    atLeast: "Mínimo garantizado",
     noRoute: "Kuru no devolvió una ruta que se pueda ejecutar. Intenta de nuevo.",
     revertedTx: "La operación se revirtió en la cadena:",
   },
@@ -110,6 +111,7 @@ const T = {
     notEnough: "Not enough balance.",
     level: "level",
     levels: "levels",
+    atLeast: "At least",
     noRoute: "Kuru returned no route that would execute. Try again.",
     revertedTx: "The trade reverted on-chain:",
   },
@@ -159,6 +161,9 @@ export default function SpotPage() {
   const [input, setInput] = useState("");
   const [book, setBook] = useState<KuruBook | null>(null);
   const [out, setOut] = useState<bigint | null>(null);
+  // The floor, shown next to the estimate. Widening slippage without printing
+  // what a hunter is guaranteed would be quietly taking the difference.
+  const [floor, setFloor] = useState<bigint | null>(null);
   const [onBook, setOnBook] = useState<boolean | null>(null);
   const [monBal, setMonBal] = useState<bigint | null>(null);
   const [usdcBal, setUsdcBal] = useState<bigint | null>(null);
@@ -230,6 +235,7 @@ export default function SpotPage() {
         if (!address || !input) {
           if (!cancelled) {
             setOut(null);
+            setFloor(null);
             setOnBook(null);
           }
           return;
@@ -256,6 +262,7 @@ export default function SpotPage() {
           });
           if (!cancelled) {
             setOut(q.output);
+            setFloor(q.minOut);
             // Measured from the calldata about to be signed, not assumed. The
             // router picks a venue per quote and the label must follow it.
             setOnBook(q.usesOrderBook);
@@ -263,6 +270,7 @@ export default function SpotPage() {
         } catch {
           if (!cancelled) {
             setOut(null);
+            setFloor(null);
             setOnBook(null);
           }
         }
@@ -553,6 +561,18 @@ export default function SpotPage() {
                   {out === null ? "—" : fmt(out, side === "sell" ? 6 : 18)}
                 </span>
               </div>
+              {/* The guaranteed floor. The estimate is what the book says now;
+                  this is what the transaction will refuse to go below, and on a
+                  chain where simulation runs against state three blocks ahead
+                  of execution, the difference is the part that can bite. */}
+              {floor !== null && (
+                <div className="flex items-baseline justify-between">
+                  <span className="text-ink-faint text-xs">{t.atLeast}</span>
+                  <span className="text-ink-faint font-mono text-xs">
+                    {fmt(floor, side === "sell" ? 6 : 18)}
+                  </span>
+                </div>
+              )}
               {onBook !== null && (
                 <Pill color={onBook ? "#46ffbe" : "#47645d"}>
                   {onBook ? t.onBook : t.offBook}
