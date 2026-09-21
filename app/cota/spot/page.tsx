@@ -72,6 +72,8 @@ const T = {
     notEnough: "No tienes suficiente saldo.",
     level: "nivel",
     levels: "niveles",
+    noRoute: "Kuru no devolvió una ruta que se pueda ejecutar. Intenta de nuevo.",
+    revertedTx: "La operación se revirtió en la cadena:",
   },
   en: {
     title: "Spot",
@@ -102,6 +104,8 @@ const T = {
     notEnough: "Not enough balance.",
     level: "level",
     levels: "levels",
+    noRoute: "Kuru returned no route that would execute. Try again.",
+    revertedTx: "The trade reverted on-chain:",
   },
 } as const;
 
@@ -314,6 +318,7 @@ export default function SpotPage() {
       // intermittently returns one that reverts; retrying gets a working one.
       let sent: `0x${string}` | null = null;
       let received = 0n;
+      let lastRevert: `0x${string}` | null = null;
       for (let attempt = 0; attempt < 4 && sent === null; attempt++) {
         const q = await kuruQuote({
           token,
@@ -342,13 +347,42 @@ export default function SpotPage() {
                 args: [address],
               })) as bigint)
             : await pc.getBalance({ address });
+        // An explicit limit, not viem's estimate. Monad charges the WHOLE limit
+        // on a revert with no refund, so an estimate that comes in tight does
+        // not save gas — it buys a failed transaction at full price. Every
+        // send of this route that has ever worked used ~900k.
+        let gas = 900_000n;
+        try {
+          const est = await pc.estimateGas({
+            account: address,
+            to: q.to,
+            data: q.calldata,
+            value: q.value,
+          });
+          // Half again over the estimate, floored at what is known to work.
+          const padded = (est * 3n) / 2n;
+          gas = padded > gas ? padded : gas;
+        } catch {
+          // Keep the floor. A failed estimate is not a reason to send nothing.
+        }
         const hash = await walletClientFor(account).sendTransaction({
           to: q.to,
           data: q.calldata,
           value: q.value,
+          gas,
         });
         const receipt = await pc.waitForTransactionReceipt({ hash });
-        if (receipt.status !== "success") throw new Error("reverted");
+        if (receipt.status !== "success") {
+          // Keep the hash. A revert with no hash is a dead end — nobody can
+          // look at what happened, which is how "it just says reverted" became
+          // the whole bug report. Then try another route: the simulation
+          // passed, so the book moved under it rather than the call being
+          // wrong, and the next quote may well land.
+          setTx(hash);
+          lastRevert = hash;
+          await new Promise((r) => setTimeout(r, 1200));
+          continue;
+        }
         const after =
           side === "sell"
             ? ((await pc.readContract({
@@ -363,7 +397,13 @@ export default function SpotPage() {
         // honest number — it is what the wallet actually gained.
         received = after > before ? after - before : 0n;
       }
-      if (sent === null) throw new Error("no route executed");
+      if (sent === null) {
+        throw new Error(
+          lastRevert === null
+            ? t.noRoute
+            : `${t.revertedTx} ${lastRevert.slice(0, 10)}…`,
+        );
+      }
       setTx(sent);
       setGot(received);
       setPhase("done");
@@ -373,7 +413,7 @@ export default function SpotPage() {
       setError(e instanceof Error ? e.message : "failed");
       setPhase("error");
     }
-  }, [address, input, side, t.noAmount, refresh]);
+  }, [address, input, side, t.noAmount, t.noRoute, t.revertedTx, refresh]);
 
   const fmt = (v: bigint | null, dp: number) =>
     v === null ? "—" : (Number(v) / 10 ** dp).toFixed(4);
