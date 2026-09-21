@@ -37,6 +37,10 @@ export const EDITION_DENY_REASONS = [
   "player_not_active",
   "hunt_not_active",
   "edition_cooldown",
+  // They have only just arrived. Distinct from the cooldown because it is a
+  // different clock with a different cause: the cooldown says "not so soon
+  // after the last one", this says "not the second you open the app".
+  "edition_warmup",
   "edition_already_active",
   // Every work in the catalogue is already owned by this passkey. The rule is
   // one of each, forever, so a completist legitimately runs out. Not terminal:
@@ -181,6 +185,60 @@ export function deriveEdition(
   return { offer: catalogue[index]! };
 }
 
+/**
+ * The offers this player has seen least recently, and nothing else.
+ *
+ * ## Why the draw alone was not enough
+ *
+ * `deriveEdition` is uniform over whatever it is handed, and that is correct.
+ * The problem is what it was being handed. Affordability and relayer capacity
+ * cut a twelve-offer catalogue down to two or three for a real wallet — on the
+ * live hunt on 2026-09-21 a 95 MON hunter could reach exactly three of them,
+ * already held one, and so every encounter was a coin flip between the same
+ * two works. Three of the four editions ever placed were master 8, MARINA,
+ * twice declined and offered again anyway.
+ *
+ * Uniform over two is not a bug in the draw. It is the wrong question: a
+ * catalogue this small wants a ROTATION, not a shuffle.
+ *
+ * ## Why last-offered and not last-declined
+ *
+ * `Edition.dismissedAt` already carries the schema's intent — "declining is an
+ * answer, and re-asking would read as nagging" — and nothing read it. But
+ * keying on declines alone would still re-offer a work that timed out unseen
+ * in the hunter's pocket, which reads identically from the outside. Having
+ * been PLACED is the fact that matters; how it ended is not.
+ *
+ * ## Why it narrows instead of excluding
+ *
+ * Excluding everything recently offered empties the list, and an empty list is
+ * `catalogue_exhausted` — a hunter with two affordable works would be told
+ * there is nothing rather than shown the older of the two. Narrowing to the
+ * oldest tier always returns at least one offer when given at least one, so
+ * rotation degrades to strict alternation at two works and to "never twice
+ * running" at three, instead of degrading to silence.
+ *
+ * Ties are left in the returned array on purpose: the seed breaks them, so
+ * with a wide catalogue of never-seen works the draw is still uniform.
+ */
+export function leastRecentlyOffered(
+  placeable: readonly EditionOffer[],
+  /** heldKey -> epoch ms this player was last OFFERED it, in any hunt. */
+  lastOfferedAt: ReadonlyMap<string, number>,
+): EditionOffer[] {
+  if (placeable.length === 0) return [];
+  // Never offered sorts before every timestamp, which is what makes a fresh
+  // work always beat a repeat rather than merely being likelier than one.
+  const at = (o: EditionOffer): number =>
+    lastOfferedAt.get(heldKey(o)) ?? Number.NEGATIVE_INFINITY;
+  let best = Number.POSITIVE_INFINITY;
+  for (const o of placeable) {
+    const t = at(o);
+    if (t < best) best = t;
+  }
+  return placeable.filter((o) => at(o) === best);
+}
+
 // ---------------------------------------------------------------------------
 // Quoting
 // ---------------------------------------------------------------------------
@@ -292,6 +350,16 @@ export interface EditionEligibilityContext {
   /** When this player was last offered an edition in this hunt. */
   lastEditionAt: Date | null;
   editionCooldownSeconds: number;
+  /**
+   * Not before this instant may this player be offered anything — the
+   * session warm-up, from `PlayerHunt.editionsOpenAt`.
+   *
+   * The caller passes `serverNow` when there is no row rather than null, so
+   * "we have never seen this player in this hunt" denies rather than allows.
+   * Null is kept representable only for hunts that do not want a warm-up at
+   * all, which is what `editionFirstDelaySeconds = 0` produces.
+   */
+  editionsOpenAt: Date | null;
   /** One live card at a time. Spawns are counted separately, on purpose. */
   hasActiveEdition: boolean;
   /** How many works they could actually be offered right now. */
@@ -331,6 +399,15 @@ export function evaluateEditionEligibility(
 
   if (ctx.hasActiveEdition) {
     return { ok: false, reason: "edition_already_active" };
+  }
+
+  // The warm-up first, because it is the one that is true on arrival and the
+  // cooldown is silent then. Checked with `!(now >= open)` rather than
+  // `now < open` so an Invalid Date lands on "not yet" — AGENTS.md rule 2.
+  if (ctx.editionsOpenAt !== null) {
+    if (!(ctx.serverNow.getTime() >= ctx.editionsOpenAt.getTime())) {
+      return { ok: false, reason: "edition_warmup" };
+    }
   }
 
   if (ctx.lastEditionAt !== null) {

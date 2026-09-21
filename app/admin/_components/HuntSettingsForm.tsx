@@ -43,6 +43,7 @@ export interface HuntFormValues {
   editionsEnabled: boolean;
   editionTtlSeconds: number;
   editionCooldownSeconds: number;
+  editionFirstDelaySeconds: number;
 }
 
 function Field({
@@ -316,6 +317,19 @@ export function HuntSettingsForm({
               value={v.editionCooldownSeconds}
               onChange={(e) =>
                 set("editionCooldownSeconds", Number(e.target.value))
+              }
+            />
+          </Field>
+          <Field
+            label="Warm-up (seconds)"
+            explain="How long after arriving before the first encounter of an outing may appear. The cooldown does not cover this — it is measured from the last edition, so without a warm-up a returning player gets a buy card on their first poll. 0 disables it."
+          >
+            <input
+              className={inputClass}
+              type="number"
+              value={v.editionFirstDelaySeconds}
+              onChange={(e) =>
+                set("editionFirstDelaySeconds", Number(e.target.value))
               }
             />
           </Field>

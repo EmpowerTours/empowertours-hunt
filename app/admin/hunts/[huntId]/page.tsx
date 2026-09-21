@@ -71,6 +71,7 @@ export default async function HuntDetailPage({
     editionsEnabled: hunt.editionsEnabled,
     editionTtlSeconds: hunt.editionTtlSeconds,
     editionCooldownSeconds: hunt.editionCooldownSeconds,
+    editionFirstDelaySeconds: hunt.editionFirstDelaySeconds,
   };
 
   const cacheRows: CacheRow[] = caches.map((c) => ({

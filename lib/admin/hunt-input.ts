@@ -73,6 +73,7 @@ export interface HuntWriteInput {
   editionsEnabled?: boolean;
   editionTtlSeconds?: number;
   editionCooldownSeconds?: number;
+  editionFirstDelaySeconds?: number;
   budgetMonWei?: Prisma.Decimal;
   spawnMinWei?: Prisma.Decimal;
   spawnMaxWei?: Prisma.Decimal;
@@ -180,6 +181,16 @@ export function parseHuntInput(
   );
   if (editionCooldownSeconds !== undefined)
     out.editionCooldownSeconds = editionCooldownSeconds;
+  // 0 is valid and means "no warm-up": a card may appear on the first poll,
+  // which is the behaviour this knob exists to stop being the only one.
+  const editionFirstDelaySeconds = optionalInt(
+    body,
+    "editionFirstDelaySeconds",
+    0,
+    86_400,
+  );
+  if (editionFirstDelaySeconds !== undefined)
+    out.editionFirstDelaySeconds = editionFirstDelaySeconds;
 
   const budgetMonWei = weiField(body, "budgetMon");
   if (budgetMonWei !== undefined) out.budgetMonWei = budgetMonWei;

@@ -6,6 +6,7 @@ import {
   canonicalOrder,
   deriveEdition,
   heldKey,
+  leastRecentlyOffered,
   placeableFor,
   quotedPrice,
   type EditionOffer,
@@ -206,6 +207,7 @@ describe("evaluateEditionEligibility", () => {
     editionsEnabled: true,
     lastEditionAt: null,
     editionCooldownSeconds: 600,
+    editionsOpenAt: null,
     hasActiveEdition: false,
     placeableCount: 3,
     catalogueUnavailable: false,
@@ -241,6 +243,51 @@ describe("evaluateEditionEligibility", () => {
     );
   });
 
+  // The complaint this exists for: the cooldown is measured from the last
+  // edition, so a player returning after hours cleared it instantly and a
+  // full-screen buy card covered the scope before they had taken a step.
+  it("refuses during the session warm-up even when the cooldown is clear", () => {
+    expect(
+      deny({
+        lastEditionAt: new Date(NOW.getTime() - 3 * 3600_000),
+        editionsOpenAt: new Date(NOW.getTime() + 60_000),
+      }),
+    ).toBe("edition_warmup");
+  });
+
+  it("allows the instant the warm-up expires", () => {
+    expect(deny({ editionsOpenAt: NOW })).toBe("ALLOWED");
+    expect(deny({ editionsOpenAt: new Date(NOW.getTime() + 1) })).toBe(
+      "edition_warmup",
+    );
+  });
+
+  // The route passes serverNow when there is no PlayerHunt row, so a player
+  // who has never checked in must not be handed a card on their first poll.
+  it("refuses a player whose warm-up clock starts now", () => {
+    expect(deny({ editionsOpenAt: NOW, lastEditionAt: null })).toBe("ALLOWED");
+    expect(deny({ editionsOpenAt: new Date(NOW.getTime() + 300_000) })).toBe(
+      "edition_warmup",
+    );
+  });
+
+  // Reject by default (AGENTS.md rule 2): a broken date is "not yet", not
+  // "go ahead".
+  it("refuses on an unusable warm-up instant", () => {
+    expect(deny({ editionsOpenAt: new Date(NaN) })).toBe("edition_warmup");
+  });
+
+  // Distinct reasons because they have distinct remedies: wait a moment
+  // versus wait ten minutes.
+  it("reports the warm-up before the cooldown", () => {
+    expect(
+      deny({
+        editionsOpenAt: new Date(NOW.getTime() + 60_000),
+        lastEditionAt: new Date(NOW.getTime() - 60_000),
+      }),
+    ).toBe("edition_warmup");
+  });
+
   // "We could not ask" must never reach a player as "you own everything".
   it("keeps unavailable distinct from exhausted", () => {
     expect(deny({ catalogueUnavailable: true, placeableCount: 0 })).toBe(
@@ -260,5 +307,111 @@ describe("evaluateEditionEligibility", () => {
     expect(
       Object.keys(base).some((k) => k.toLowerCase().includes("spawn")),
     ).toBe(false);
+  });
+});
+
+describe("leastRecentlyOffered", () => {
+  const o = (
+    masterId: string,
+    tier: "STANDARD" | "COLLECTOR" = "STANDARD",
+  ): EditionOffer => ({
+    collection: "0xreg",
+    masterId,
+    kind: "MUSIC",
+    tier,
+    terms: "PURCHASE",
+    priceWei: 35n * 10n ** 18n,
+  });
+  const ids = (xs: readonly EditionOffer[]) => xs.map((x) => x.masterId).sort();
+
+  it("prefers a work never offered over one already seen", () => {
+    const seen = new Map([[heldKey(o("8")), 1_000]]);
+    expect(ids(leastRecentlyOffered([o("8"), o("10")], seen))).toEqual(["10"]);
+  });
+
+  // The live failure: MARINA (master 8) was placed three times out of four,
+  // declined twice, because nothing read what had already been shown.
+  it("alternates rather than repeating when only two works are reachable", () => {
+    const pool = [o("8"), o("10")];
+    const seen = new Map<string, number>();
+    const drawn: string[] = [];
+    for (let t = 1; t <= 6; t++) {
+      const narrowed = leastRecentlyOffered(pool, seen);
+      // Both are unseen on the first draw, so the tie stands and the seed
+      // decides. From the second on there is exactly one oldest.
+      expect(narrowed.length).toBe(t === 1 ? 2 : 1);
+      const pick = narrowed[0]!;
+      drawn.push(pick.masterId);
+      seen.set(heldKey(pick), t);
+    }
+    expect(drawn).toEqual(["8", "10", "8", "10", "8", "10"]);
+    // The point, stated as the invariant rather than as the sequence: never
+    // the same work twice running.
+    for (let i = 1; i < drawn.length; i++) {
+      expect(drawn[i]).not.toBe(drawn[i - 1]);
+    }
+  });
+
+  it("never runs a work twice in a row across a three-work pool", () => {
+    const pool = [o("8"), o("10"), o("13")];
+    const seen = new Map<string, number>();
+    let prev: string | null = null;
+    for (let t = 1; t <= 12; t++) {
+      // Index 0 of the narrowed list stands in for the seed's choice; what is
+      // being asserted is that the LIST never contains last turn's pick.
+      const narrowed = leastRecentlyOffered(pool, seen);
+      expect(narrowed.some((x) => x.masterId === prev)).toBe(false);
+      const pick = narrowed[0]!;
+      expect(pick.masterId).not.toBe(prev);
+      prev = pick.masterId;
+      seen.set(heldKey(pick), t);
+    }
+  });
+
+  // Ties stay in, so a wide catalogue of unseen works is still a uniform draw
+  // and not an alphabetical march.
+  it("keeps every tie so the seed still decides", () => {
+    const pool = [o("8"), o("10"), o("13")];
+    expect(leastRecentlyOffered(pool, new Map()).length).toBe(3);
+    const seen = new Map([
+      [heldKey(o("8")), 5],
+      [heldKey(o("10")), 5],
+      [heldKey(o("13")), 9],
+    ]);
+    expect(ids(leastRecentlyOffered(pool, seen))).toEqual(["10", "8"]);
+  });
+
+  // Narrowing, never excluding: an empty result would be reported to the
+  // player as catalogue_exhausted, which would be a lie.
+  it("returns something whenever it is given something", () => {
+    const pool = [o("8")];
+    const seen = new Map([[heldKey(o("8")), 1]]);
+    expect(leastRecentlyOffered(pool, seen)).toHaveLength(1);
+    expect(leastRecentlyOffered([], seen)).toHaveLength(0);
+  });
+
+  // Tier is part of the key, so the collector edition of a work just shown is
+  // still a repeat of that work's STANDARD only if the key says so — it does
+  // not, and that is deliberate: they are two products at two prices.
+  it("treats the two tiers of one master as different works", () => {
+    const seen = new Map([[heldKey(o("8", "STANDARD")), 1]]);
+    expect(
+      ids(
+        leastRecentlyOffered([o("8", "STANDARD"), o("8", "COLLECTOR")], seen),
+      ),
+    ).toEqual(["8"]);
+    expect(
+      leastRecentlyOffered([o("8", "STANDARD"), o("8", "COLLECTOR")], seen)[0]!
+        .tier,
+    ).toBe("COLLECTOR");
+  });
+
+  it("feeds deriveEdition without emptying it", () => {
+    const pool = [o("8"), o("10")];
+    const seen = new Map([[heldKey(o("8")), 1]]);
+    const draw = deriveEdition("seed", {
+      catalogue: leastRecentlyOffered(pool, seen),
+    });
+    expect(draw.offer.masterId).toBe("10");
   });
 });

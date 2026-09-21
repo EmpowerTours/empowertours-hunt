@@ -14,6 +14,9 @@ export const db = new PrismaClient();
 const TABLES = [
   "AdminAction",
   "Payout",
+  // EditionClaim before Edition: the claim is the child.
+  "EditionClaim",
+  "Edition",
   "Spawn",
   "CreditLedger",
   "HintRequest",

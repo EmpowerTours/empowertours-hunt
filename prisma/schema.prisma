@@ -540,6 +540,24 @@ model Hunt {
   /// enough to matter, rare enough that the scope stays a game and not a shop.
   editionCooldownSeconds Int @default(600)
 
+  /// How long after ARRIVING before the first encounter of a session may
+  /// appear.
+  ///
+  /// The cooldown alone did not bound this. It is measured from the last
+  /// edition, so a hunter returning hours later passed it on the first poll
+  /// and a full-screen buy card covered the scope before they had taken a
+  /// step. Observed on the live hunt 2026-09-21: three of the four editions
+  /// ever placed landed within seconds of the screen opening, 39 minutes and
+  /// then 3 hours apart, which is the shape of "every time I open the app",
+  /// not of a ten-minute cadence.
+  ///
+  /// A session, not a lifetime: `PlayerHunt.editionsOpenAt` is re-armed on a
+  /// check-in that follows a gap longer than `maxVerifiedFixAgeSeconds`, so
+  /// the delay is paid once per outing and not once ever. Five minutes is
+  /// about the first spawn or two — long enough that the game introduces
+  /// itself before the shop does.
+  editionFirstDelaySeconds Int @default(300)
+
   /// Headroom left on top of the price before an edition is offered, in wei.
   ///
   /// The hunter signs the payment themselves, so they need the price PLUS
@@ -719,6 +737,18 @@ model PlayerHunt {
   lastSpawnAt DateTime?
   firstFindAt DateTime?
   lastFindAt  DateTime?
+
+  /// Not before this instant may this player be offered an edition here.
+  ///
+  /// Written by the check-in route when a session STARTS — no previous
+  /// verified fix, or one older than `maxVerifiedFixAgeSeconds` — and left
+  /// alone on every check-in after that. So it is a warm-up per outing, not a
+  /// second cooldown: a hunter who walks for an hour pays it once.
+  ///
+  /// Null means "not armed yet", which the edition route treats as the clock
+  /// starting now rather than as permission. Reject by default, per AGENTS.md
+  /// rule 2: a player with no row must not be handed an instant card.
+  editionsOpenAt DateTime?
 
   @@id([huntId, playerId])
   @@index([playerId])

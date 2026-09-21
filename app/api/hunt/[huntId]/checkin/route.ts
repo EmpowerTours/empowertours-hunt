@@ -77,6 +77,10 @@ export async function POST(
         maxSpeedKmh: true,
         cooldownSeconds: true,
         maxClockSkewSeconds: true,
+        // Not used by validatePosition — read here because this route is the
+        // only one that can tell an outing's first check-in from its tenth.
+        maxVerifiedFixAgeSeconds: true,
+        editionFirstDelaySeconds: true,
       },
     });
     if (hunt === null) {
@@ -145,6 +149,26 @@ export async function POST(
       });
     }
 
+    // ---- Is this the START of an outing, or the middle of one?
+    //
+    // Check-ins land every `cooldownSeconds` while the screen is open, so a
+    // gap longer than `maxVerifiedFixAgeSeconds` means the player closed the
+    // app and came back. That is the boundary the edition warm-up needs: it
+    // must be paid once per outing, never once per lifetime, or a hunter who
+    // returns hours later clears it on their first poll and a full-screen buy
+    // card covers the scope before they have taken a step.
+    //
+    // Reusing the fix-age knob rather than adding another: it already means
+    // "this position is too old to still describe where you are", which is
+    // exactly the question being asked.
+    const resumed =
+      stats?.lastVerifiedAt == null ||
+      serverNow.getTime() - stats.lastVerifiedAt.getTime() >
+        hunt.maxVerifiedFixAgeSeconds * 1000;
+    const editionsOpenAt = new Date(
+      serverNow.getTime() + hunt.editionFirstDelaySeconds * 1000,
+    );
+
     await prisma.playerHunt.upsert({
       where: { huntId_playerId: { huntId, playerId: player.id } },
       create: {
@@ -153,11 +177,15 @@ export async function POST(
         lastVerifiedLat: input.lat,
         lastVerifiedLng: input.lng,
         lastVerifiedAt: serverNow,
+        editionsOpenAt,
       },
       update: {
         lastVerifiedLat: input.lat,
         lastVerifiedLng: input.lng,
         lastVerifiedAt: serverNow,
+        // Left alone mid-outing. Re-arming on every check-in would push the
+        // warm-up forward once a minute and no edition would ever appear.
+        ...(resumed ? { editionsOpenAt } : {}),
       },
     });
 

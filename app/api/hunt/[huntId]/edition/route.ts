@@ -11,9 +11,11 @@ import {
   deriveEdition,
   evaluateEditionEligibility,
   heldKey,
+  leastRecentlyOffered,
   placeableFor,
   quotedPrice,
 } from "@/lib/hunt/edition";
+import { placeEdition } from "@/lib/hunt/edition-place";
 import { toWei } from "@/lib/wei";
 import { randomBytes } from "node:crypto";
 
@@ -198,10 +200,46 @@ export async function GET(
       }
     }
 
-    const lastEdition = await prisma.edition.findFirst({
-      where: { huntId, playerId: player.id },
+    // ---- What this player has already been SHOWN, newest first.
+    //
+    // Not scoped to this hunt, because the rotation is about what they have
+    // seen: a second hunt must not restart the carousel at the same track.
+    // `take` bounds it — the rotation needs only the most recent sighting of
+    // each work, so a window a few catalogues deep is enough and the cost
+    // stays flat for somebody who has been hunting for months.
+    const offered = await prisma.edition.findMany({
+      where: { playerId: player.id },
       orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
+      take: 200,
+      select: {
+        huntId: true,
+        collection: true,
+        masterId: true,
+        tier: true,
+        createdAt: true,
+      },
+    });
+    const lastOfferedAt = new Map<string, number>();
+    for (const e of offered) {
+      const k = heldKey({
+        collection: e.collection,
+        masterId: e.masterId,
+        tier: e.tier,
+      });
+      // Newest first, so the first sighting of a key is its latest one.
+      if (!lastOfferedAt.has(k)) lastOfferedAt.set(k, e.createdAt.getTime());
+    }
+    // The cooldown IS per hunt, and the ordered list above already answers it.
+    const lastEditionAt =
+      offered.find((e) => e.huntId === huntId)?.createdAt ?? null;
+
+    // The session warm-up, armed by the check-in route. No row means this
+    // player has never checked in here, so the clock starts NOW rather than
+    // being waived — a hunter who has not arrived must not be handed a card
+    // on their first poll.
+    const stats = await prisma.playerHunt.findUnique({
+      where: { huntId_playerId: { huntId, playerId: player.id } },
+      select: { editionsOpenAt: true },
     });
 
     const eligibility = evaluateEditionEligibility({
@@ -209,8 +247,9 @@ export async function GET(
       playerActive: player.active && player.suspendedAt === null,
       huntActive: hunt.active,
       editionsEnabled: hunt.editionsEnabled,
-      lastEditionAt: lastEdition?.createdAt ?? null,
+      lastEditionAt,
       editionCooldownSeconds: hunt.editionCooldownSeconds,
+      editionsOpenAt: stats?.editionsOpenAt ?? now,
       hasActiveEdition: false, // already returned above when there was one
       placeableCount: placeable.length,
       catalogueUnavailable: !catalogue.ok,
@@ -220,8 +259,14 @@ export async function GET(
       return NextResponse.json({ offered: false, reason: eligibility.reason });
     }
 
+    // Narrow to the works seen least recently BEFORE the draw, never after.
+    // Affordability and relayer capacity had already cut twelve offers down
+    // to two for a real wallet, and a uniform draw over two is how the same
+    // track came up three times out of four. Rotating first makes that
+    // alternation; it does not touch the draw, which stays uniform over the
+    // ties it is handed.
     const draw = deriveEdition(`edn_${randomBytes(16).toString("hex")}`, {
-      catalogue: placeable,
+      catalogue: leastRecentlyOffered(placeable, lastOfferedAt),
     });
     const price = quotedPrice(draw.offer);
 
@@ -229,19 +274,59 @@ export async function GET(
     // hunter shown 300 WMON must be charged 300 WMON; the relayer absorbs any
     // movement at the venue inside the TTL, which is the right party — it
     // chose the TTL and the hunter cannot see the venue at all.
-    const created = await prisma.edition.create({
-      data: {
-        huntId,
-        playerId: player.id,
-        collection: draw.offer.collection,
-        masterId: draw.offer.masterId,
-        kind: draw.offer.kind,
-        tier: draw.offer.tier,
-        terms: draw.offer.terms,
-        priceWei: draw.offer.terms === "FREE" ? null : price.toString(),
-        expiresAt: new Date(now.getTime() + hunt.editionTtlSeconds * 1000),
-      },
+    // ---- ATOMIC. Every check above is a read-then-write, and the client
+    // genuinely fires two of these at once: see lib/hunt/edition-place.ts for
+    // the mechanism and for the two rows it put in the live database one
+    // millisecond apart.
+    const created = await placeEdition(prisma, {
+      huntId,
+      playerId: player.id,
+      collection: draw.offer.collection,
+      masterId: draw.offer.masterId,
+      kind: draw.offer.kind,
+      tier: draw.offer.tier,
+      terms: draw.offer.terms,
+      priceWei: price,
+      now,
+      expiresAt: new Date(now.getTime() + hunt.editionTtlSeconds * 1000),
+      cooldownCutoff: new Date(
+        now.getTime() - hunt.editionCooldownSeconds * 1000,
+      ),
     });
+
+    if (created === null) {
+      // The other request won, and it is holding the card this one would have
+      // created. Re-read rather than invent a second: answering
+      // `offered: false` here would blank a card the hunter is looking at.
+      const other = await prisma.edition.findFirst({
+        where: {
+          huntId,
+          playerId: player.id,
+          takenAt: null,
+          dismissedAt: null,
+          expiresAt: { gt: now },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      if (other === null) {
+        return NextResponse.json({
+          offered: false,
+          reason: "edition_cooldown",
+        });
+      }
+      const od = byMaster.get(
+        `${other.collection}/${other.masterId}/${other.tier}`,
+      );
+      return NextResponse.json({
+        offered: true,
+        payTo: relayerConfig()?.relayerAddress ?? null,
+        edition: view(other, {
+          name: od?.name ?? `#${other.masterId}`,
+          imageUrl: od?.imageUrl ?? null,
+          previewUrl: od?.previewUrl ?? null,
+        }),
+      });
+    }
 
     const d = byMaster.get(
       `${draw.offer.collection}/${draw.offer.masterId}/${draw.offer.tier}`,
