@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
@@ -32,6 +33,7 @@ const T = {
     done: "Dijiste que sí 🎵",
     doneBody: "Dime Que Sí es tuya. Está en tu cartera, para siempre.",
     receipt: "ver en la cadena ↗",
+    mine: "Ver lo que tienes →",
     soldOut: "Ya se acabaron las gratis. Las de colección siguen abiertas.",
     closed: "El drop no está abierto ahorita.",
     retry: "Intentar de nuevo",
@@ -48,6 +50,7 @@ const T = {
     done: "You said yes 🎵",
     doneBody: "Dime Que Sí is yours. It's in your wallet, forever.",
     receipt: "see it on-chain ↗",
+    mine: "See what you own →",
     soldOut: "The free ones are gone. Collector editions are still open.",
     closed: "The drop isn't open right now.",
     retry: "Try again",
@@ -232,6 +235,18 @@ export default function DimePage() {
               {t.receipt}
             </a>
           ) : null}
+          {/* Somewhere to go next, which this screen did not have.
+              A claimer arrived from a social post, tapped once, and the only
+              onward link was a block explorer — a page that answers "did the
+              transaction happen", not "what do I now own". The wallet shows
+              the record with its cover, which is the thing worth coming back
+              to and the only reason any of them would. */}
+          <Link
+            href="/hunt/wallet"
+            className="mt-2 min-h-11 rounded-full border border-current px-5 py-2 text-sm font-medium"
+          >
+            {t.mine}
+          </Link>
         </div>
       ) : closed ? (
         <p className="text-ink-dim text-center text-sm">{t.closed}</p>
