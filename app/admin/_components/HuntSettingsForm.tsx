@@ -40,6 +40,9 @@ export interface HuntFormValues {
   spawnDailyCapMonPerPlayer: string;
   autoApproveMaxMon: string;
   autoApproveDailyCapMon: string;
+  editionsEnabled: boolean;
+  editionTtlSeconds: number;
+  editionCooldownSeconds: number;
 }
 
 function Field({
@@ -258,6 +261,62 @@ export function HuntSettingsForm({
               className={inputClass}
               value={v.maxFindsPerPlayer}
               onChange={(e) => set("maxFindsPerPlayer", Number(e.target.value))}
+            />
+          </Field>
+        </div>
+      </section>
+
+      <section className="rounded border border-amber-900 bg-amber-950/20 p-3">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-amber-300">
+          Editions — the hunter spends their OWN money here
+        </h3>
+        <p className="mb-3 text-[11px] leading-relaxed text-amber-200/70">
+          Points the opposite way to a spawn: nothing leaves the treasury, a
+          player is asked to buy a licence from the artist. Independent of the
+          spawn switch on purpose — turning payouts on must never quietly open
+          a shop. Nothing is offered unless the relayer is configured AND funded;
+          a work the relayer cannot settle is never shown as a card.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <Field
+            label="Editions enabled"
+            explain="Master switch for the encounter. Off means no cards are drawn for this hunt, whatever the catalogue says."
+          >
+            <select
+              className={inputClass}
+              value={String(v.editionsEnabled)}
+              onChange={(e) =>
+                set("editionsEnabled", e.target.value === "true")
+              }
+            >
+              <option value="false">off</option>
+              <option value="true">on</option>
+            </select>
+          </Field>
+          <Field
+            label="Card TTL (seconds)"
+            explain="How long a card stands before it expires. The price is fixed for this whole window and the relayer absorbs any movement at the venue inside it, so a longer TTL is a longer bet."
+          >
+            <input
+              className={inputClass}
+              type="number"
+              value={v.editionTtlSeconds}
+              onChange={(e) =>
+                set("editionTtlSeconds", Number(e.target.value))
+              }
+            />
+          </Field>
+          <Field
+            label="Cooldown (seconds)"
+            explain="Minimum gap between one player's encounters. An edition asks for money, so this is deliberately far slower than the spawn cadence."
+          >
+            <input
+              className={inputClass}
+              type="number"
+              value={v.editionCooldownSeconds}
+              onChange={(e) =>
+                set("editionCooldownSeconds", Number(e.target.value))
+              }
             />
           </Field>
         </div>

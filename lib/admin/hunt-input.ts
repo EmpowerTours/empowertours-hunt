@@ -70,6 +70,9 @@ export interface HuntWriteInput {
   budgetCreditWei?: Prisma.Decimal;
   maxFindsPerPlayer?: number;
   spawnEnabled?: boolean;
+  editionsEnabled?: boolean;
+  editionTtlSeconds?: number;
+  editionCooldownSeconds?: number;
   budgetMonWei?: Prisma.Decimal;
   spawnMinWei?: Prisma.Decimal;
   spawnMaxWei?: Prisma.Decimal;
@@ -152,6 +155,31 @@ export function parseHuntInput(
   // --- spawns (real MON) ---
   const spawnEnabled = optionalBool(body, "spawnEnabled");
   if (spawnEnabled !== undefined) out.spawnEnabled = spawnEnabled;
+
+  // --- editions (the hunter's OWN money) ---
+  //
+  // Separate from spawnEnabled, and deliberately not implied by it. A spawn
+  // GIVES treasury money for reaching a place; an edition ASKS the hunter to
+  // spend their own. Tying them together would mean enabling payouts silently
+  // switched on a shop.
+  //
+  // This was readable and never writable: evaluateEditionEligibility gates the
+  // whole feature on hunt.editionsEnabled, the column defaults to false, and
+  // nothing in the app or the admin API ever set it. The only way to run an
+  // edition was to UPDATE the row by hand.
+  const editionsEnabled = optionalBool(body, "editionsEnabled");
+  if (editionsEnabled !== undefined) out.editionsEnabled = editionsEnabled;
+  const editionTtlSeconds = optionalInt(body, "editionTtlSeconds", 30, 3_600);
+  if (editionTtlSeconds !== undefined)
+    out.editionTtlSeconds = editionTtlSeconds;
+  const editionCooldownSeconds = optionalInt(
+    body,
+    "editionCooldownSeconds",
+    0,
+    86_400,
+  );
+  if (editionCooldownSeconds !== undefined)
+    out.editionCooldownSeconds = editionCooldownSeconds;
 
   const budgetMonWei = weiField(body, "budgetMon");
   if (budgetMonWei !== undefined) out.budgetMonWei = budgetMonWei;

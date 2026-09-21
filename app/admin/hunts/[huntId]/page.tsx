@@ -68,6 +68,9 @@ export default async function HuntDetailPage({
     spawnDailyCapMonPerPlayer: formatMon(weiOf(hunt.spawnDailyCapWeiPerPlayer)),
     autoApproveMaxMon: formatMon(weiOf(hunt.autoApproveMaxWei)),
     autoApproveDailyCapMon: formatMon(weiOf(hunt.autoApproveDailyCapWei)),
+    editionsEnabled: hunt.editionsEnabled,
+    editionTtlSeconds: hunt.editionTtlSeconds,
+    editionCooldownSeconds: hunt.editionCooldownSeconds,
   };
 
   const cacheRows: CacheRow[] = caches.map((c) => ({
