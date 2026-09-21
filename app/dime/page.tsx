@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { inAppWebView } from "@/lib/app-shell";
+import { thumbSrcSet, thumbUrl } from "@/lib/editions/thumb";
 
 // ---------------------------------------------------------------------------
 // The claim screen. The song title is the button.
@@ -14,6 +15,9 @@ import { inAppWebView } from "@/lib/app-shell";
 // explanation of what a mint is — the passkey does the wallet silently, and the
 // only decision on screen is Sí.
 // ---------------------------------------------------------------------------
+
+/** The cover frame, in CSS pixels. Must match the h-40 w-40 below (10rem). */
+const COVER_PX = 160;
 
 type Phase = "loading" | "ready" | "signing" | "claiming" | "done" | "error";
 
@@ -184,8 +188,19 @@ export default function DimePage() {
         {status?.art?.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={status.art.imageUrl}
+            // COVER_PX, not the original. The master is 1024x1024 and 197KB
+            // going into a 160px frame; asking the gateway for 320 brings that
+            // to 15KB. See lib/editions/thumb.ts for the measurements.
+            src={thumbUrl(status.art.imageUrl, COVER_PX * 2) ?? undefined}
+            // Width descriptors so a 3x phone takes the 480 and a 2x phone the
+            // 320, rather than everyone paying for the larger. Null when the
+            // gateway cannot resize, in which case src is the original and a
+            // srcSet would be that same file listed twice.
+            srcSet={thumbSrcSet(status.art.imageUrl, COVER_PX) ?? undefined}
+            sizes={`${COVER_PX}px`}
             alt={status.art.name}
+            width={COVER_PX}
+            height={COVER_PX}
             className="h-full w-full object-cover transition-opacity duration-500"
             style={{ opacity: coverLoaded ? 1 : 0 }}
             onLoad={() => setCoverLoaded(true)}
