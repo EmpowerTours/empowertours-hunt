@@ -14,20 +14,77 @@ import type { KuruQuote } from "./kuru";
 // ---------------------------------------------------------------------------
 
 /**
- * Gas limit for a Kuru route.
+ * Gas limits for a Kuru route, measured rather than guessed.
  *
- * Monad charges the WHOLE limit on a revert and refunds nothing, which inverts
- * the usual advice. Estimating tightly does not save gas — it buys a failed
- * transaction at full price. Every send of this route that has actually worked
- * used ~900k, so that is a floor rather than a target, with headroom over any
- * estimate that comes in above it.
+ * Monad charges the WHOLE limit on a revert and refunds nothing, so the limit
+ * is not a ceiling you might reach — it is the price of the trade. Receipts
+ * cannot tell you otherwise: `gasUsed` comes back equal to `gasLimit` on every
+ * transaction, and the top frame of a callTracer trace reports the same
+ * charged figure. Real consumption is only visible through `eth_estimateGas`
+ * or by summing the inner call frames.
+ *
+ * Measured on mainnet 2026-09-20, MON/USDC both ways, 25 quotes:
+ *
+ *   order-book route          ~387,000      (the usual path, very stable)
+ *   single-hop pool route     ~312,000
+ *   three-hop pool route       622,414      (v4 + v3 + v2; the worst seen)
+ *
+ * That last one is not hypothetical: it is tx 0x95f14269…2bb0 re-estimated
+ * against the block it actually executed from, and it agrees with the sum of
+ * that transaction's own call frames. The trade was sent with a 933,621 limit,
+ * so it paid 1.5x what it used — and a book route at the same limit pays 2.4x.
+ *
+ * Estimating against `latest` instead of the execution block moved the number
+ * by 5.6%. Monad executes asynchronously — the simulation runs against state
+ * roughly three blocks ahead of where the transaction lands — and crossing a
+ * different set of book levels costs different gas. The 1.5x pad exists for
+ * that drift and covers it about nine times over.
  */
-export const GAS_FLOOR = 900_000n;
 
+/**
+ * Used only when there is no estimate at all.
+ *
+ * Blind, so it must cover the heaviest route ever observed (622,414) plus
+ * drift plus margin. This is deliberately close to the old unconditional
+ * floor: when we cannot see, the old caution is right. It should almost never
+ * fire — estimation failed on none of the 25 samples.
+ */
+export const GAS_FALLBACK = 950_000n;
+
+/**
+ * A sanity floor on a padded estimate, not a tax.
+ *
+ * The cheapest route measured pads to 467,923, so this never binds on a real
+ * quote. It exists so an absurdly low estimate cannot produce a limit that
+ * reverts and charges for the privilege.
+ */
+export const GAS_MIN = 400_000n;
+
+/**
+ * The most a single trade may ever be charged.
+ *
+ * Nothing measured comes near it — the worst route pads to 933,621. It bounds
+ * the damage if Kuru's router returns a path unlike anything seen here, or if
+ * an estimate comes back wrong in the expensive direction. At ~102 gwei this
+ * caps one trade at about 0.153 MON.
+ */
+export const GAS_CEILING = 1_500_000n;
+
+/**
+ * The limit to send.
+ *
+ * The estimate leads and the constants only catch its absence or its extremes.
+ * The previous version had this backwards: a flat 900,000 floor sat above every
+ * padded estimate, so the estimate never once decided anything and every trade
+ * paid the worst case. On a 5 MON sale that was 1.9% of notional — worse than
+ * the swap desk's fee, on a screen built to beat it.
+ */
 export function gasFor(estimate: bigint | null): bigint {
-  if (estimate === null || estimate <= 0n) return GAS_FLOOR;
+  if (estimate === null || estimate <= 0n) return GAS_FALLBACK;
   const padded = (estimate * 3n) / 2n;
-  return padded > GAS_FLOOR ? padded : GAS_FLOOR;
+  if (padded < GAS_MIN) return GAS_MIN;
+  if (padded > GAS_CEILING) return GAS_CEILING;
+  return padded;
 }
 
 /**

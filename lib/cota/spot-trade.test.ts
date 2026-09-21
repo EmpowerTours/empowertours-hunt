@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  GAS_FLOOR,
+  GAS_CEILING,
+  GAS_FALLBACK,
+  GAS_MIN,
   explainFailure,
   gasFor,
   quoteAcceptable,
@@ -20,23 +22,71 @@ const WORDS = {
   revertedTx: "The trade reverted on-chain:",
 };
 
-describe("gasFor — Monad charges the whole limit on revert", () => {
-  it("never goes below the limit every working send has used", () => {
-    // The trap: a tight estimate does not save gas here, it buys a failed
-    // transaction at full price. viem's estimate is what the reverting version
-    // of this screen used.
-    expect(gasFor(120_000n)).toBe(GAS_FLOOR);
-    expect(gasFor(null)).toBe(GAS_FLOOR);
-    expect(gasFor(0n)).toBe(GAS_FLOOR);
+// Gas figures below are mainnet measurements taken 2026-09-20 over 25 quotes,
+// not invented constants. MEASURED_* are what routes actually consume; if a
+// future change moves the policy so these pay more than they used to, these
+// tests are the thing that notices.
+const MEASURED_BOOK = 387_000n; // the usual route, very stable across sizes
+const MEASURED_CHEAPEST = 311_949n; // single-hop pool
+const MEASURED_WORST = 622_414n; // tx 0x95f14269…2bb0, re-estimated at its own block
+const OLD_FLAT_FLOOR = 900_000n; // what every trade used to pay, whatever it needed
+
+describe("gasFor — the estimate must actually decide", () => {
+  it("charges a book route far less than the old flat floor", () => {
+    // THE REGRESSION THIS FILE EXISTS FOR. The previous floor sat above every
+    // padded estimate, so the estimate was dead code and a 5 MON sale paid
+    // 1.9% of notional in gas — worse than the swap desk it was built to beat.
+    const g = gasFor(MEASURED_BOOK);
+    expect(g).toBe(580_500n);
+    expect(g).toBeLessThan(OLD_FLAT_FLOOR);
   });
 
-  it("adds headroom when the estimate is already above the floor", () => {
-    expect(gasFor(1_000_000n)).toBe(1_500_000n);
+  it("still covers the worst route ever measured", () => {
+    // The safety argument has to survive the change: the heaviest observed
+    // path is a three-hop v4+v3+v2 route, and it must not get tighter than it
+    // was. 622,414 x 1.5 lands on 933,621 — the exact limit that route was
+    // actually sent with, and it executed.
+    expect(gasFor(MEASURED_WORST)).toBe(933_621n);
+    expect(gasFor(MEASURED_WORST)).toBeGreaterThan(MEASURED_WORST);
+  });
+
+  it("pads enough to absorb Monad's asynchronous execution", () => {
+    // Estimating the same calldata against `latest` rather than its execution
+    // block moved by 5.6%, because the simulation runs ~3 blocks ahead and a
+    // fill crossing different book levels costs different gas. 1.5x covers
+    // that roughly nine times over.
+    const drift = (MEASURED_WORST * 106n) / 100n;
+    expect(gasFor(MEASURED_WORST)).toBeGreaterThan(drift);
+  });
+
+  it("falls back only when there is no estimate at all", () => {
+    expect(gasFor(null)).toBe(GAS_FALLBACK);
+    expect(gasFor(0n)).toBe(GAS_FALLBACK);
+    expect(gasFor(-1n)).toBe(GAS_FALLBACK);
+    // Blind means blind: it has to cover the worst route unaided.
+    expect(GAS_FALLBACK).toBeGreaterThan(MEASURED_WORST);
+  });
+
+  it("clamps an absurdly low estimate without reverting on purpose", () => {
+    expect(gasFor(1n)).toBe(GAS_MIN);
+    expect(gasFor(120_000n)).toBe(GAS_MIN);
+  });
+
+  it("caps a pathological estimate so one trade cannot drain a wallet", () => {
+    expect(gasFor(10_000_000n)).toBe(GAS_CEILING);
+  });
+
+  it("keeps the guards out of the way of every route measured", () => {
+    // GAS_MIN is a sanity check, not a tax: it must not bind on real traffic.
+    // GAS_CEILING must not clip the worst real route either.
+    for (const m of [MEASURED_CHEAPEST, MEASURED_BOOK, MEASURED_WORST]) {
+      expect(gasFor(m)).toBe((m * 3n) / 2n);
+    }
   });
 
   it("is monotonic — a bigger estimate never yields a smaller limit", () => {
     let prev = 0n;
-    for (const e of [1n, 100_000n, 600_000n, 900_000n, 2_000_000n]) {
+    for (const e of [1n, 100_000n, 311_949n, 387_000n, 622_414n, 9_000_000n]) {
       const g = gasFor(e);
       expect(g).toBeGreaterThanOrEqual(prev);
       prev = g;
