@@ -13,6 +13,7 @@ import { publicClient, walletClientFor } from "@/lib/cota/swap";
 import { KURU_EXECUTOR, USDC, kuruQuote, kuruToken } from "@/lib/cota/kuru";
 import type { KuruBook } from "@/lib/cota/kuru-book";
 import {
+  affordable,
   explainFailure,
   gasFor,
   gasReserveWei,
@@ -385,6 +386,31 @@ export default function SpotPage() {
       setError(t.noAmount);
       return;
     }
+
+    // ---- Can this wallet actually pay for it?
+    //
+    // This check did not exist. doTrade validated that the amount parsed and
+    // was positive and went straight to quoting and signing, so a wallet
+    // holding 0.12 USDC could ask to spend 10, pass the approval — approving
+    // more than you hold is legal — and learn about it as a raw chain revert.
+    // "Not enough balance." has been sitting in both locales, referenced
+    // nowhere, since the page was written.
+    const afford = affordable({
+      side,
+      amount,
+      // A balance we could not read is treated as zero, so the trade is
+      // refused rather than attempted blind. Refusing costs a retry; guessing
+      // costs the whole gas limit, which Monad charges even on a revert.
+      monWei: monBal ?? 0n,
+      usdcUnits: usdcBal ?? 0n,
+      gasReserveWei:
+        gasPrice === null ? GAS_RESERVE_FALLBACK : gasReserveWei(gasPrice),
+    });
+    if (!afford.ok) {
+      setError(afford.reason === "no_gas" ? t.keepGas : t.notEnough);
+      return;
+    }
+
     setPhase("working");
     try {
       const pc = publicClient();

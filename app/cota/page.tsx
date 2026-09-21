@@ -452,6 +452,19 @@ export default function CotaPage() {
             ? "Sin cuenta Perpl, sin AUSD — solo tu wallet"
             : "No Perpl account, no AUSD — just your wallet"}
         </span>
+        {/* Says REAL, and says it here rather than on the spot page itself.
+            In practice mode the whole live block above is hidden, so this card
+            renders directly under a notice reading "Practice with fake money".
+            Nothing between them said otherwise, and the sublabel above never
+            uses the word real — so the one control on this page that spends
+            actual MON on a live order book sat immediately beneath a fake-money
+            banner. Whoever taps practice is exactly the person who should not
+            have to infer that. */}
+        <span className="mt-1 text-xs font-semibold text-amber-400">
+          {lang === "es"
+            ? "Dinero real — esto no es práctica"
+            : "Real money — this is not practice"}
+        </span>
       </a>
 
       {auth.status !== "signed-in" ? (
