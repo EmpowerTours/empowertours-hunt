@@ -142,3 +142,40 @@ export function explainSwapError(err: unknown, lang: "es" | "en"): string {
       : "Not enough MON in your Cota wallet for this swap + gas.";
   return es ? "Falló el swap." : "Swap failed.";
 }
+
+// ---------------------------------------------------------------------------
+// How much MON to hold back from a max-size swap so it can pay its own gas.
+//
+// The page kept a flat `parseEther("0.05")`. Unlike the spot screen's identical
+// constant — which was smaller than the gas on every trade it ever made — this
+// one is currently ADEQUATE: a desk swap costs 291,983 gas, so 0.0298 MON at
+// the 102 gwei that trades have been landing at.
+//
+// It is adequate by luck rather than by construction. 0.05 MON stops covering
+// this swap at 171 gwei, and Kuru's own quote endpoint has been quoting 130 in
+// its "rapid" tier and 180 in "extreme" today. Nothing connects the constant to
+// the thing it is supposed to cover, so the day it stops being true nothing
+// says so — the hunter just gets a max-size swap their wallet cannot sign.
+//
+// Measured 2026-09-21 with eth_estimateGas against the live desk from an
+// address with no swap history: 291,983 gas at 50, 100, 200, 400 and 480 MON —
+// flat, because the desk does the same work whatever the size. Sizes below
+// ~40 MON revert "below minimum" and this wallet's own reads revert "address
+// cap", so the measurement had to come from a fresh sender.
+// ---------------------------------------------------------------------------
+
+/** Measured, not estimated at call time. Flat across every size that clears. */
+export const SWAP_GAS_MEASURED = 291_983n;
+
+/**
+ * Doubled, and the doubling is doing two jobs: covering execution that runs
+ * heavier than the sample, and covering the gas price moving between rendering
+ * this number and signing. Monad charges the whole limit with no refund, so a
+ * reserve that is too thin does not cost a little — it costs the transaction.
+ *
+ * Unspent MON stays the hunter's, so the only cost of being generous is a max
+ * button that offers slightly less than the theoretical maximum.
+ */
+export function swapGasReserveWei(gasPriceWei: bigint): bigint {
+  return SWAP_GAS_MEASURED * gasPriceWei * 2n;
+}

@@ -14,11 +14,17 @@ import {
   publicClient,
   SWAP_ABI,
   SWAP_ADDRESS,
+  swapGasReserveWei,
   explainSwapError,
   walletClientFor,
 } from "@/lib/cota/swap";
 import { swapMonToAusdViaKuru, type KuruStep } from "@/lib/cota/kuru-swap";
-import { AUSD as AUSD_TOKEN, kuruQuote, kuruToken, USDC } from "@/lib/cota/kuru";
+import {
+  AUSD as AUSD_TOKEN,
+  kuruQuote,
+  kuruToken,
+  USDC,
+} from "@/lib/cota/kuru";
 
 // ---------------------------------------------------------------------------
 // MON -> AUSD. A hunter who only has MON turns it into AUSD here to fund a Perpl
@@ -116,7 +122,12 @@ const T = {
 // Never swap the whole balance: a swap that leaves no MON for gas reverts
 // underpriced (this is exactly what bit the first live test). Reserve this much
 // MON for gas and cap the swap amount to it.
-const GAS_RESERVE = parseEther("0.05");
+/**
+ * Used only until the live gas price arrives. Sized for a high price rather
+ * than today's: briefly offering slightly less than the maximum costs a hunter
+ * nothing, while offering more than they can sign costs them the swap.
+ */
+const GAS_RESERVE_FALLBACK = parseEther("0.2");
 
 export default function SwapPage() {
   const lang: Lang = useLocale() === "es" ? "es" : "en";
@@ -127,6 +138,8 @@ export default function SwapPage() {
   const [quote, setQuote] = useState<bigint | null>(null);
   const [available, setAvailable] = useState<bigint | null>(null);
   const [monBalance, setMonBalance] = useState<bigint | null>(null);
+  // Live, because the reserve is priced in MON and the price moves.
+  const [gasPrice, setGasPrice] = useState<bigint | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [ausdOut, setAusdOut] = useState<bigint | null>(null);
@@ -160,6 +173,7 @@ export default function SwapPage() {
           setMonBalance(
             await pc.getBalance({ address: address as `0x${string}` }),
           );
+          setGasPrice(await pc.getGasPrice());
         }
         return;
       } catch {
@@ -338,10 +352,15 @@ export default function SwapPage() {
 
   const deskLow = quote !== null && available !== null && quote > available;
   const noMon = monBalance !== null && monBalance === 0n;
-  // Cap the amount so a hunter always keeps MON for gas (see GAS_RESERVE).
+  // Cap the amount so a hunter always keeps MON for gas. Derived from the
+  // MEASURED cost of this swap and the live price rather than a flat constant:
+  // the old 0.05 covered today's 102 gwei and stopped covering anything at
+  // 171, with nothing to say so. See swapGasReserveWei.
+  const gasReserve =
+    gasPrice === null ? GAS_RESERVE_FALLBACK : swapGasReserveWei(gasPrice);
   const maxSwap =
-    monBalance !== null && monBalance > GAS_RESERVE
-      ? monBalance - GAS_RESERVE
+    monBalance !== null && monBalance > gasReserve
+      ? monBalance - gasReserve
       : 0n;
   let overMax = false;
   try {
