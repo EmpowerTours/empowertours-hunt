@@ -1591,3 +1591,59 @@ enum EditionClaimStatus {
   SENT
   FAILED
 }
+
+/// One Kuru trade this wallet sent, as the CHAIN describes it.
+///
+/// Until this existed a spot trade lived in React state: a hash on screen until
+/// the hunter reloaded, and then nothing. No answer to "what did I trade last
+/// week", and no answer to "did that one really go through the order book" —
+/// which is the claim the spot screen makes out loud.
+///
+/// Every column except `side` is read back from the receipt by the server. The
+/// client posts a hash and nothing else. So a hunter cannot file a trade they
+/// did not make, cannot mark a reverted trade successful, and cannot claim the
+/// order book on a trade that went to a pool.
+///
+/// Keyed by WALLET, not by player. Unlike CotaAgentDecision — which is private
+/// reasoning and is therefore scoped to the session's own playerId — everything
+/// here is already public on chain, so serving it for an address in the query
+/// discloses nothing that an explorer would not. It also keeps the log working
+/// for a wallet-only hunter who has no Player row at all.
+model KuruSwap {
+  id String @id @default(cuid())
+
+  /// Lowercased. Unique so a double-submit records one row, not two.
+  hash   String @unique
+  /// Lowercased sender, taken from the receipt rather than from the request.
+  wallet String
+
+  /// False for a revert. Reverts are KEPT: on Monad they cost the whole gas
+  /// limit and deliver nothing, which is the trade a hunter most needs to find
+  /// again. A log showing only fills hides the expensive half.
+  ok          Boolean
+  blockNumber BigInt
+
+  /// Wei, as decimal STRINGS. Not BigInt: Postgres BIGINT tops out near
+  /// 9.22e18 and a 10 MON trade is 1e19, so a perfectly ordinary trade would
+  /// overflow the column.
+  gasWei   String
+  valueWei String
+
+  /// "buy" | "sell". The one field the chain cannot supply — a native-MON buy
+  /// emits no Transfer to the wallet, so direction has to come from the
+  /// client. Treated as a label, never as evidence.
+  side String
+
+  /// ERC-20 units that reached the wallet, { tokenAddress: "units" }. Empty on
+  /// a buy (native MON moves no Transfer event) and empty on a revert.
+  tokensIn Json
+
+  /// True only when Kuru's MON/USDC market appears in this transaction's OWN
+  /// logs. Read from the logs rather than the calldata: calldata says where the
+  /// router meant to go, logs say where the fill happened.
+  crossedOrderBook Boolean
+
+  at DateTime @default(now())
+
+  @@index([wallet, at])
+}

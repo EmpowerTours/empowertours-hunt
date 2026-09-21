@@ -18,6 +18,14 @@ import {
   quoteAcceptable,
   received as receivedFrom,
 } from "@/lib/cota/spot-trade";
+import {
+  gasBps,
+  gasMon,
+  outcomeOf,
+  receivedText,
+  spentMon,
+  type TradeRow,
+} from "@/lib/cota/trade-log";
 
 // ---------------------------------------------------------------------------
 // Spot. MON against USDC, on Kuru's order book, both directions.
@@ -79,8 +87,17 @@ const T = {
     level: "nivel",
     levels: "niveles",
     atLeast: "Mínimo garantizado",
-    noRoute: "Kuru no devolvió una ruta que se pueda ejecutar. Intenta de nuevo.",
+    noRoute:
+      "Kuru no devolvió una ruta que se pueda ejecutar. Intenta de nuevo.",
     revertedTx: "La operación se revirtió en la cadena:",
+    history: "Tus operaciones",
+    seeHistory: "Ver tus operaciones",
+    noTrades: "Todavía no has operado.",
+    gasLabel: "Gas",
+    ofTrade: "del monto",
+    revertedRow: "Revertida",
+    filledRow: "Ejecutada",
+    amountUnknown: "monto no visible en el recibo",
   },
   en: {
     title: "Spot",
@@ -114,6 +131,14 @@ const T = {
     atLeast: "At least",
     noRoute: "Kuru returned no route that would execute. Try again.",
     revertedTx: "The trade reverted on-chain:",
+    history: "Your trades",
+    seeHistory: "See your trades",
+    noTrades: "No trades yet.",
+    gasLabel: "Gas",
+    ofTrade: "of the trade",
+    revertedRow: "Reverted",
+    filledRow: "Filled",
+    amountUnknown: "amount not visible in the receipt",
   },
 } as const;
 
@@ -173,6 +198,56 @@ export default function SpotPage() {
   const [got, setGot] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
+  const [log, setLog] = useState<TradeRow[] | null>(null);
+  const [logSheet, setLogSheet] = useState(false);
+
+  const loadLog = useCallback(async () => {
+    if (!address) return;
+    try {
+      const r = await fetch(
+        `/api/cota/kuru/history?wallet=${address}&limit=20`,
+        { cache: "no-store" },
+      );
+      const j = (await r.json()) as { trades?: TradeRow[] };
+      setLog(r.ok && j.trades ? j.trades : []);
+    } catch {
+      // A log that cannot load is not a reason to block trading. It renders as
+      // "no trades yet" and the next load fixes it.
+      setLog([]);
+    }
+  }, [address]);
+
+  useEffect(() => {
+    // Deferred to a microtask, the same way the quote effect below does it:
+    // loadLog sets state, and calling it synchronously from an effect body is
+    // what react-hooks/set-state-in-effect exists to stop.
+    void Promise.resolve().then(loadLog);
+  }, [loadLog]);
+
+  /**
+   * Hand a hash to the server, which reads the receipt and records what really
+   * happened. Deliberately NOT told whether the trade succeeded or which venue
+   * it used — those come off the chain, so a bug on this screen cannot write a
+   * wrong history.
+   *
+   * Failures are swallowed. A trade already executed by the time this runs, and
+   * an unrecorded trade is a worse outcome than a missing row but a far better
+   * one than an error message about bookkeeping over a fill that worked.
+   */
+  const record = useCallback(
+    async (hash: string) => {
+      try {
+        await fetch("/api/cota/kuru/history", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ hash, side }),
+        });
+      } catch {
+        /* the trade stands either way */
+      }
+    },
+    [side],
+  );
 
   // The book, via our own route — exchange.kuru.io sends no CORS header.
   useEffect(() => {
@@ -397,6 +472,11 @@ export default function SpotPage() {
           // wrong, and the next quote may well land.
           setTx(hash);
           lastRevert = hash;
+          // Record the REVERT too. It cost the whole gas limit and delivered
+          // nothing, which is precisely the trade a hunter needs to find again
+          // — and a log of successes only would have hidden every one of the
+          // failures that took this screen a week to get right.
+          void record(hash);
           await new Promise((r) => setTimeout(r, 1200));
           continue;
         }
@@ -426,12 +506,15 @@ export default function SpotPage() {
       setGot(received);
       setPhase("done");
       void refresh();
+      // Record, then reload — sequential, because the row has to exist before
+      // the list that should contain it is fetched.
+      void record(sent).then(loadLog);
     } catch (e) {
       setApproving(false);
       setError(e instanceof Error ? e.message : "failed");
       setPhase("error");
     }
-  }, [address, input, side, t.noAmount, t.noRoute, t.revertedTx, refresh]);
+  }, [address, input, side, t.noAmount, t.noRoute, t.revertedTx, refresh, record, loadLog]);
 
   const fmt = (v: bigint | null, dp: number) =>
     v === null ? "—" : (Number(v) / 10 ** dp).toFixed(4);
@@ -501,6 +584,11 @@ export default function SpotPage() {
                     {t.seeBook}
                   </SheetOpener>
                 </>
+              )}
+              {log !== null && log.length > 0 && (
+                <SheetOpener onClick={() => setLogSheet(true)}>
+                  {t.seeHistory} ({log.length})
+                </SheetOpener>
               )}
             </Panel>
 
@@ -647,9 +735,7 @@ export default function SpotPage() {
                   <span className="text-ink-dim">
                     {l.sizeMon.toFixed(0)} MON
                   </span>
-                  <span className="text-ink-faint">
-                    {usd(l.notionalUsd)}
-                  </span>
+                  <span className="text-ink-faint">{usd(l.notionalUsd)}</span>
                 </div>
               ))}
             </div>
@@ -663,12 +749,109 @@ export default function SpotPage() {
                   <span className="text-ink-dim">
                     {l.sizeMon.toFixed(0)} MON
                   </span>
-                  <span className="text-ink-faint">
-                    {usd(l.notionalUsd)}
-                  </span>
+                  <span className="text-ink-faint">{usd(l.notionalUsd)}</span>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </Sheet>
+
+      {/* Your trades. Same Sheet as the book and for the same reason: a record
+          that must not be truncated away, and must not push the trade button
+          off the screen either. Every field here came off the chain — see
+          app/api/cota/kuru/history/route.ts. */}
+      <Sheet
+        open={logSheet}
+        onClose={() => setLogSheet(false)}
+        label={t.history}
+        closeLabel={lang === "es" ? "Cerrar" : "Close"}
+        heading={`${log?.length ?? 0}`}
+      >
+        {log === null || log.length === 0 ? (
+          <Note>{t.noTrades}</Note>
+        ) : (
+          <div className="space-y-3 font-mono text-xs">
+            {log.map((row) => {
+              const o = outcomeOf(row);
+              const bps = gasBps(row);
+              const gotText = receivedText(o);
+              return (
+                <div
+                  key={row.hash}
+                  className="border-hull-line space-y-1 border-b pb-3 last:border-0"
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className={row.ok ? "text-phosphor" : "text-alert"}>
+                      {row.ok ? t.filledRow : t.revertedRow}
+                    </span>
+                    <span className="text-ink-faint">
+                      {new Date(row.at).toLocaleDateString(
+                        lang === "es" ? "es-MX" : "en-US",
+                        { month: "short", day: "numeric" },
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="text-ink-dim">
+                      {row.side === "sell" ? t.sell : t.buy}
+                    </span>
+                    <span className="text-ink">
+                      {/* Only meaningful on a sell; a buy spends USDC and
+                          `valueWei` is zero. */}
+                      {row.side === "sell" ? `${spentMon(row)} MON` : "—"}
+                    </span>
+                  </div>
+
+                  {row.ok && (
+                    <div className="flex justify-between">
+                      <span className="text-ink-dim">{t.done}</span>
+                      <span className="text-ink">
+                        {/* Never "0". A MON buy pays out natively and emits no
+                            Transfer, so the receipt truly does not hold the
+                            amount — saying so beats inventing a zero. */}
+                        {gotText ?? (
+                          <span className="text-ink-faint">
+                            {t.amountUnknown}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between">
+                    <span className="text-ink-dim">{t.gasLabel}</span>
+                    <span className="text-ink">
+                      {gasMon(row)} MON
+                      {bps !== null && (
+                        <span className="text-ink-faint">
+                          {" "}
+                          · {bps.toFixed(bps >= 10 ? 0 : 1)} bps {t.ofTrade}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    {/* The venue this trade REALLY used, read from its own
+                        logs. The screen's pill is a prediction off the
+                        calldata; this is what happened. */}
+                    <Pill color={row.crossedOrderBook ? "#46ffbe" : "#47645d"}>
+                      {row.crossedOrderBook ? t.onBook : t.offBook}
+                    </Pill>
+                    <a
+                      href={`https://monadscan.com/tx/${row.hash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-phosphor shrink-0 underline"
+                    >
+                      {row.hash.slice(0, 10)}… →
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </Sheet>
