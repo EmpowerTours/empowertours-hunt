@@ -5,7 +5,11 @@ import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
 import { fromWei, toWei } from "@/lib/wei";
 import { isTierName, readTierPriceWei } from "@/lib/hunt/cohort";
-import { monthsAffordable, planRedemption } from "@/lib/hunt/redeem";
+import {
+  MAX_MONTHS_PER_REDEMPTION,
+  monthsAffordable,
+  planRedemption,
+} from "@/lib/hunt/redeem";
 
 // ---------------------------------------------------------------------------
 // Spending TURBO credit on months of a TurboCohort subscription.
@@ -22,19 +26,28 @@ import { monthsAffordable, planRedemption } from "@/lib/hunt/redeem";
 // and the player redeems (K-1) months they never earned. Same pattern as the
 // spawn budget and the credit ceiling.
 //
-// ## Settlement is a person, and that is forced by the chain
+// ## Settlement is separate, and one month at a time
 //
-// The deployed TurboCohort exposes only `payMonthly(uint8)`, which pays for
-// `msg.sender`. There is no pay-on-behalf function — verified against the
-// deployed bytecode, not just the ABI the app happens to use — so no treasury
-// can buy a membership for somebody else. A redemption therefore records a
-// debt the cohort owes the player, and an operator settles it. Pretending
-// otherwise would mean marking months granted that nobody granted.
+// This was written against TurboCohortV6, which exposed only
+// `payMonthly(uint8)` — it pays for `msg.sender`, so no treasury could buy a
+// membership for anybody else and an operator had to grant months by hand.
+// V7 (0x13a63A60…C1558F) adds `payMonthlyFor(address,uint8)` behind a settler
+// role, so settlement is now automated in admin/redemptions/[id]/settle.
+//
+// It is still a SEPARATE step. Redeeming debits credit inside a database
+// transaction; settling broadcasts transactions that can fail or stall. Fused,
+// a chain failure would have to roll back a committed debit. Apart, a failed
+// settlement leaves the row PENDING and retryable.
+//
+// And it is one month per redemption — see MAX_MONTHS_PER_REDEMPTION. The
+// cohort does `monthsPaid++` and refuses another payment for 25 days, so a
+// multi-month row could never be settled in one call.
 // ---------------------------------------------------------------------------
 
 const RedeemInput = z.object({
   tier: z.string().min(1).max(16),
-  months: z.number().int().min(1).max(12),
+  // Bound comes from the module that enforces it, so the two cannot drift.
+  months: z.number().int().min(1).max(MAX_MONTHS_PER_REDEMPTION),
 });
 
 export async function POST(req: Request) {

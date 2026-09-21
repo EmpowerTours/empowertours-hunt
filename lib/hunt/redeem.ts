@@ -26,6 +26,25 @@
 /** Mirrors the `CreditReason` enum in prisma/schema.prisma. */
 export const CREDIT_REASON_REDEMPTION = "TURBO_REDEMPTION";
 
+/**
+ * Whole months buyable in ONE redemption.
+ *
+ * One, because the cohort can only ever deliver one. `_recordPayment` does
+ * `m.monthsPaid++` and refuses a second payment inside `MIN_PAYMENT_INTERVAL`
+ * (25 days) with "too soon", so a three-month redemption cannot be settled in
+ * one go no matter who calls it. The route used to accept up to 12, which read
+ * sensibly next to MAX_PAYMENTS=12 but described a purchase the chain is
+ * designed never to make.
+ *
+ * Capping here costs the player nothing. Redeeming 3 months at once and
+ * redeeming 1 month three times 25 days apart deliver the SAME months on the
+ * SAME dates — the interval decides that, not the redemption. What the cap
+ * removes is the window where credit is already spent and the months are an
+ * IOU: unspent credit stays the player's, and `GET /api/redeem` already reports
+ * `monthsAffordable` so they can still see what it is worth.
+ */
+export const MAX_MONTHS_PER_REDEMPTION = 1;
+
 export interface DebitEntry {
   reason: typeof CREDIT_REASON_REDEMPTION;
   /** NEGATIVE. Redemption spends credit; the ledger stores signed amounts. */
@@ -38,6 +57,7 @@ export type RedeemRefusal =
   | "no_price"
   | "not_enough_credit"
   | "months_not_positive"
+  | "months_exceed_max"
   | "months_exceed_balance";
 
 export type RedeemPlan =
@@ -86,6 +106,11 @@ export function planRedemption(
   }
   if (!Number.isInteger(months) || months <= 0) {
     return { ok: false, reason: "months_not_positive" };
+  }
+  if (months > MAX_MONTHS_PER_REDEMPTION) {
+    // Checked before affordability on purpose: a request for more months than
+    // the cohort can deliver is wrong even when the player can afford them.
+    return { ok: false, reason: "months_exceed_max" };
   }
 
   const affordable = monthsAffordable(balanceWei, tierPriceWei);
@@ -144,12 +169,16 @@ export function explainRefusal(
       "Todavía no te alcanza para un mes completo. Sigue caminando.",
     months_not_positive: "Elige al menos un mes.",
     months_exceed_balance: "No te alcanza para tantos meses.",
+    months_exceed_max:
+      "Solo puedes canjear un mes a la vez; el cohorte entrega un mes cada 25 días.",
   };
   const EN: Record<RedeemRefusal, string> = {
     no_price: "Couldn't read the cohort price. Try again in a moment.",
     not_enough_credit: "Not enough for a full month yet. Keep walking.",
     months_not_positive: "Choose at least one month.",
     months_exceed_balance: "That's more months than your credit covers.",
+    months_exceed_max:
+      "One month at a time — the cohort delivers one month every 25 days.",
   };
   return lang === "es" ? ES[reason] : EN[reason];
 }

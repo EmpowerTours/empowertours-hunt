@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  CREDIT_REASON_REDEMPTION,
-  explainRefusal,
-  monthsAffordable,
-  planRedemption,
-  refundForVoid,
-} from "./redeem";
+import { CREDIT_REASON_REDEMPTION, explainRefusal, monthsAffordable, planRedemption, refundForVoid, MAX_MONTHS_PER_REDEMPTION } from "./redeem";
 
 const WEI = 10n ** 18n;
 /** 139 WMON — the Explorer price at the time of writing. Read from chain in production. */
@@ -29,11 +23,14 @@ describe("how many months a balance buys", () => {
 
 describe("planning a redemption", () => {
   it("charges exactly the price times the months", () => {
-    const plan = planRedemption(MONTH * 3n, MONTH, 2);
+    // Was months=2 before MAX_MONTHS_PER_REDEMPTION capped redemptions at one.
+    // The multiplication still exists for when the cap is raised; at 1 it is
+    // the identity, which is all the cohort can settle in one call.
+    const plan = planRedemption(MONTH * 3n, MONTH, MAX_MONTHS_PER_REDEMPTION);
     expect(plan.ok).toBe(true);
     if (!plan.ok) return;
-    expect(plan.costWei).toBe(MONTH * 2n);
-    expect(plan.months).toBe(2);
+    expect(plan.costWei).toBe(MONTH * BigInt(MAX_MONTHS_PER_REDEMPTION));
+    expect(plan.months).toBe(MAX_MONTHS_PER_REDEMPTION);
   });
 
   it("writes a NEGATIVE ledger amount and the resulting balance", () => {
@@ -46,7 +43,9 @@ describe("planning a redemption", () => {
   });
 
   it("allows spending the balance down to exactly zero", () => {
-    const plan = planRedemption(MONTH * 2n, MONTH, 2);
+    // A balance of exactly one month, redeemed, must land on zero rather than
+    // refusing at the boundary.
+    const plan = planRedemption(MONTH, MONTH, 1);
     expect(plan.ok).toBe(true);
     if (!plan.ok) return;
     expect(plan.debit.balanceAfterWei).toBe(0n);
@@ -61,10 +60,15 @@ describe("refusals a player can actually cause", () => {
     });
   });
 
-  it("refuses more months than the balance covers", () => {
+  it("reports months_exceed_max, not months_exceed_balance, while the cap is 1", () => {
+    // months_exceed_balance is UNREACHABLE at MAX_MONTHS_PER_REDEMPTION = 1:
+    // the only allowed request is 1 month, and "1 > affordable" implies
+    // affordable === 0, which not_enough_credit already caught. The branch is
+    // kept because raising the cap makes it live again — this test pins which
+    // refusal a player actually sees today.
     expect(planRedemption(MONTH, MONTH, 2)).toEqual({
       ok: false,
-      reason: "months_exceed_balance",
+      reason: "months_exceed_max",
     });
   });
 
@@ -131,5 +135,52 @@ describe("refusals are explained in both languages", () => {
       expect(en.length).toBeGreaterThan(0);
       expect(es).not.toBe(en);
     }
+  });
+});
+
+describe("MAX_MONTHS_PER_REDEMPTION", () => {
+  const PRICE = 139n * 10n ** 18n;
+
+  it("is one, because the cohort delivers one month per 25 days", () => {
+    // Not a style preference: TurboCohortV7._recordPayment does monthsPaid++
+    // and reverts "too soon" inside MIN_PAYMENT_INTERVAL. A larger value here
+    // would let a player buy months that can never be settled in one call.
+    expect(MAX_MONTHS_PER_REDEMPTION).toBe(1);
+  });
+
+  it("refuses two months even when the balance easily covers them", () => {
+    const plan = planRedemption(PRICE * 10n, PRICE, 2);
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.reason).toBe("months_exceed_max");
+  });
+
+  it("refuses the old upper bound of twelve", () => {
+    const plan = planRedemption(PRICE * 100n, PRICE, 12);
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.reason).toBe("months_exceed_max");
+  });
+
+  it("still allows one month", () => {
+    const plan = planRedemption(PRICE * 3n, PRICE, 1);
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.months).toBe(1);
+    expect(plan.costWei).toBe(PRICE);
+  });
+
+  it("prefers months_exceed_max over months_exceed_balance", () => {
+    // Both are true for this input. The cap is the more fundamental refusal:
+    // topping up the balance would not make a 3-month redemption settleable.
+    const plan = planRedemption(0n, PRICE, 3);
+    expect(plan.ok).toBe(false);
+    if (plan.ok) return;
+    expect(plan.reason).toBe("months_exceed_max");
+  });
+
+  it("explains the refusal in both languages", () => {
+    expect(explainRefusal("months_exceed_max", "en")).toMatch(/one month at a time/i);
+    expect(explainRefusal("months_exceed_max", "es")).toMatch(/un mes a la vez/i);
   });
 });
