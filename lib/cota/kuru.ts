@@ -187,11 +187,22 @@ export function parseQuote(body: unknown): KuruQuote {
   ) {
     throw new Error("kuru: quote response missing output/minOut/transaction");
   }
-  const calldata = data.toLowerCase() as `0x${string}`;
+  // KURU RETURNS CALLDATA WITHOUT THE 0x PREFIX. `to` has one; `data` does
+  // not. Casting the raw string to `0x${string}` type-checks and is a lie —
+  // viem then sends different bytes than Kuru built, and the transaction
+  // reverts with EMPTY revert data at any gas limit and against any block,
+  // which looks like everything except a malformed payload.
+  //
+  // Cost a real 5 MON trade and a long hunt through gas limits, slippage and
+  // asynchronous execution before the calldata was compared byte for byte
+  // against a fresh quote: 644 bytes sent against 420 quoted, and a selector of
+  // 0x1e703000 against ce1e7030. A prefix, silently.
+  const raw = data.toLowerCase();
+  const calldata = (raw.startsWith("0x") ? raw : `0x${raw}`) as `0x${string}`;
   return {
     output: BigInt(b.output),
     minOut: BigInt(b.minOut),
-    to: tx.to as `0x${string}`,
+    to: normaliseAddress(tx.to),
     value: BigInt((tx.value as string | undefined) ?? "0"),
     calldata,
     usesOrderBook: usesOrderBook(calldata),
@@ -206,6 +217,15 @@ export function parseQuote(body: unknown): KuruQuote {
  * otherwise turn "our trades execute on Kuru's order book" into a false claim
  * with nothing on our side noticing.
  */
+/**
+ * `to` arrives prefixed today, but nothing in their schema promises it and the
+ * calldata field already proved that assumption wrong once.
+ */
+function normaliseAddress(a: string): `0x${string}` {
+  const low = a.toLowerCase();
+  return (low.startsWith("0x") ? low : `0x${low}`) as `0x${string}`;
+}
+
 export function usesOrderBook(calldata: string): boolean {
   return calldata
     .toLowerCase()

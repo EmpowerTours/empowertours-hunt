@@ -59,6 +59,46 @@ describe("usesOrderBook", () => {
   });
 });
 
+describe("parseQuote — the 0x prefix", () => {
+  it("adds the prefix Kuru omits from calldata", () => {
+    // Kuru returns `to` WITH 0x and `data` WITHOUT it. Verified against the
+    // live API. Passing the raw string to viem sends different bytes than Kuru
+    // built and the transaction reverts with EMPTY revert data — at any gas
+    // limit, against any block — which resembles every cause except the real
+    // one. This cost a live 5 MON trade.
+    const q = parseQuote({
+      output: "124676",
+      minOut: "123429",
+      transaction: {
+        to: "0xb3e6778480b2E488385E8205eA05E20060B813cb",
+        value: "5000000000000000000",
+        data: `ce1e7030${MARKET}`,
+      },
+    });
+    expect(q.calldata.startsWith("0x")).toBe(true);
+    expect(q.calldata).toBe(`0xce1e7030${MARKET}`);
+  });
+
+  it("does not double-prefix one that already has it", () => {
+    const q = parseQuote({
+      output: "1",
+      minOut: "1",
+      transaction: { to: "0xabc", value: "0", data: `0xce1e7030${MARKET}` },
+    });
+    expect(q.calldata).toBe(`0xce1e7030${MARKET}`);
+    expect(q.calldata.startsWith("0x0x")).toBe(false);
+  });
+
+  it("normalises `to` as well, since the schema promises nothing", () => {
+    const q = parseQuote({
+      output: "1",
+      minOut: "1",
+      transaction: { to: "B3E6778480B2E488385E8205EA05E20060B813CB", value: "0", data: "0xab" },
+    });
+    expect(q.to).toBe("0xb3e6778480b2e488385e8205ea05e20060b813cb");
+  });
+});
+
 describe("parseQuote", () => {
   it("reads the numbers as bigint and reports the venue", () => {
     const q = parseQuote(body(`0x00${MARKET}ff`));
