@@ -153,7 +153,17 @@ export default function CotaPage() {
   // Practice vs live, chosen UP FRONT. Both sign the same leash; this only
   // decides where the leash is used — a funded account shouldn't have to sign,
   // then dig past practice to find the live door.
-  const [mode, setMode] = useState<"practice" | "live">("practice");
+  // Live by DEFAULT. Practice used to be the default behind two half-page
+  // buttons, which meant a hunter arriving at Cota was shown a demo and the
+  // real product was hidden behind a toggle they had to find. The whole live
+  // ladder -- swap, bridge, deposit, trade, risk -- rendered only after a tap
+  // nobody had a reason to make.
+  //
+  // Safe to default here because live mode is already gated where it counts: a
+  // warn Note, a $3 minimum notional, and a sign button disabled under it. And
+  // practice is not hidden -- it has its own page, its own door in the live
+  // CTA ("Or practice first"), and the header toggle below.
+  const [mode, setMode] = useState<"practice" | "live">("live");
 
   useEffect(() => {
     let live = true;
@@ -320,42 +330,44 @@ export default function CotaPage() {
           <h1 className="text-ink text-2xl font-semibold">{t("title")}</h1>
           <p className="text-ink-dim mt-1 text-sm leading-snug">{t("lede")}</p>
         </div>
-        <LanguageSwitch className="shrink-0" />
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <LanguageSwitch />
+          {/* Practice lives here now: reachable in one tap, but no longer
+              occupying the top of the page as though choosing a demo were the
+              first decision a hunter has to make. Colour carries the state --
+              phosphor means real money. */}
+          <div
+            role="group"
+            aria-label={lang === "es" ? "Modo" : "Mode"}
+            className="border-hull-line inline-flex overflow-hidden rounded-full border"
+          >
+            {(["live", "practice"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                aria-current={mode === m ? "true" : undefined}
+                className={`px-3 py-1.5 font-mono text-xs tracking-wide transition-colors ${
+                  mode === m
+                    ? m === "live"
+                      ? "bg-phosphor text-void"
+                      : "bg-ink text-void"
+                    : "text-ink-dim hover:text-ink"
+                }`}
+              >
+                {m === "live"
+                  ? lang === "es"
+                    ? "EN VIVO"
+                    : "LIVE"
+                  : lang === "es"
+                    ? "PRÁCTICA"
+                    : "PRACTICE"}
+              </button>
+            ))}
+          </div>
+        </div>
       </header>
 
-      {/* The choice, up front — not buried behind signing. */}
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => setMode("practice")}
-          className={`flex min-h-16 flex-col items-center justify-center rounded-2xl border-2 px-3 transition-colors ${
-            mode === "practice"
-              ? "border-phosphor bg-phosphor/10 text-ink"
-              : "border-hull-line text-ink-dim"
-          }`}
-        >
-          <span className="text-base font-semibold">
-            {lang === "es" ? "Práctica" : "Practice"}
-          </span>
-          <span className="text-xs">{lang === "es" ? "gratis" : "free"}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("live")}
-          className={`flex min-h-16 flex-col items-center justify-center rounded-2xl border-2 px-3 transition-colors ${
-            mode === "live"
-              ? "border-phosphor bg-phosphor/10 text-ink"
-              : "border-hull-line text-ink-dim"
-          }`}
-        >
-          <span className="text-base font-semibold">
-            {lang === "es" ? "En vivo" : "Trade live"}
-          </span>
-          <span className="text-xs">
-            {lang === "es" ? "con AUSD" : "needs AUSD"}
-          </span>
-        </button>
-      </div>
       <Note tone={mode === "live" ? "warn" : "info"}>
         {mode === "live"
           ? lang === "es"
