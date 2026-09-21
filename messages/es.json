@@ -95,7 +95,7 @@
     "missingBody": "<code>GET /api/me</code> todavía no existe, así que esta pantalla no tiene nada verídico que mostrar. A propósito no muestra nada en lugar de un cero que no puede respaldar: un saldo de «0» que no ganaste es peor que ningún saldo.",
     "signedInAs": "Sesión iniciada como",
     "notSignedInValue": "sin sesión",
-    "creditExplainer": "El crédito se gana al encontrar cachés y se muestra aquí una vez que el registro esté disponible. Se expresa en WMON-wei sobre un mes Explorer de {month} WMON.",
+    "creditExplainer": "El crédito se gana al encontrar cachés y se muestra aquí una vez que el registro esté disponible. Se expresa en WMON-wei sobre el precio actual del mes Explorer.",
     "signedOutTitle": "Sin sesión",
     "signedOutBody": "Inicia sesión para ver tu crédito. Los saldos son por cartera.",
     "errorTitle": "No se pudo cargar tu saldo",
@@ -126,7 +126,8 @@
     "editions": "Tu colección",
     "editionsSeeAll": "Ver las {count} obras",
     "editionsCount": "{count, plural, one {# obra} other {# obras}}",
-    "editionFree": "gratis"
+    "editionFree": "gratis",
+    "creditNotePriceUnknown": "El crédito es un descuento en la suscripción de la cohorte TURBO. No pudimos leer el precio del mes en este momento, así que no mostramos cuánto alcanza."
   },
   "huntList": {
     "pageTitle": "Búsquedas",
@@ -225,7 +226,8 @@
     "stillHidden": "{count, plural, one {# caché sigue oculto} other {# cachés siguen ocultos}}",
     "lastOne": "Ese era el último.",
     "back": "VOLVER AL RADAR",
-    "viewProgress": "Ver progreso"
+    "viewProgress": "Ver progreso",
+    "monthNotePriceUnknown": "El crédito es un descuento en la suscripción de la cohorte TURBO — no es MON retirable. No pudimos leer el precio del mes en este momento."
   },
   "fix": {
     "titleDenied": "Ubicación bloqueada",

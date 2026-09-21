@@ -12,6 +12,7 @@ import {
   type RejectReason,
 } from "@/lib/hunt/validator";
 import { creditForFind } from "@/lib/hunt/credit";
+import { readTierPriceWei } from "@/lib/hunt/cohort";
 
 // THIS ROUTE IS A LOCATION ORACLE UNLESS IT IS CAREFUL.
 //
@@ -248,6 +249,17 @@ export async function POST(
 
             // CEILING 2 — hunt credit budget. Same CAS shape.
             //
+            // `budgetCreditWei = 0` means ZERO, not "unlimited". It used to
+            // mean unlimited, on the reasoning that credit was a discount
+            // rather than cash — that stopped being true when redemption
+            // started paying TurboCohort in real WMON from the settler wallet.
+            // An unfunded hunt now issues nothing instead of minting an
+            // unbounded claim on the treasury, which is what the MON path has
+            // always done (`budgetMonWei > 0` is required there too).
+            //
+            // A zero-reward find is exempt: a landmark cache that pays nothing
+            // must still be findable on a hunt with no credit budget at all.
+            //
             // ORDER IS LOAD-BEARING, and the reason is no longer just "cheapest
             // refusal first". The Hunt row is the one row EVERY claim and EVERY
             // collect in this hunt must touch; PlayerHunt rows are per-player. So
@@ -264,8 +276,10 @@ export async function POST(
              SET "spentCreditWei" = "spentCreditWei" + ${rewardParam}::numeric,
                  "updatedAt" = NOW()
            WHERE "id" = ${huntId}
-             AND ("budgetCreditWei" = 0
-                  OR "spentCreditWei" + ${rewardParam}::numeric <= "budgetCreditWei")`;
+             AND (${rewardParam}::numeric = 0
+                  OR ("budgetCreditWei" > 0
+                      AND "spentCreditWei" + ${rewardParam}::numeric
+                          <= "budgetCreditWei"))`;
             if (funded === 0)
               throw new CeilingRejected("hunt_budget_exhausted");
 
@@ -358,6 +372,10 @@ export async function POST(
         },
       );
 
+      // Live cohort price, so the reveal draws its ladder against what a month
+      // actually costs rather than a constant that drifts.
+      const turboMonthWei = await readTierPriceWei("EXPLORER");
+
       return NextResponse.json({
         found: true,
         findId: committed.find.id,
@@ -368,6 +386,7 @@ export async function POST(
           photoCid: cache.photoCid,
         },
         rewardCreditWei: rewardParam,
+        turboMonthWei: turboMonthWei === null ? null : turboMonthWei.toString(),
         creditBalanceWei:
           committed.balanceAfterWei === null
             ? null

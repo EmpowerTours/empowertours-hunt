@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, http } from "viem";
 import { prisma } from "@/lib/db/prisma";
+import { readTierPriceWei } from "@/lib/hunt/cohort";
 import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
 import { monad } from "@/lib/monad";
@@ -116,6 +117,11 @@ export async function GET(req: Request) {
       // Stays null. See the note above about null versus zero.
     }
 
+    // The cohort can change its price on chain, so the ladder the player sees
+    // has to be read, not assumed. Null when the read failed — the client says
+    // "we could not ask" rather than drawing a bar against a guess.
+    const turboMonthWei = await readTierPriceWei("EXPLORER");
+
     return NextResponse.json({
       walletAddress: row.walletAddress,
       /** What the chain says, or null when it could not be asked. */
@@ -125,6 +131,7 @@ export async function GET(req: Request) {
       /** Owed and not yet swept — usually minutes, not an error. */
       pendingMonWei: (pending._sum.amountMonWei ?? 0).toString(),
       creditBalanceWei: row.creditBalanceWei.toFixed(0),
+      turboMonthWei: turboMonthWei === null ? null : turboMonthWei.toString(),
       findCount,
       spawnCount,
       turboUsername: row.turboUsername,

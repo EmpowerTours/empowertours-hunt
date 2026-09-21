@@ -107,6 +107,12 @@ export interface ClaimFound {
   cache: CacheReveal;
   /** TURBO credit awarded, WMON-wei as a decimal string. Never a number. */
   rewardCreditWei: string;
+  /**
+   * Live price of one TURBO month at the moment of the find, WMON-wei string.
+   * Null when the chain could not be read — show no percentage rather than one
+   * computed against a guess.
+   */
+  turboMonthWei: string | null;
   /** Running balance after this find, or null if the server did not say. */
   creditBalanceWei: string | null;
   /** THIS PLAYER's remaining caches — not a hunt-wide statistic. */
@@ -267,6 +273,13 @@ export interface PlayerProgress {
   walletBalanceWei?: string | null;
   /** TURBO credit balance, WMON-wei decimal string. Not withdrawable. */
   creditBalanceWei: string;
+  /**
+   * Live price of one TURBO Explorer month, WMON-wei decimal string.
+   *
+   * Read from the cohort per request. Null means the chain could not be read —
+   * NOT that a month is free. Render "we could not ask", never a percentage.
+   */
+  turboMonthWei?: string | null;
   /** Native MON collected from spawns, wei decimal string. */
   collectedMonWei: string;
   /** MON earned but not yet settled on chain. */

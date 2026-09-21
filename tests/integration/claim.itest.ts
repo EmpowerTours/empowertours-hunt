@@ -151,10 +151,7 @@ describe("CEILING 1 — the per-player find cap", () => {
     // something that never happened.
     const hunt = await makeHunt();
     const actor = await makePlayer(11);
-    await Promise.all([
-      makeCache(hunt.id, CREDIT),
-      makeCache(hunt.id, CREDIT),
-    ]);
+    await Promise.all([makeCache(hunt.id, CREDIT), makeCache(hunt.id, CREDIT)]);
 
     const results = await Promise.all([
       post({ huntId: hunt.id, actor, ip: "10.10.0.1" }),
@@ -163,9 +160,9 @@ describe("CEILING 1 — the per-player find cap", () => {
 
     // Neither may be refused as already_found: they are different caches, and
     // this player had no counter row when both started.
-    expect(
-      results.filter((r) => r.body.reason === "already_found"),
-    ).toEqual([]);
+    expect(results.filter((r) => r.body.reason === "already_found")).toEqual(
+      [],
+    );
 
     const rows = await db.playerHunt.count({
       where: { huntId: hunt.id, playerId: actor.player.id },
@@ -212,20 +209,49 @@ describe("CEILING 2 — the hunt credit budget", () => {
     expect(BigInt((ledger._sum.amountWei ?? 0).toString())).toBe(spent);
   });
 
-  it("treats budgetCreditWei = 0 as no ceiling, unlike the MON path", async () => {
-    // Deliberately asymmetric with budgetMonWei, where 0 pays nothing. Credit
-    // is a discount rather than cash, so an unconfigured credit budget is
-    // "unlimited" while an unconfigured MON budget is "nothing". Anyone tidying
-    // these two into consistency would turn one of them into a money bug.
+  it("pays nothing when budgetCreditWei = 0, same as the MON path", async () => {
+    // This assertion used to be the opposite, and the comment above it called
+    // the asymmetry deliberate: credit was a discount, not cash, so an
+    // unconfigured credit budget meant "unlimited". Redemption now pays
+    // TurboCohort in real WMON from the settler wallet, and budgetCreditWei
+    // defaults to 0 — so every hunt created without an explicit budget could
+    // issue an unbounded claim on that wallet. 0 now means zero on both paths.
     const hunt = await makeHunt({ budgetCreditWei: "0" } as never);
     const actor = await makePlayer(30);
     await makeCache(hunt.id, CREDIT);
 
     const res = await post({ huntId: hunt.id, actor, ip: "10.12.0.1" });
 
+    expect(res.body.found).toBe(false);
+    // The body stays opaque on purpose — a distinguishable refusal here would
+    // confirm the player is standing on a cache. The real reason is in the
+    // audit row, which is where every other ceiling is asserted too.
+    const attempt = await db.claimAttempt.findFirstOrThrow({
+      where: { playerId: actor.player.id },
+      orderBy: { attemptedAt: "desc" },
+    });
+    expect(attempt.accepted).toBe(false);
+    expect(attempt.reason).toBe("hunt_budget_exhausted");
+
+    const after = await db.hunt.findUniqueOrThrow({ where: { id: hunt.id } });
+    expect(BigInt(after.spentCreditWei.toFixed(0))).toBe(0n);
+    expect(await db.find.count({ where: { huntId: hunt.id } })).toBe(0);
+    expect(await db.creditLedger.count()).toBe(0);
+  });
+
+  it("still lets a zero-reward cache be found on an unfunded hunt", async () => {
+    // The exemption. A landmark cache pays no credit, and refusing it because
+    // the hunt funds no credit would break every spawn-only hunt — where every
+    // cache is planted with rewardCreditWei 0.
+    const hunt = await makeHunt({ budgetCreditWei: "0" } as never);
+    const actor = await makePlayer(31);
+    await makeCache(hunt.id, 0n);
+
+    const res = await post({ huntId: hunt.id, actor, ip: "10.12.0.2" });
+
     expect(res.body.found).toBe(true);
     const after = await db.hunt.findUniqueOrThrow({ where: { id: hunt.id } });
-    expect(BigInt(after.spentCreditWei.toFixed(0))).toBe(CREDIT);
+    expect(BigInt(after.spentCreditWei.toFixed(0))).toBe(0n);
   });
 });
 

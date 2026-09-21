@@ -302,6 +302,7 @@ export async function submitClaim(
     },
     rewardCreditWei: str(body.rewardCreditWei) ?? "0",
     creditBalanceWei: str(body.creditBalanceWei),
+    turboMonthWei: str(body.turboMonthWei) ?? null,
     remaining: num(body.remaining) ?? 0,
   };
 }
@@ -489,6 +490,9 @@ export async function fetchProgress(
     // Deliberately NOT defaulted to "0" — see PlayerProgress.
     walletBalanceWei: str(v.walletBalanceWei),
     creditBalanceWei: str(v.creditBalanceWei) ?? "0",
+    // Null is preserved, never defaulted: "we could not read the price" and
+    // "a month is free" must not render the same.
+    turboMonthWei: str(v.turboMonthWei) ?? null,
     collectedMonWei: str(v.collectedMonWei) ?? "0",
     pendingMonWei: str(v.pendingMonWei) ?? "0",
     findCount: num(v.findCount) ?? 0,

@@ -3,13 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { Button, LinkButton } from "@/components/ui/primitives";
-import {
-  TURBO_MONTH_WEI,
-  formatMon,
-  ipfsUrl,
-  turboProgressPercent,
-  weiOrZero,
-} from "./format";
+import { formatMon, ipfsUrl, turboProgressPercent, weiOrZero } from "./format";
 import type { ClaimFound } from "./types";
 
 /* ---------------------------------------------------------------------------
@@ -45,7 +39,13 @@ export function FindReveal({
   }, [onDismiss]);
 
   const credit = weiOrZero(find.rewardCreditWei);
-  const percentOfMonth = turboProgressPercent(credit);
+  // Live cohort price, read on the claim. Null means the chain did not answer
+  // — show the credit, drop the comparison, never invent a denominator.
+  const monthWei = weiOrZero(find.turboMonthWei);
+  const priceKnown = monthWei > 0n;
+  const percentOfMonth = priceKnown
+    ? turboProgressPercent(credit, monthWei)
+    : 0;
 
   return (
     <div
@@ -103,17 +103,21 @@ export function FindReveal({
           </div>
           <div className="text-ink-dim mt-1 font-mono text-sm">WMON</div>
 
-          <div className="bg-hull-2 mt-4 h-2 w-full overflow-hidden rounded-full">
-            <div
-              className="bg-phosphor h-full rounded-full"
-              style={{ width: `${Math.max(percentOfMonth, 1.5)}%` }}
-            />
-          </div>
+          {priceKnown ? (
+            <div className="bg-hull-2 mt-4 h-2 w-full overflow-hidden rounded-full">
+              <div
+                className="bg-phosphor h-full rounded-full"
+                style={{ width: `${Math.max(percentOfMonth, 1.5)}%` }}
+              />
+            </div>
+          ) : null}
           <p className="text-ink-faint mt-2 text-xs leading-snug">
-            {t("monthNote", {
-              percent: percentOfMonth.toFixed(1),
-              month: formatMon(TURBO_MONTH_WEI, 0),
-            })}
+            {priceKnown
+              ? t("monthNote", {
+                  percent: percentOfMonth.toFixed(1),
+                  month: formatMon(monthWei, 0),
+                })
+              : t("monthNotePriceUnknown")}
           </p>
         </div>
 

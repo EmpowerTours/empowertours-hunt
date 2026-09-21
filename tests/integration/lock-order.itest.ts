@@ -112,7 +112,12 @@ describe("claim and collect take their shared rows in the same order", () => {
     async () => {
       const before = await deadlockCount();
       const hunt = await makeHunt({
-        budgetCreditWei: "0",
+        // NOT "0". budgetCreditWei = 0 now means zero, so a claim against it
+        // is refused by a conditional UPDATE that matches no row — and a
+        // matched-nothing UPDATE never takes the Hunt row lock. This test
+        // would then pass without ever exercising the ordering it exists to
+        // guard. Fund it well past what 240 claims can spend.
+        budgetCreditWei: (CREDIT * 10_000n).toString(),
         budgetMonWei: (DROP * 1000n).toString(),
         spawnDailyCapWeiPerPlayer: (DROP * 1000n).toString(),
       } as never);

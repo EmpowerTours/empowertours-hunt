@@ -95,7 +95,7 @@
     "missingBody": "<code>GET /api/me</code> does not exist yet, so this screen has nothing truthful to show. It deliberately shows nothing rather than a zero it cannot vouch for — a balance of “0” you have not earned is worse than no balance at all.",
     "signedInAs": "Signed in as",
     "notSignedInValue": "not signed in",
-    "creditExplainer": "Credit is earned from cache finds and shown here once the ledger is exposed. It is denominated in WMON-wei against a {month} WMON Explorer month.",
+    "creditExplainer": "Credit is earned from cache finds and shown here once the ledger is exposed. It is denominated in WMON-wei against the current Explorer month price.",
     "signedOutTitle": "Not signed in",
     "signedOutBody": "Sign in to see your credit. Balances are per wallet.",
     "errorTitle": "Could not load your balance",
@@ -126,7 +126,8 @@
     "editions": "Your collection",
     "editionsSeeAll": "See all {count} works",
     "editionsCount": "{count, plural, one {# work} other {# works}}",
-    "editionFree": "free"
+    "editionFree": "free",
+    "creditNotePriceUnknown": "Credit is a discount on the TURBO cohort subscription. We could not read this month's price just now, so we are not showing how far this goes."
   },
   "huntList": {
     "pageTitle": "Hunts",
@@ -225,7 +226,8 @@
     "stillHidden": "{count, plural, one {# cache still hidden} other {# caches still hidden}}",
     "lastOne": "That was the last one.",
     "back": "BACK TO THE SCOPE",
-    "viewProgress": "View progress"
+    "viewProgress": "View progress",
+    "monthNotePriceUnknown": "Credit is a discount on the TURBO cohort subscription — it is not withdrawable MON. We could not read this month's price just now."
   },
   "fix": {
     "titleDenied": "Location blocked",

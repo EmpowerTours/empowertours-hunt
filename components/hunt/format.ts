@@ -13,9 +13,6 @@
 
 const WEI_PER_MON = 10n ** 18n;
 
-/** One month of TURBO Explorer, in WMON-wei. The credit ladder's unit. */
-export const TURBO_MONTH_WEI = 139n * WEI_PER_MON;
-
 /**
  * Parse a decimal wei string. Returns null for anything that is not a plain
  * base-10 integer — "1e18", "0x10", "" and " 5 " are all rejected rather than
@@ -65,13 +62,25 @@ export function formatMon(value: bigint, maxDecimals = 4): string {
   return negative ? `-${out}` : out;
 }
 
-/** Percentage of a TURBO month covered by a credit balance, 0-100, one dp. */
-export function turboProgressPercent(creditWei: bigint): number {
+/**
+ * Percentage of a TURBO month covered by a credit balance, 0-100, one dp.
+ *
+ * `monthWei` is the LIVE tier price. It is a required argument rather than a
+ * module constant because the price is on-chain state — reading it from a
+ * constant is how the bar came to be wrong by 139,000x.
+ */
+export function turboProgressPercent(
+  creditWei: bigint,
+  monthWei: bigint,
+): number {
+  // A non-positive month means the price could not be read. Zero is the honest
+  // answer: any other number would be invented.
+  if (monthWei <= 0n) return 0;
   if (creditWei <= 0n) return 0;
-  if (creditWei >= TURBO_MONTH_WEI) return 100;
+  if (creditWei >= monthWei) return 100;
   // Scale by 1000 in integer space, then divide once in float. The bigint never
   // exceeds Number.MAX_SAFE_INTEGER after the division.
-  return Number((creditWei * 1000n) / TURBO_MONTH_WEI) / 10;
+  return Number((creditWei * 1000n) / monthWei) / 10;
 }
 
 /* --- Distances and clocks ------------------------------------------------- */

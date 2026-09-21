@@ -5,7 +5,6 @@ import { useTranslations } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { ApiError, fetchProgress } from "@/components/hunt/client";
 import {
-  TURBO_MONTH_WEI,
   formatMon,
   shortAddress,
   turboProgressPercent,
@@ -89,8 +88,10 @@ export function ProgressPanel() {
               ? shortAddress(auth.walletAddress)
               : t("notSignedInValue")}
           </div>
+          {/* No price here on purpose: this branch renders because the
+              progress endpoint is unavailable, so there is nothing to quote. */}
           <p className="text-ink-faint mt-2 text-xs leading-snug">
-            {t("creditExplainer", { month: formatMon(TURBO_MONTH_WEI, 0) })}
+            {t("creditExplainer")}
           </p>
         </Panel>
       </div>
@@ -111,8 +112,12 @@ export function ProgressPanel() {
 
   const { progress } = state;
   const credit = weiOrZero(progress.creditBalanceWei);
-  const percent = turboProgressPercent(credit);
-  const remaining = TURBO_MONTH_WEI > credit ? TURBO_MONTH_WEI - credit : 0n;
+  // The live cohort price. Null means the chain could not be read this request
+  // — fall back only so the copy renders, and do not draw a bar from a guess.
+  const monthWei = weiOrZero(progress.turboMonthWei ?? null);
+  const priceKnown = monthWei > 0n;
+  const percent = priceKnown ? turboProgressPercent(credit, monthWei) : 0;
+  const remaining = priceKnown && monthWei > credit ? monthWei - credit : 0n;
 
   return (
     <div className="space-y-4">
@@ -134,28 +139,38 @@ export function ProgressPanel() {
           </div>
           <div className="text-ink-dim mt-1 font-mono text-sm">WMON</div>
 
-          <div className="bg-hull-2 mt-4 h-3 w-full overflow-hidden rounded-full">
-            <div
-              className="bg-phosphor h-full rounded-full transition-[width]"
-              style={{ width: `${percent}%` }}
-              role="progressbar"
-              aria-valuenow={Math.round(percent)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={t("progressAria")}
-            />
-          </div>
+          {/* No bar and no percentage when the cohort price could not be
+              read. A bar drawn against a guessed price is worse than no bar:
+              it was drawn against a hardcoded 139 WMON while the deployed
+              price was something else entirely, and it read 0.0%. */}
+          {priceKnown ? (
+            <>
+              <div className="bg-hull-2 mt-4 h-3 w-full overflow-hidden rounded-full">
+                <div
+                  className="bg-phosphor h-full rounded-full transition-[width]"
+                  style={{ width: `${percent}%` }}
+                  role="progressbar"
+                  aria-valuenow={Math.round(percent)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={t("progressAria")}
+                />
+              </div>
 
-          <p className="text-ink mt-2 text-sm">
-            {percent >= 100
-              ? t("coversMonth")
-              : t("percentOfMonth", {
-                  percent: percent.toFixed(1),
-                  remaining: formatMon(remaining, 2),
-                })}
-          </p>
+              <p className="text-ink mt-2 text-sm">
+                {percent >= 100
+                  ? t("coversMonth")
+                  : t("percentOfMonth", {
+                      percent: percent.toFixed(1),
+                      remaining: formatMon(remaining, 2),
+                    })}
+              </p>
+            </>
+          ) : null}
           <p className="text-ink-faint mt-2 text-xs leading-snug">
-            {t("creditNote", { month: formatMon(TURBO_MONTH_WEI, 0) })}
+            {priceKnown
+              ? t("creditNote", { month: formatMon(monthWei, 0) })
+              : t("creditNotePriceUnknown")}
           </p>
         </Panel>
       ) : null}

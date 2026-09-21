@@ -56,7 +56,11 @@ function Bar({
         />
       </div>
       <div className="mt-0.5 font-mono text-[10px] tabular-nums text-slate-500">
-        {pct === null ? "no budget set" : `${pct.toFixed(1)}% consumed`}
+        {/* "no budget set" was ambiguous while a zero credit budget meant
+            unlimited. It means zero on both paths now, so say so. */}
+        {pct === null
+          ? "no budget — pays nothing"
+          : `${pct.toFixed(1)}% consumed`}
       </div>
     </div>
   );
