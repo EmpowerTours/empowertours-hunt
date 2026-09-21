@@ -316,7 +316,25 @@ export function placeableFor(
   held: ReadonlySet<string>,
   balanceWei: bigint,
   gasBufferWei: bigint,
+  opts: {
+    /**
+     * Whether affordability filters at all.
+     *
+     * Defaults to true, which is both the original behaviour and the
+     * measured one. False shows the whole catalogue and leaves the card to
+     * say what is missing — the right trade the moment the filter empties
+     * the pool, because no card is strictly worse than a card they cannot
+     * tap yet.
+     *
+     * It is NOT a money gate either way. The hunter signs the payment from
+     * their own wallet, so an unaffordable purchase throws at signing with
+     * nothing moved. The gate that protects real money is the relayer's
+     * capacity, applied by the caller and unaffected by this.
+     */
+    requireAffordable?: boolean;
+  } = {},
 ): EditionOffer[] {
+  const requireAffordable = opts.requireAffordable !== false;
   return catalogue.filter((o) => {
     // Key must match EditionClaim's unique index, or a hunter is offered
     // something they already own — or barred from a tier they do not.
@@ -325,6 +343,12 @@ export function placeableFor(
     // relayer signs both transactions. So balance never excludes it, which is
     // what lets a hunter with zero MON still be given something.
     if (o.terms === "FREE") return true;
+    if (!requireAffordable) {
+      // Still not a blanket yes: quotedPrice throws on a PURCHASE with no
+      // usable price, and such a work must never reach a hunter as free.
+      quotedPrice(o);
+      return true;
+    }
     return affordableWithGas(balanceWei, quotedPrice(o), gasBufferWei).ok;
   });
 }

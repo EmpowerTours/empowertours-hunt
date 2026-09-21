@@ -74,6 +74,7 @@ export interface HuntWriteInput {
   editionTtlSeconds?: number;
   editionCooldownSeconds?: number;
   editionFirstDelaySeconds?: number;
+  editionRequireAffordable?: boolean;
   budgetMonWei?: Prisma.Decimal;
   spawnMinWei?: Prisma.Decimal;
   spawnMaxWei?: Prisma.Decimal;
@@ -191,6 +192,15 @@ export function parseHuntInput(
   );
   if (editionFirstDelaySeconds !== undefined)
     out.editionFirstDelaySeconds = editionFirstDelaySeconds;
+  // Off shows the whole catalogue minus what the hunter already owns, and
+  // leaves the card to name the shortfall. Not a money gate — see the column
+  // comment in prisma/schema.prisma.
+  const editionRequireAffordable = optionalBool(
+    body,
+    "editionRequireAffordable",
+  );
+  if (editionRequireAffordable !== undefined)
+    out.editionRequireAffordable = editionRequireAffordable;
 
   const budgetMonWei = weiField(body, "budgetMon");
   if (budgetMonWei !== undefined) out.budgetMonWei = budgetMonWei;

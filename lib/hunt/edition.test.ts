@@ -415,3 +415,98 @@ describe("leastRecentlyOffered", () => {
     expect(draw.offer.masterId).toBe("10");
   });
 });
+
+describe("placeableFor without the affordability filter", () => {
+  const o = (
+    masterId: string,
+    priceWei: bigint | null,
+    terms: "FREE" | "PURCHASE" = "PURCHASE",
+  ): EditionOffer => ({
+    collection: "0xreg",
+    masterId,
+    kind: "MUSIC",
+    tier: "STANDARD",
+    terms,
+    priceWei,
+  });
+  const MON = 10n ** 18n;
+  const GAS = MON / 20n; // 0.05
+  const ids = (xs: readonly EditionOffer[]) => xs.map((x) => x.masterId).sort();
+
+  // The live numbers on 2026-09-21: a 24.45 MON wallet against a catalogue
+  // whose cheapest unheld offer is 35. The filter turned seven works into
+  // catalogue_exhausted — no card at all.
+  const CATALOGUE = [
+    o("13", (8n * MON) / 10n),
+    o("10", 35n * MON),
+    o("8", 35n * MON),
+    o("9", 100n * MON),
+    o("12", 300n * MON),
+  ];
+  const WALLET = 24_450_000_000_000_000_000n; // 24.45 MON
+
+  it("empties the pool with the filter on, which is the bug", () => {
+    const held = new Set([heldKey(o("13", null))]);
+    expect(placeableFor(CATALOGUE, held, WALLET, GAS)).toHaveLength(0);
+  });
+
+  it("offers everything unheld with the filter off", () => {
+    const held = new Set([heldKey(o("13", null))]);
+    expect(
+      ids(
+        placeableFor(CATALOGUE, held, WALLET, GAS, {
+          requireAffordable: false,
+        }),
+      ),
+    ).toEqual(["10", "12", "8", "9"]);
+  });
+
+  // THE POINT OF THE CLARIFICATION: "any NFT they have not purchased yet".
+  // Ownership is never waived, at either setting.
+  it("never offers a work they already hold, filter on or off", () => {
+    const held = new Set([
+      heldKey(o("13", null)),
+      heldKey(o("10", null)),
+      heldKey(o("8", null)),
+    ]);
+    for (const requireAffordable of [true, false]) {
+      const out = placeableFor(CATALOGUE, held, WALLET, GAS, {
+        requireAffordable,
+      });
+      expect(out.some((x) => ["13", "10", "8"].includes(x.masterId))).toBe(
+        false,
+      );
+    }
+  });
+
+  it("still offers a FREE work to an empty wallet", () => {
+    const cat = [o("7", null, "FREE")];
+    expect(placeableFor(cat, new Set(), 0n, GAS)).toHaveLength(1);
+    expect(
+      placeableFor(cat, new Set(), 0n, GAS, { requireAffordable: false }),
+    ).toHaveLength(1);
+  });
+
+  // Not a blanket yes: a PURCHASE with no usable price must never reach a
+  // hunter, whatever the flag says. Reject by default survives the change.
+  it("still refuses a PURCHASE with no usable price", () => {
+    for (const bad of [o("99", null), o("99", 0n)]) {
+      expect(() =>
+        placeableFor([bad], new Set(), WALLET, GAS, {
+          requireAffordable: false,
+        }),
+      ).toThrow(RangeError);
+    }
+  });
+
+  it("defaults to filtering, so an existing hunt is unchanged", () => {
+    expect(placeableFor(CATALOGUE, new Set(), WALLET, GAS)).toEqual(
+      placeableFor(CATALOGUE, new Set(), WALLET, GAS, {
+        requireAffordable: true,
+      }),
+    );
+    expect(ids(placeableFor(CATALOGUE, new Set(), WALLET, GAS))).toEqual([
+      "13",
+    ]);
+  });
+});

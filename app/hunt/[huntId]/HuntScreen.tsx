@@ -149,6 +149,9 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     offer: EditionOfferView;
     payTo: string | null;
     alreadyHeld: boolean;
+    /** Null when the chain could not be read — never rendered as zero. */
+    walletBalanceWei: string | null;
+    gasBufferWei: string | null;
   } | null>(null);
 
   useEffect(() => {
@@ -164,6 +167,8 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           offered?: boolean;
           payTo?: string | null;
           alreadyHeld?: boolean;
+          walletBalanceWei?: string | null;
+          gasBufferWei?: string | null;
           edition?: EditionOfferView;
         };
         if (body.offered && body.edition) {
@@ -171,6 +176,11 @@ export function HuntScreen({ huntId }: { huntId: string }) {
             offer: body.edition,
             payTo: body.payTo ?? null,
             alreadyHeld: body.alreadyHeld ?? false,
+            // Both branches of the route send these; `?? null` is the honest
+            // fallback for an older server, and the card reads null as "could
+            // not ask" and leaves BUY enabled rather than claiming a shortfall.
+            walletBalanceWei: body.walletBalanceWei ?? null,
+            gasBufferWei: body.gasBufferWei ?? null,
           });
         }
       } catch {
@@ -645,6 +655,8 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           offer={edition.offer}
           payTo={edition.payTo}
           alreadyHeld={edition.alreadyHeld}
+          walletBalanceWei={edition.walletBalanceWei}
+          gasBufferWei={edition.gasBufferWei}
           onAnswer={answerEdition}
           pay={payFromPasskey}
         />

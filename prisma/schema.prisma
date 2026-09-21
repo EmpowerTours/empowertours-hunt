@@ -558,6 +558,25 @@ model Hunt {
   /// itself before the shop does.
   editionFirstDelaySeconds Int @default(300)
 
+  /// Must a work be affordable before it is OFFERED?
+  ///
+  /// True is the original behaviour and the measured one: at a catalogue of
+  /// 35-300 WMON, filtering by affordability raised actionable encounters in
+  /// the first hour from 17% to 33% (lib/hunt/edition.sim.test.ts).
+  ///
+  /// It stops being right when it empties the pool. Measured 2026-09-21: the
+  /// live hunter held 24.45 MON, the cheapest unheld offer was 35, and the
+  /// filter turned seven works into `catalogue_exhausted` — no card at all,
+  /// which is strictly worse than a card they cannot tap yet. Turning this
+  /// off shows the whole catalogue and lets the card say what is missing.
+  ///
+  /// It is NOT a money gate and must never be mistaken for one. The hunter
+  /// signs the payment from their own wallet, so an unaffordable purchase
+  /// fails at signing with nothing moved. The gate that protects real money
+  /// is the relayer-capacity filter in the edition route, which is applied
+  /// unconditionally and is not affected by this flag.
+  editionRequireAffordable Boolean @default(true)
+
   /// Headroom left on top of the price before an edition is offered, in wei.
   ///
   /// The hunter signs the payment themselves, so they need the price PLUS

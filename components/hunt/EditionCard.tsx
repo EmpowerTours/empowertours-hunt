@@ -45,6 +45,8 @@ const T = {
     buyAnyway: "Comprar de todos modos",
     preview: "Escuchar 3s",
     stop: "Detener",
+    short: "Te faltan {amount} MON",
+    shortHint: "Sigue cazando — se guarda hasta que lo tengas.",
     failed: "No se pudo completar. No se te cobró.",
     paid: "Pagaste pero falló la entrega. Lo vamos a resolver.",
     yours: "¡Es tuya!",
@@ -64,6 +66,8 @@ const T = {
     buyAnyway: "Buy anyway",
     preview: "Hear 3s",
     stop: "Stop",
+    short: "You need {amount} more MON",
+    shortHint: "Keep hunting — it will still be here.",
     failed: "Could not complete. You were not charged.",
     paid: "You paid but delivery failed. We will sort it out.",
     yours: "It's yours!",
@@ -77,6 +81,8 @@ export function EditionCard({
   offer,
   payTo,
   alreadyHeld,
+  walletBalanceWei,
+  gasBufferWei,
   onAnswer,
   pay,
 }: {
@@ -84,6 +90,17 @@ export function EditionCard({
   /** Where the payment goes. Null means the relayer is unconfigured. */
   payTo: string | null;
   alreadyHeld: boolean;
+  /**
+   * What the wallet held when the server last looked, and the headroom a
+   * transfer needs on top of the price.
+   *
+   * Null means the chain could not be read. That is NOT zero: a card must
+   * never tell somebody they are short because an RPC timed out, so an
+   * unreadable balance leaves BUY enabled and lets the signing step be the
+   * one that refuses.
+   */
+  walletBalanceWei: string | null;
+  gasBufferWei: string | null;
   /** Posts the answer. Resolves to the server's verdict. */
   onAnswer: (
     answer: "yes" | "no",
@@ -100,6 +117,27 @@ export function EditionCard({
 
   const free = offer.terms === "FREE";
   const priceWei = weiOrZero(offer.priceWei ?? "0");
+
+  // ---- Can they actually pay for this?
+  //
+  // Worth stating because the card is now shown for works the hunter cannot
+  // afford: the placement filter is optional per hunt, since filtering them
+  // out emptied the pool entirely and no card is worse than a card they
+  // cannot tap yet. The honesty has to live here instead.
+  //
+  // A FREE work needs nothing — the relayer signs both transactions. For a
+  // purchase they need the price PLUS gas, because they sign the transfer
+  // themselves and Monad charges the whole gas limit with no refund.
+  //
+  // Reject by default is the WRONG default here, deliberately. An unreadable
+  // balance leaves BUY enabled: being told "you are short" because an RPC
+  // timed out is a worse failure than a signing prompt that declines, and the
+  // signing step cannot be fooled by a stale number the way this can.
+  const needWei =
+    walletBalanceWei === null || gasBufferWei === null
+      ? null
+      : priceWei + weiOrZero(gasBufferWei) - weiOrZero(walletBalanceWei);
+  const shortWei = free || needWei === null || needWei <= 0n ? null : needWei;
 
   // Stop the preview on unmount. A 3s clip still playing after the card is
   // gone is somebody's phone making noise for no reason.
@@ -161,6 +199,9 @@ export function EditionCard({
   }, [free, payTo, pay, priceWei, onAnswer, t]);
 
   const busy = phase === "signing" || phase === "buying";
+  // Short is not "busy": the button is dead, not thinking. Kept separate so
+  // the decline button stays untouched — the way out is never the harder tap.
+  const blocked = busy || shortWei !== null;
 
   return (
     <div
@@ -219,6 +260,14 @@ export function EditionCard({
           </>
         ) : null}
 
+        {shortWei !== null && phase === "asking" ? (
+          <p className="text-band-hot mt-3 text-xs leading-snug">
+            {t.short.replace("{amount}", formatMon(shortWei))}
+            <br />
+            <span className="text-ink-dim">{t.shortHint}</span>
+          </p>
+        ) : null}
+
         {alreadyHeld && phase === "asking" ? (
           <p className="text-band-hot mt-3 text-xs leading-snug">
             {t.alreadyHeld}
@@ -256,7 +305,7 @@ export function EditionCard({
               <button
                 type="button"
                 onClick={() => void accept()}
-                disabled={busy}
+                disabled={blocked}
                 className="bg-spawn text-void min-h-14 w-full rounded-2xl text-base font-semibold disabled:opacity-50"
               >
                 {phase === "signing"

@@ -107,6 +107,30 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
+    // Their own wallet, read from chain. There is no internal balance: hunt
+    // payouts land in the hunter's wallet, so this IS the spendable figure.
+    // An RPC hiccup means zero placeable rather than a crash — they are told
+    // nothing is on offer, which is true enough for one poll.
+    //
+    // READ BEFORE THE LIVE-CARD BRANCH, not after. Both branches now send it,
+    // for the reason spelled out on `payTo` below: HuntScreen overwrites its
+    // stored copy on every scan tick, so a field the live branch omits is a
+    // field the card LOSES thirty seconds after it appears.
+    let balanceWei = 0n;
+    try {
+      const client = createPublicClient({
+        chain: monad,
+        transport: http(monadRpcUrl()),
+      });
+      balanceWei = await client.getBalance({
+        address: player.walletAddress as `0x${string}`,
+      });
+    } catch {
+      // Stays 0n.
+    }
+
+    const gasBuffer = toWei(hunt.editionGasBufferWei);
+
     const catalogue = await readCatalogue();
     const entries = catalogue.ok ? catalogue.entries : [];
     const byMaster = new Map(
@@ -132,6 +156,8 @@ export async function GET(
         //
         // A response that offers a card MUST carry everywhere to pay it.
         payTo: relayerConfig()?.relayerAddress ?? null,
+        walletBalanceWei: balanceWei.toString(),
+        gasBufferWei: gasBuffer.toString(),
         edition: view(live, {
           // The venue may have dropped the work since the card was created.
           // The card still stands — the price was quoted and is honoured —
@@ -158,25 +184,14 @@ export async function GET(
       knownPerMaster.set(k, (knownPerMaster.get(k) ?? 0) + 1);
     }
 
-    // Their own wallet, read from chain. There is no internal balance: hunt
-    // payouts land in the hunter's wallet, so this IS the spendable figure.
-    // An RPC hiccup means zero placeable rather than a crash — they are told
-    // nothing is on offer, which is true enough for one poll.
-    let balanceWei = 0n;
-    try {
-      const client = createPublicClient({
-        chain: monad,
-        transport: http(monadRpcUrl()),
-      });
-      balanceWei = await client.getBalance({
-        address: player.walletAddress as `0x${string}`,
-      });
-    } catch {
-      // Stays 0n.
-    }
-
-    const gasBuffer = toWei(hunt.editionGasBufferWei);
-    let placeable = placeableFor(entries, held, balanceWei, gasBuffer);
+    let placeable = placeableFor(entries, held, balanceWei, gasBuffer, {
+      // When false the whole catalogue is offerable and the CARD says what is
+      // missing. Not a money gate: the hunter signs from their own wallet, so
+      // an unaffordable purchase throws at signing with nothing moved. The
+      // relayer-capacity filter below is the gate that protects real money,
+      // and it runs either way.
+      requireAffordable: hunt.editionRequireAffordable,
+    });
 
     // ---- And what the RELAYER can settle, which is the other half of the
     // same question and the only one that is asked before the hunter pays.
@@ -320,6 +335,8 @@ export async function GET(
       return NextResponse.json({
         offered: true,
         payTo: relayerConfig()?.relayerAddress ?? null,
+        walletBalanceWei: balanceWei.toString(),
+        gasBufferWei: gasBuffer.toString(),
         edition: view(other, {
           name: od?.name ?? `#${other.masterId}`,
           imageUrl: od?.imageUrl ?? null,
@@ -344,6 +361,12 @@ export async function GET(
     return NextResponse.json({
       offered: true,
       payTo: relayerConfig()?.relayerAddress ?? null,
+      // What the card needs to price the gap itself. Sent on every offer, not
+      // only the unaffordable ones: the card is read minutes after it is made
+      // and the hunter may have spent the money in between, so it must be able
+      // to say "you need more" without a second round trip.
+      walletBalanceWei: balanceWei.toString(),
+      gasBufferWei: gasBuffer.toString(),
       // Null (could not ask) renders the same as false: show nothing.
       alreadyHeld: (unexplained ?? 0) > 0,
       edition: view(created, {

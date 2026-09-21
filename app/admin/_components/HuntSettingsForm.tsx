@@ -44,6 +44,7 @@ export interface HuntFormValues {
   editionTtlSeconds: number;
   editionCooldownSeconds: number;
   editionFirstDelaySeconds: number;
+  editionRequireAffordable: boolean;
 }
 
 function Field({
@@ -274,8 +275,8 @@ export function HuntSettingsForm({
         <p className="mb-3 text-[11px] leading-relaxed text-amber-200/70">
           Points the opposite way to a spawn: nothing leaves the treasury, a
           player is asked to buy a licence from the artist. Independent of the
-          spawn switch on purpose — turning payouts on must never quietly open
-          a shop. Nothing is offered unless the relayer is configured AND funded;
+          spawn switch on purpose — turning payouts on must never quietly open a
+          shop. Nothing is offered unless the relayer is configured AND funded;
           a work the relayer cannot settle is never shown as a card.
         </p>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -302,9 +303,7 @@ export function HuntSettingsForm({
               className={inputClass}
               type="number"
               value={v.editionTtlSeconds}
-              onChange={(e) =>
-                set("editionTtlSeconds", Number(e.target.value))
-              }
+              onChange={(e) => set("editionTtlSeconds", Number(e.target.value))}
             />
           </Field>
           <Field
@@ -332,6 +331,21 @@ export function HuntSettingsForm({
                 set("editionFirstDelaySeconds", Number(e.target.value))
               }
             />
+          </Field>
+          <Field
+            label="Only offer what they can afford"
+            explain="On, a work is offered only if the wallet covers price + gas buffer. Off shows everything they do not already own and the card names the shortfall. Off is right when the filter empties the pool — no card is worse than a card they cannot tap yet. Either way the hunter signs from their own wallet, so an unaffordable purchase fails at signing with nothing moved; the relayer-capacity gate is separate and always on."
+          >
+            <select
+              className={inputClass}
+              value={String(v.editionRequireAffordable)}
+              onChange={(e) =>
+                set("editionRequireAffordable", e.target.value === "true")
+              }
+            >
+              <option value="true">on</option>
+              <option value="false">off</option>
+            </select>
           </Field>
         </div>
       </section>
