@@ -471,6 +471,17 @@ export async function fetchProgress(
   const body = await request("/api/me", { signal }, { optional: true });
   const v = isRecord(body) ? body : {};
   const rawPayouts = Array.isArray(v.payouts) ? v.payouts : [];
+  // ---- The works this passkey holds.
+  //
+  // This mapper is a whitelist, and `editions` was never added to it. The
+  // server has resolved and returned them since "wallet: show the record you
+  // own, not its token id"; `ProgressPanel` has rendered them since the same
+  // change. In between, this function rebuilt the object field by field and
+  // silently dropped the key, so `progress.editions` was ALWAYS undefined and
+  // the section's `editions && editions.length > 0` was never once true. The
+  // wallet has therefore never shown a purchase — not for a missing row, but
+  // for a missing line here.
+  const rawEditions = Array.isArray(v.editions) ? v.editions : [];
   return {
     payouts: rawPayouts.flatMap((p) => {
       if (!isRecord(p)) return [];
@@ -478,13 +489,44 @@ export async function fetchProgress(
       const amountMonWei = str(p.amountMonWei);
       const at = str(p.at);
       if (id === null || amountMonWei === null || at === null) return [];
-      return [{
-        id,
-        status: str(p.status) ?? "UNKNOWN",
-        amountMonWei,
-        txHash: str(p.txHash),
-        at,
-      }];
+      return [
+        {
+          id,
+          status: str(p.status) ?? "UNKNOWN",
+          amountMonWei,
+          txHash: str(p.txHash),
+          at,
+        },
+      ];
+    }),
+    // Same shape as payouts: a row missing any field the UI cannot render
+    // without is dropped, not defaulted. `paidWei` is REQUIRED even though
+    // zero is legitimate — a giveaway sends "0", so an absent value means the
+    // server said something unexpected, and rendering it as free would be an
+    // invention. `txHash` and the artwork stay nullable: PENDING has no
+    // receipt yet, and the venue may not have answered.
+    editions: rawEditions.flatMap((e) => {
+      if (!isRecord(e)) return [];
+      const id = str(e.id);
+      const masterId = str(e.masterId);
+      const paidWei = str(e.paidWei);
+      const at = str(e.at);
+      if (id === null || masterId === null || paidWei === null || at === null)
+        return [];
+      return [
+        {
+          id,
+          masterId,
+          tier: str(e.tier) ?? "STANDARD",
+          status: str(e.status) ?? "UNKNOWN",
+          paidWei,
+          licenseId: str(e.licenseId),
+          txHash: str(e.txHash),
+          at,
+          name: str(e.name),
+          imageUrl: str(e.imageUrl),
+        },
+      ];
     }),
     walletAddress: str(v.walletAddress),
     // Deliberately NOT defaulted to "0" — see PlayerProgress.
