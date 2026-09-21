@@ -16,6 +16,7 @@ import {
   HUNT_PRF_SALT_LABEL,
   walletFromPrfOutput,
 } from "./derive";
+import { isUsableCredentialId } from "./credential-id";
 import { HUNT_VAULT_SALT, vaultKeyFromPrfOutput } from "./vault-key";
 
 // ---------------------------------------------------------------------------
@@ -160,15 +161,7 @@ function readCredentialCookie(): PasskeyCredentialMetadata | undefined {
     const parsed: unknown = JSON.parse(
       decodeURIComponent(match.slice(CREDENTIAL_COOKIE.length + 1)),
     );
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "credentialId" in parsed &&
-      typeof (parsed as { credentialId: unknown }).credentialId === "string"
-    ) {
-      return parsed as PasskeyCredentialMetadata;
-    }
-    return undefined;
+    return asCredential(parsed);
   } catch {
     return undefined;
   }
@@ -204,23 +197,51 @@ export interface PasskeyAccount {
   credentialId: string;
 }
 
+function asCredential(parsed: unknown): PasskeyCredentialMetadata | undefined {
+  if (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    "credentialId" in parsed &&
+    typeof (parsed as { credentialId: unknown }).credentialId === "string" &&
+    isUsableCredentialId((parsed as { credentialId: string }).credentialId)
+  ) {
+    return parsed as PasskeyCredentialMetadata;
+  }
+  return undefined;
+}
+
 function credentialFromLocalStorage(): PasskeyCredentialMetadata | undefined {
   try {
     const raw = localStorage.getItem(CREDENTIAL_KEY);
     if (raw === null) return undefined;
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "credentialId" in parsed &&
-      typeof (parsed as { credentialId: unknown }).credentialId === "string"
-    ) {
-      return parsed as PasskeyCredentialMetadata;
-    }
+    return asCredential(JSON.parse(raw) as unknown);
   } catch {
     // ignore
   }
   return undefined;
+}
+
+/**
+ * Drop a remembered credential from BOTH places it lives.
+ *
+ * Clearing only localStorage leaves the cookie to hand the same bad id back on
+ * the next call, which is exactly how a stale value outlives every obvious
+ * attempt to clear it.
+ */
+function forgetCredential(): void {
+  try {
+    localStorage.removeItem(CREDENTIAL_KEY);
+  } catch {
+    // ignore
+  }
+  if (typeof document === "undefined") return;
+  const domain = credentialCookieDomain();
+  if (domain === null) return;
+  try {
+    document.cookie = `${CREDENTIAL_COOKIE}=; domain=${domain}; path=/; max-age=0; secure; samesite=lax`;
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -328,14 +349,37 @@ export async function createAccount(
 export async function signInAccount(): Promise<PasskeyAccount> {
   assertOwnRelyingParty(RP_ID);
   const known = storedCredential();
-  const { prfOutput, credentialId } = await withGuard(
-    getPasskeyPrfOutput({
-      rpId: RP_ID,
-      credential: known,
-      prfSalt: HUNT_PRF_SALT,
-      timeout: CEREMONY_TIMEOUT_MS,
-    }),
-  );
+  const lookup = (credential: PasskeyCredentialMetadata | undefined) =>
+    withGuard(
+      getPasskeyPrfOutput({
+        rpId: RP_ID,
+        credential,
+        prfSalt: HUNT_PRF_SALT,
+        timeout: CEREMONY_TIMEOUT_MS,
+      }),
+    );
+
+  // `isUsableCredentialId` already drops ids mera could not decode, but it
+  // mirrors mera's rule from the outside and a future version could tighten
+  // it. INPUT_INVALID is thrown at the input boundary, before any prompt, so
+  // reaching it means the remembered id — not the player — is the problem: no
+  // sheet was shown, nothing was cancelled, and retrying without the id costs
+  // the player nothing. A discoverable lookup then returns the SAME wallet.
+  const { prfOutput, credentialId } = await (async () => {
+    try {
+      return await lookup(known);
+    } catch (err) {
+      if (
+        known === undefined ||
+        !isMeraError(err) ||
+        err.code !== "INPUT_INVALID"
+      ) {
+        throw err;
+      }
+      forgetCredential();
+      return await lookup(undefined);
+    }
+  })();
   rememberCredential(
     known?.credentialId === credentialId ? known : { credentialId },
   );
