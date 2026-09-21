@@ -176,3 +176,87 @@ export function quoteAcceptable(
   if (opts.requireOrderBook && !q.usesOrderBook) return false;
   return true;
 }
+
+/**
+ * MON to hold back from a max-size sell so the trade can pay its own gas.
+ *
+ * This existed as a flat `parseEther("0.05")` in the page and was WRONG the
+ * whole time. Tapping the balance set the input to `balance - 0.05`, and then
+ * the send needed the gas on top of that — 0.0592 MON at 102 gwei on the
+ * current limit, and 0.0918 MON under the old 900k one. The reserve was never
+ * once enough. The failure is quiet and lands at the worst moment: a hunter
+ * selling their whole position is exactly who taps max.
+ *
+ * Derived from GAS_FALLBACK rather than a measured route, because the reserve
+ * has to be computed BEFORE a quote exists — there is no estimate to size it
+ * from, so it must cover the blind case. The extra quarter is for gas-price
+ * drift between rendering the number and signing it; Monad prices move, and a
+ * reserve computed at 102 gwei that sends at 140 would fail the same way.
+ *
+ * Being too generous here costs a hunter nothing: unspent MON stays theirs.
+ * Being too thin costs them the trade.
+ */
+export function gasReserveWei(gasPriceWei: bigint): bigint {
+  return (GAS_FALLBACK * gasPriceWei * 5n) / 4n;
+}
+
+/**
+ * Can this wallet actually pay for the trade it just asked for?
+ *
+ * ## The bug this encodes
+ *
+ * `doTrade` validated that the amount PARSED and was greater than zero, and
+ * nothing else. It never compared it to a balance, so a wallet holding 0.12
+ * USDC could ask to spend 10, sail through the approval — approving more than
+ * you hold is perfectly legal — and only discover the problem as a raw chain
+ * revert. The spot page has carried the string "Not enough balance." in both
+ * locales since it was written, referenced nowhere.
+ *
+ * That happened on mainnet: an approval of exactly 10 USDC to Kuru's executor
+ * (0x2f84fb89…) landed at nonce 27 against a balance of 0.123884 USDC, and the
+ * trade behind it never reached the chain. "It reverted" was all the screen
+ * said, about a wallet that was simply empty.
+ *
+ * ## Why the two sides are not symmetrical
+ *
+ * Selling spends NATIVE MON, so the amount and the gas come out of the same
+ * balance and the check has to cover both — that is what `keepGas` in the UI
+ * has always been warning about without enforcing. Buying spends USDC while
+ * gas still comes from MON, so they are two separate questions and a wallet
+ * can fail either one independently.
+ *
+ * Reject by default: `!(have >= need)`, so a NaN or a negative lands on
+ * "cannot afford" rather than slipping through a comparison.
+ */
+export type Affordability =
+  | { ok: true }
+  | { ok: false; reason: "not_enough" | "no_gas" };
+
+export function affordable(args: {
+  /** "sell" spends MON, "buy" spends USDC. */
+  side: "sell" | "buy";
+  /** Smallest units of whatever is being SPENT — wei for sell, 6dp for buy. */
+  amount: bigint;
+  monWei: bigint;
+  usdcUnits: bigint;
+  /** MON held back for gas. The page's GAS_RESERVE. */
+  gasReserveWei: bigint;
+}): Affordability {
+  const { side, amount, monWei, usdcUnits, gasReserveWei } = args;
+  if (!(amount > 0n)) return { ok: false, reason: "not_enough" };
+
+  if (side === "sell") {
+    // One balance pays for both legs, so the reserve is part of the price.
+    return monWei >= amount + gasReserveWei
+      ? { ok: true }
+      : { ok: false, reason: "not_enough" };
+  }
+
+  // Buying: the USDC must be there AND there must be MON left to send the
+  // transaction with. Reported separately because "top up USDC" and "top up
+  // MON" are different instructions and a single message would be wrong half
+  // the time.
+  if (!(usdcUnits >= amount)) return { ok: false, reason: "not_enough" };
+  if (!(monWei >= gasReserveWei)) return { ok: false, reason: "no_gas" };
+  return { ok: true };
+}

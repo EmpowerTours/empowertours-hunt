@@ -15,6 +15,7 @@ import type { KuruBook } from "@/lib/cota/kuru-book";
 import {
   explainFailure,
   gasFor,
+  gasReserveWei,
   quoteAcceptable,
   received as receivedFrom,
 } from "@/lib/cota/spot-trade";
@@ -142,8 +143,15 @@ const T = {
   },
 } as const;
 
-/** Same reserve the swap page keeps: a trade that leaves no gas reverts. */
-const GAS_RESERVE = parseEther("0.05");
+/**
+ * Fallback reserve, used only until the live gas price arrives.
+ *
+ * Sized for the blind worst case at a high price rather than a typical one: it
+ * is better to briefly understate the max than to offer a max that cannot pay
+ * its own gas, which is what a flat 0.05 did on every trade this screen has
+ * ever made. See gasReserveWei.
+ */
+const GAS_RESERVE_FALLBACK = parseEther("0.2");
 const NATIVE = "0x0000000000000000000000000000000000000000";
 
 const ERC20 = [
@@ -191,6 +199,8 @@ export default function SpotPage() {
   const [floor, setFloor] = useState<bigint | null>(null);
   const [onBook, setOnBook] = useState<boolean | null>(null);
   const [monBal, setMonBal] = useState<bigint | null>(null);
+  // Read live, because the reserve is priced in MON and the price moves.
+  const [gasPrice, setGasPrice] = useState<bigint | null>(null);
   const [usdcBal, setUsdcBal] = useState<bigint | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [approving, setApproving] = useState(false);
@@ -274,6 +284,7 @@ export default function SpotPage() {
     const pc = publicClient();
     try {
       setMonBal(await pc.getBalance({ address }));
+      setGasPrice(await pc.getGasPrice());
       setUsdcBal(
         (await pc.readContract({
           address: USDC,
@@ -514,7 +525,17 @@ export default function SpotPage() {
       setError(e instanceof Error ? e.message : "failed");
       setPhase("error");
     }
-  }, [address, input, side, t.noAmount, t.noRoute, t.revertedTx, refresh, record, loadLog]);
+  }, [
+    address,
+    input,
+    side,
+    t.noAmount,
+    t.noRoute,
+    t.revertedTx,
+    refresh,
+    record,
+    loadLog,
+  ]);
 
   const fmt = (v: bigint | null, dp: number) =>
     v === null ? "—" : (Number(v) / 10 ** dp).toFixed(4);
@@ -530,8 +551,12 @@ export default function SpotPage() {
   const usd = (n: number) =>
     n >= 1 ? `$${n.toFixed(0)}` : n > 0 ? `$${n.toFixed(2)}` : "$0";
 
-  const maxMon =
-    monBal !== null && monBal > GAS_RESERVE ? monBal - GAS_RESERVE : 0n;
+  // Hold back enough to actually send the transaction. The old flat 0.05 was
+  // less than the gas every real trade has paid, so tapping the balance built
+  // an input the wallet could not afford to sign.
+  const reserve =
+    gasPrice === null ? GAS_RESERVE_FALLBACK : gasReserveWei(gasPrice);
+  const maxMon = monBal !== null && monBal > reserve ? monBal - reserve : 0n;
 
   return (
     <main className="safe-top safe-bottom mx-auto flex h-dvh w-full max-w-md flex-col gap-3 overflow-hidden px-4">

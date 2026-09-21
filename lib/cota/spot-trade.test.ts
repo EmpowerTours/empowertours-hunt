@@ -3,8 +3,10 @@ import {
   GAS_CEILING,
   GAS_FALLBACK,
   GAS_MIN,
+  affordable,
   explainFailure,
   gasFor,
+  gasReserveWei,
   quoteAcceptable,
   received,
   shouldRetry,
@@ -181,5 +183,135 @@ describe("quoteAcceptable", () => {
     expect(
       quoteAcceptable(q(100n, 99n, true), { requireOrderBook: true }),
     ).toBe(true);
+  });
+});
+
+describe("gasReserveWei — the reserve must actually cover the gas", () => {
+  const PRICE = 102_000_000_000n; // gwei seen on every real trade so far
+  const OLD_FLAT_RESERVE = 50_000_000_000_000_000n; // parseEther("0.05")
+
+  it("covers what a trade really costs, which the old flat 0.05 did not", () => {
+    // The bug: tapping the balance set the input to `balance - 0.05`, then the
+    // send needed gas ON TOP. At 102 gwei a book route costs 0.0592 MON, so
+    // the max-size sell could not pay for itself. Silent, and it lands on the
+    // hunter selling their whole position.
+    const realCost = 580_500n * PRICE;
+    expect(OLD_FLAT_RESERVE).toBeLessThan(realCost); // the bug, pinned
+    expect(gasReserveWei(PRICE)).toBeGreaterThan(realCost);
+  });
+
+  it("covers the blind worst case too, since it is sized before any quote", () => {
+    expect(gasReserveWei(PRICE)).toBeGreaterThan(GAS_FALLBACK * PRICE);
+  });
+
+  it("survives the gas price rising between render and signature", () => {
+    // A reserve computed at 102 gwei that sends at 127 must still hold.
+    expect(gasReserveWei(PRICE)).toBeGreaterThanOrEqual(
+      GAS_FALLBACK * ((PRICE * 125n) / 100n),
+    );
+  });
+
+  it("scales with the price rather than being a constant", () => {
+    expect(gasReserveWei(PRICE * 2n)).toBe(gasReserveWei(PRICE) * 2n);
+    expect(gasReserveWei(0n)).toBe(0n);
+  });
+});
+
+describe("affordable — the check the spot page never had", () => {
+  const MON = 10n ** 18n;
+  const USDC1 = 1_000_000n; // 6dp
+  // What gasReserveWei(102 gwei) comes to, so these agree with the real caller.
+  const RESERVE = gasReserveWei(102_000_000_000n);
+
+  it("blocks the exact trade that reverted on mainnet", () => {
+    // Nonce 27 approved 10 USDC to Kuru's executor against a balance of
+    // 0.123884 USDC. The approval succeeded — approving more than you hold is
+    // legal — and the trade behind it died as a raw chain revert.
+    expect(
+      affordable({
+        side: "buy",
+        amount: 10n * USDC1,
+        monWei: 40_332n * MON,
+        usdcUnits: 123_884n,
+        gasReserveWei: RESERVE,
+      }),
+    ).toEqual({ ok: false, reason: "not_enough" });
+  });
+
+  it("blocks selling more MON than is held", () => {
+    expect(
+      affordable({
+        side: "sell",
+        amount: 10n * MON,
+        monWei: 2_517_972_542_000_000_000n, // what the wallet held after the send
+        usdcUnits: 0n,
+        gasReserveWei: RESERVE,
+      }),
+    ).toEqual({ ok: false, reason: "not_enough" });
+  });
+
+  it("refuses a sell that would leave nothing for gas", () => {
+    // The whole balance, exactly. Affordable on the amount alone, impossible
+    // once the transaction has to pay for itself — Monad bills the full limit.
+    expect(
+      affordable({
+        side: "sell",
+        amount: 5n * MON,
+        monWei: 5n * MON,
+        usdcUnits: 0n,
+        gasReserveWei: RESERVE,
+      }).ok,
+    ).toBe(false);
+    expect(
+      affordable({
+        side: "sell",
+        amount: 5n * MON,
+        monWei: 5n * MON + RESERVE,
+        usdcUnits: 0n,
+        gasReserveWei: RESERVE,
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("tells a USDC shortfall apart from a gas shortfall", () => {
+    // Different instructions — "top up USDC" and "top up MON" — so one message
+    // would be wrong half the time.
+    expect(
+      affordable({
+        side: "buy",
+        amount: USDC1,
+        monWei: 0n,
+        usdcUnits: 10n * USDC1,
+        gasReserveWei: RESERVE,
+      }),
+    ).toEqual({ ok: false, reason: "no_gas" });
+  });
+
+  it("does not charge the gas reserve against the USDC being spent", () => {
+    // Buying spends USDC while gas comes from MON. Subtracting a MON reserve
+    // from a USDC balance would refuse trades that are perfectly fine.
+    expect(
+      affordable({
+        side: "buy",
+        amount: 10n * USDC1,
+        monWei: MON,
+        usdcUnits: 10n * USDC1,
+        gasReserveWei: RESERVE,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("rejects a zero or negative amount rather than passing it on", () => {
+    for (const amount of [0n, -1n]) {
+      expect(
+        affordable({
+          side: "sell",
+          amount,
+          monWei: 1000n * MON,
+          usdcUnits: 1000n * USDC1,
+          gasReserveWei: RESERVE,
+        }).ok,
+      ).toBe(false);
+    }
   });
 });
