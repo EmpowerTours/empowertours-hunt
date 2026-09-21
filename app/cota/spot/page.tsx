@@ -12,6 +12,12 @@ import { signInAccount } from "@/lib/auth/passkey";
 import { publicClient, walletClientFor } from "@/lib/cota/swap";
 import { KURU_EXECUTOR, USDC, kuruQuote, kuruToken } from "@/lib/cota/kuru";
 import type { KuruBook } from "@/lib/cota/kuru-book";
+import {
+  explainFailure,
+  gasFor,
+  quoteAcceptable,
+  received as receivedFrom,
+} from "@/lib/cota/spot-trade";
 
 // ---------------------------------------------------------------------------
 // Spot. MON against USDC, on Kuru's order book, both directions.
@@ -327,6 +333,12 @@ export default function SpotPage() {
           tokenOut: side === "sell" ? USDC : NATIVE,
           amount,
         });
+        // Cheaper than a simulation and catches a quote that could only ever
+        // revert — a minOut above the output, or nothing out at all.
+        if (!quoteAcceptable(q)) {
+          await new Promise((r) => setTimeout(r, 1200));
+          continue;
+        }
         try {
           await pc.call({
             account: address,
@@ -347,24 +359,21 @@ export default function SpotPage() {
                 args: [address],
               })) as bigint)
             : await pc.getBalance({ address });
-        // An explicit limit, not viem's estimate. Monad charges the WHOLE limit
-        // on a revert with no refund, so an estimate that comes in tight does
-        // not save gas — it buys a failed transaction at full price. Every
-        // send of this route that has ever worked used ~900k.
-        let gas = 900_000n;
+        // gasFor is tested: Monad charges the whole limit on a revert, so a
+        // tight estimate buys a failed transaction at full price rather than
+        // saving anything.
+        let estimate: bigint | null = null;
         try {
-          const est = await pc.estimateGas({
+          estimate = await pc.estimateGas({
             account: address,
             to: q.to,
             data: q.calldata,
             value: q.value,
           });
-          // Half again over the estimate, floored at what is known to work.
-          const padded = (est * 3n) / 2n;
-          gas = padded > gas ? padded : gas;
         } catch {
-          // Keep the floor. A failed estimate is not a reason to send nothing.
+          // A failed estimate is not a reason to send nothing; gasFor floors it.
         }
+        const gas = gasFor(estimate);
         const hash = await walletClientFor(account).sendTransaction({
           to: q.to,
           data: q.calldata,
@@ -393,16 +402,17 @@ export default function SpotPage() {
               })) as bigint)
             : await pc.getBalance({ address });
         sent = hash;
-        // Measured, not quoted. On a MON buy this is net of gas, which is the
-        // honest number — it is what the wallet actually gained.
-        received = after > before ? after - before : 0n;
+        // Measured, not quoted. On a MON buy this is net of gas — what the
+        // wallet actually gained — and it clamps at zero rather than showing a
+        // negative number nobody can act on.
+        received = receivedFrom(before, after);
       }
       if (sent === null) {
-        throw new Error(
-          lastRevert === null
-            ? t.noRoute
-            : `${t.revertedTx} ${lastRevert.slice(0, 10)}…`,
-        );
+        const f = explainFailure(lastRevert, {
+          noRoute: t.noRoute,
+          revertedTx: t.revertedTx,
+        });
+        throw new Error(f.message);
       }
       setTx(sent);
       setGot(received);
