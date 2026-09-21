@@ -182,3 +182,118 @@ describe("refusals are explained in both languages", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// The budget rule.
+//
+// `rewardCreditWei: 0` was hardcoded in the public plant route with a comment
+// explaining why: "a cache that promised credit the hunt has no budget for
+// would fail at claim time, after the walk." That was correct when every hunt
+// had budgetCreditWei = 0. Hunts can be funded now, so the honest fix is to
+// check the budget rather than to refuse every reward.
+// ---------------------------------------------------------------------------
+describe("mayPlantCache — reward against budget", () => {
+  const wmon = (n: number) => BigInt(n) * 10n ** 18n;
+  const at = (lat: number, lng: number) => ({ lat, lng });
+  const plant = (reward?: Parameters<typeof mayPlantCache>[0]["reward"]) =>
+    mayPlantCache({ lat: 17.25, lng: -99.52, radiusMeters: 25, existing: [], reward });
+
+  it("plants when the hunt can pay for it", () => {
+    expect(
+      plant({
+        rewardCreditWei: wmon(1),
+        plantedCreditWei: wmon(100),
+        budgetCreditWei: wmon(973),
+        spentCreditWei: 0n,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("refuses a reward the hunt cannot pay — the walk-then-fail case", () => {
+    expect(
+      plant({
+        rewardCreditWei: wmon(1),
+        plantedCreditWei: wmon(973),
+        budgetCreditWei: wmon(973),
+        spentCreditWei: 0n,
+      }),
+    ).toEqual({ ok: false, reason: "reward_exceeds_budget" });
+  });
+
+  it("counts credit ALREADY SPENT against what is left", () => {
+    // A hunt half-claimed has half the budget. Measuring against the budget
+    // rather than the remainder would let a hunt be topped up with promises it
+    // has already paid out.
+    expect(
+      plant({
+        rewardCreditWei: wmon(10),
+        plantedCreditWei: 0n,
+        budgetCreditWei: wmon(973),
+        spentCreditWei: wmon(970),
+      }),
+    ).toEqual({ ok: false, reason: "reward_exceeds_budget" });
+  });
+
+  it("refuses everything when the hunt is unfunded", () => {
+    // The state every hunt was in when the zero was hardcoded.
+    expect(
+      plant({
+        rewardCreditWei: 1n,
+        plantedCreditWei: 0n,
+        budgetCreditWei: 0n,
+        spentCreditWei: 0n,
+      }),
+    ).toEqual({ ok: false, reason: "reward_exceeds_budget" });
+  });
+
+  it("leaves zero-reward planting alone — the public route is unchanged", () => {
+    // Sembradores plant at 0 and must keep working on an unfunded hunt.
+    expect(
+      plant({
+        rewardCreditWei: 0n,
+        plantedCreditWei: 0n,
+        budgetCreditWei: 0n,
+        spentCreditWei: 0n,
+      }),
+    ).toEqual({ ok: true });
+    expect(plant(undefined)).toEqual({ ok: true });
+  });
+
+  it("does not multiply by player count, deliberately", () => {
+    // One full sweep by one player. Multiplying by enrolment would refuse a
+    // sound hunt the moment a second person joined, and the claim-time ceiling
+    // is the real authority anyway.
+    expect(
+      plant({
+        rewardCreditWei: wmon(100),
+        plantedCreditWei: wmon(800),
+        budgetCreditWei: wmon(973),
+        spentCreditWei: 0n,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("still checks geography first — a reward cannot buy past the spacing rule", () => {
+    // Order matters: an over-budget cache 5m from another should report the
+    // spacing problem, not the money one, because that is the one a Sembrador
+    // can act on by moving.
+    const r = mayPlantCache({
+      lat: 17.25,
+      lng: -99.52,
+      radiusMeters: 25,
+      existing: [at(17.25001, -99.52001)],
+      reward: {
+        rewardCreditWei: wmon(9999),
+        plantedCreditWei: 0n,
+        budgetCreditWei: 0n,
+        spentCreditWei: 0n,
+      },
+    });
+    expect(r).toEqual({ ok: false, reason: "too_close_to_existing" });
+  });
+
+  it("explains itself in both languages", () => {
+    expect(explainPlantRefusal("reward_exceeds_budget", "es")).toMatch(/presupuesto/i);
+    expect(explainPlantRefusal("reward_exceeds_budget", "en")).toMatch(/budget/i);
+  });
+});

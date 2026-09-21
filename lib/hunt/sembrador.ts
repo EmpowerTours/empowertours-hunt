@@ -45,7 +45,8 @@ export type PlantRefusal =
   | "bad_coordinates"
   | "null_island"
   | "radius_out_of_range"
-  | "too_close_to_existing";
+  | "too_close_to_existing"
+  | "reward_exceeds_budget";
 
 export type PlantCheck = { ok: true } | { ok: false; reason: PlantRefusal };
 
@@ -102,6 +103,20 @@ export function mayPlantCache(args: {
   lng: number;
   radiusMeters: number;
   existing: readonly LatLng[];
+  /**
+   * What this cache will pay, and what the hunt has left to pay it with.
+   *
+   * Optional so the public Sembrador route — which plants at zero — is
+   * unchanged, and so a caller that genuinely has no budget context cannot be
+   * forced to invent one.
+   */
+  reward?: {
+    rewardCreditWei: bigint;
+    /** Sum of what every ACTIVE cache in this hunt already promises. */
+    plantedCreditWei: bigint;
+    budgetCreditWei: bigint;
+    spentCreditWei: bigint;
+  };
 }): PlantCheck {
   const coords = validCoordinates(args.lat, args.lng);
   if (!coords.ok) return coords;
@@ -117,6 +132,33 @@ export function mayPlantCache(args: {
   for (const other of args.existing) {
     if (haversineMeters(here, other) < MIN_CACHE_SEPARATION_M) {
       return { ok: false, reason: "too_close_to_existing" };
+    }
+  }
+
+  // The budget rule, last because it is the only one that needs the hunt's
+  // finances rather than its geography.
+  //
+  // This is what `rewardCreditWei: 0` in the public route was avoiding when it
+  // was written: a cache promising credit the hunt cannot pay sends somebody
+  // walking and then fails at the claim, after the walk. Now that hunts CAN be
+  // funded, the honest fix is to check rather than to refuse all rewards.
+  //
+  // Measured against ONE FULL SWEEP: what a single player would earn taking
+  // every cache once. It deliberately does not multiply by the player count,
+  // because that would refuse a perfectly sound hunt the moment a second
+  // person enrolled. The claim-time ceiling is still the authority — this only
+  // stops a hunt being planted already insolvent for its first finisher.
+  if (args.reward && args.reward.rewardCreditWei > 0n) {
+    const {
+      rewardCreditWei,
+      plantedCreditWei,
+      budgetCreditWei,
+      spentCreditWei,
+    } = args.reward;
+    const remaining =
+      budgetCreditWei > spentCreditWei ? budgetCreditWei - spentCreditWei : 0n;
+    if (plantedCreditWei + rewardCreditWei > remaining) {
+      return { ok: false, reason: "reward_exceeds_budget" };
     }
   }
 
@@ -136,6 +178,8 @@ export function explainPlantRefusal(
       "Esas coordenadas apuntan al océano. ¿Se quedó el campo vacío?",
     radius_out_of_range: `El radio debe estar entre ${MIN_CACHE_RADIUS_M} y ${MAX_CACHE_RADIUS_M} metros.`,
     too_close_to_existing: `Hay otro cache a menos de ${MIN_CACHE_SEPARATION_M} metros. Sepáralos para que haya que caminar.`,
+    reward_exceeds_budget:
+      "La búsqueda no tiene presupuesto de crédito para pagar este cache. Fondéala o baja la recompensa.",
   };
   const EN: Record<PlantRefusal, string> = {
     too_many_hunts: `You already have ${MAX_HUNTS_PER_PLAYER} hunts open. Close one to start another.`,
@@ -145,6 +189,8 @@ export function explainPlantRefusal(
       "Those coordinates point at the ocean. Was the field left empty?",
     radius_out_of_range: `Radius must be between ${MIN_CACHE_RADIUS_M} and ${MAX_CACHE_RADIUS_M} metres.`,
     too_close_to_existing: `Another cache is within ${MIN_CACHE_SEPARATION_M} metres. Spread them out so there's a walk.`,
+    reward_exceeds_budget:
+      "This hunt has no credit budget left to pay for that cache. Fund it or lower the reward.",
   };
   return lang === "es" ? ES[reason] : EN[reason];
 }
