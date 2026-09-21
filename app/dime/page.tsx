@@ -56,6 +56,8 @@ interface Status {
   open: boolean;
   remaining: number;
   mine: { status: string; transferTxHash: string | null } | null;
+  /** Resolved from the venue catalogue. Null when it could not be read. */
+  art?: { name: string; imageUrl: string | null } | null;
 }
 
 export default function DimePage() {
@@ -65,6 +67,7 @@ export default function DimePage() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [status, setStatus] = useState<Status | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [coverLoaded, setCoverLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const applyStatus = useCallback((body: Status) => {
@@ -165,16 +168,33 @@ export default function DimePage() {
 
   return (
     <main className="safe-top safe-bottom mx-auto flex min-h-[100svh] w-full max-w-sm flex-col items-center justify-center gap-6 px-6 py-10">
-      {/* Cover art placeholder — a warm gradient standing in for the real
-          artwork until the master's image is wired in. */}
+      {/* The real cover, with the gradient still underneath it.
+          The gradient used to BE the artwork — a stand-in that shipped on a
+          page built to convert cold traffic. It stays as the backdrop rather
+          than being deleted: it fills the frame while the image loads, and it
+          is what remains if the catalogue could not be read or the gateway is
+          slow, so this frame is never an empty box. */}
       <div
-        className="h-40 w-40 rounded-2xl"
+        className="relative h-40 w-40 overflow-hidden rounded-2xl"
         style={{
           background:
             "radial-gradient(circle at 30% 28%, #E4007C 0%, transparent 58%), radial-gradient(circle at 74% 72%, #ffd12e 0%, transparent 52%), #1a1024",
         }}
-        aria-hidden
-      />
+      >
+        {status?.art?.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={status.art.imageUrl}
+            alt={status.art.name}
+            className="h-full w-full object-cover transition-opacity duration-500"
+            style={{ opacity: coverLoaded ? 1 : 0 }}
+            onLoad={() => setCoverLoaded(true)}
+            // A broken gateway must not leave a half-drawn image over the
+            // gradient; hiding it restores the fallback exactly.
+            onError={() => setCoverLoaded(false)}
+          />
+        ) : null}
+      </div>
 
       <div className="text-center">
         <h1 className="text-ink text-4xl font-black tracking-tight">{t.q}</h1>

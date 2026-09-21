@@ -3,6 +3,7 @@ import { type Address } from "viem";
 import { prisma } from "@/lib/db/prisma";
 import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
+import { readCatalogue } from "@/lib/editions/catalogue";
 import {
   isBuyable,
   relayerCapacity,
@@ -304,7 +305,31 @@ export async function GET(req: Request) {
       if (!(err instanceof AuthError)) throw err;
     }
 
-    return NextResponse.json({ open, remaining, mine });
+    // ---- The cover art, from the venue rather than from a constant.
+    //
+    // The page drew a hardcoded gradient with a comment calling it a stand-in
+    // "until the master's image is wired in". Master 13 has had real artwork
+    // the whole time; this is a landing page for cold traffic off a social
+    // post, and a placeholder where the cover should be is the first thing
+    // they see.
+    //
+    // readCatalogue is the right source rather than a fresh chain read: it
+    // already resolves the ipfs:// tokenURI to a usable https image, caches
+    // for five minutes and single-flights, which matters on the most-hit
+    // route in the app. A failure leaves art null and the page falls back to
+    // the gradient — never an empty box.
+    let art: { name: string; imageUrl: string | null } | null = null;
+    if (drop !== null) {
+      const cat = await readCatalogue();
+      if (cat.ok) {
+        const entry = cat.entries.find(
+          (e) => e.masterId === drop.masterId.toString(),
+        );
+        if (entry) art = { name: entry.name, imageUrl: entry.imageUrl };
+      }
+    }
+
+    return NextResponse.json({ open, remaining, mine, art });
   } catch (err) {
     console.error("[dime/claim] GET failed", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });
