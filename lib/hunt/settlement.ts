@@ -21,14 +21,24 @@
 // serialiser in payout.ts. Without it a settlement and a payout can read the
 // same pending nonce and replace each other.
 
-import { createPublicClient, createWalletClient, http, parseAbi, type Hex } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  parseAbi,
+  type Hex,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { prisma } from "@/lib/db/prisma";
 import { monad } from "@/lib/monad";
 import { toWei } from "@/lib/wei";
 import { enqueueTreasuryOp } from "@/lib/hunt/payout";
 import { TIERS, isTierName, readTierPriceWei } from "@/lib/hunt/cohort";
-import { planSettlement, explainSettleRefusal } from "@/lib/hunt/settle";
+import {
+  checkPriceDrift,
+  explainSettleRefusal,
+  planSettlement,
+} from "@/lib/hunt/settle";
 
 const WMON_ABI = parseAbi([
   "function deposit() payable",
@@ -75,14 +85,21 @@ function wmonAddress(): `0x${string}` | null {
   return raw && /^0x[0-9a-fA-F]{40}$/.test(raw) ? (raw as `0x${string}`) : null;
 }
 
-export async function settleRedemption(redemptionId: string, adminId: string): Promise<SettleResult> {
+export async function settleRedemption(
+  redemptionId: string,
+  adminId: string,
+): Promise<SettleResult> {
   return enqueueTreasuryOp(() => settleRedemptionSerial(redemptionId, adminId));
 }
 
-async function settleRedemptionSerial(redemptionId: string, adminId: string): Promise<SettleResult> {
+async function settleRedemptionSerial(
+  redemptionId: string,
+  adminId: string,
+): Promise<SettleResult> {
   const cohort = cohortAddress();
   const wmon = wmonAddress();
-  if (!cohort) return { ok: false, error: "NEXT_PUBLIC_TURBO_COHORT_ADDRESS not set" };
+  if (!cohort)
+    return { ok: false, error: "NEXT_PUBLIC_TURBO_COHORT_ADDRESS not set" };
   if (!wmon) return { ok: false, error: "WMON_ADDRESS not set" };
 
   const r = await prisma.redemption.findUnique({
@@ -90,8 +107,10 @@ async function settleRedemptionSerial(redemptionId: string, adminId: string): Pr
     include: { player: true },
   });
   if (!r) return { ok: false, error: "redemption not found" };
-  if (r.status !== "PENDING") return { ok: false, error: `redemption is ${r.status}, not PENDING` };
-  if (!isTierName(r.tier)) return { ok: false, error: `unknown tier "${r.tier}"` };
+  if (r.status !== "PENDING")
+    return { ok: false, error: `redemption is ${r.status}, not PENDING` };
+  if (!isTierName(r.tier))
+    return { ok: false, error: `unknown tier "${r.tier}"` };
 
   // Parse before claiming anything, so a malformed row fails loudly while it is
   // still PENDING rather than wedging in an in-flight state.
@@ -99,7 +118,10 @@ async function settleRedemptionSerial(redemptionId: string, adminId: string): Pr
   try {
     costWei = toWei(r.costCreditWei);
   } catch (e) {
-    return { ok: false, error: `unparseable cost: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      ok: false,
+      error: `unparseable cost: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
 
   // Price is re-read from chain rather than trusted from the row: the snapshot
@@ -109,14 +131,43 @@ async function settleRedemptionSerial(redemptionId: string, adminId: string): Pr
   if (livePriceWei === null) return { ok: false, error: "no_price" };
   const dueWei = livePriceWei * BigInt(r.months);
 
+  // ...but re-reading is only half of it. `costWei` above was parsed off the
+  // row and then never used, so nothing compared what the player was actually
+  // debited against what the settler is about to pay. An admin repricing
+  // between redeem and settle moved the payment with nothing objecting:
+  // TurboCohortV7 sat at 0.001 WMON during a test and was restored to 139, and
+  // a row created in between would have settled at 139,000x its credit. The
+  // only obstacle was the settler not holding that much WMON, which is an empty
+  // wallet rather than a control.
+  //
+  // Leaves the row PENDING on refusal. "Somebody changed a price" is a human's
+  // decision, not something to retry and not something to pay.
+  const drift = checkPriceDrift(costWei, dueWei);
+  if (!drift.ok) {
+    return {
+      ok: false,
+      error: `${explainSettleRefusal("price_moved")} Credited ${costWei} wei, due ${dueWei} wei.`,
+    };
+  }
+
   const pub = publicClient();
   const wallet = settlerWallet();
   const settler = wallet.account.address;
   const player = r.player.walletAddress as `0x${string}`;
 
   const [wmonHeldWei, allowanceWei, nativeHeldWei] = await Promise.all([
-    pub.readContract({ address: wmon, abi: WMON_ABI, functionName: "balanceOf", args: [settler] }),
-    pub.readContract({ address: wmon, abi: WMON_ABI, functionName: "allowance", args: [settler, cohort] }),
+    pub.readContract({
+      address: wmon,
+      abi: WMON_ABI,
+      functionName: "balanceOf",
+      args: [settler],
+    }),
+    pub.readContract({
+      address: wmon,
+      abi: WMON_ABI,
+      functionName: "allowance",
+      args: [settler, cohort],
+    }),
     pub.getBalance({ address: settler }),
   ]);
 
@@ -133,10 +184,20 @@ async function settleRedemptionSerial(redemptionId: string, adminId: string): Pr
   try {
     for (const step of plan.steps) {
       if (step.kind === "WRAP") {
-        const h = await wallet.writeContract({ address: wmon, abi: WMON_ABI, functionName: "deposit", value: step.amountWei });
+        const h = await wallet.writeContract({
+          address: wmon,
+          abi: WMON_ABI,
+          functionName: "deposit",
+          value: step.amountWei,
+        });
         await pub.waitForTransactionReceipt({ hash: h });
       } else if (step.kind === "APPROVE") {
-        const h = await wallet.writeContract({ address: wmon, abi: WMON_ABI, functionName: "approve", args: [cohort, step.amountWei] });
+        const h = await wallet.writeContract({
+          address: wmon,
+          abi: WMON_ABI,
+          functionName: "approve",
+          args: [cohort, step.amountWei],
+        });
         await pub.waitForTransactionReceipt({ hash: h });
       } else {
         // The irreversible one. Everything before this is recoverable: an
@@ -148,9 +209,15 @@ async function settleRedemptionSerial(redemptionId: string, adminId: string): Pr
           functionName: "payMonthlyFor",
           args: [player, TIERS[r.tier]],
         });
-        const receipt = await pub.waitForTransactionReceipt({ hash: payHash as Hex });
+        const receipt = await pub.waitForTransactionReceipt({
+          hash: payHash as Hex,
+        });
         if (receipt.status !== "success") {
-          return { ok: false, txHash: payHash, error: "payMonthlyFor reverted" };
+          return {
+            ok: false,
+            txHash: payHash,
+            error: "payMonthlyFor reverted",
+          };
         }
       }
     }
@@ -159,7 +226,12 @@ async function settleRedemptionSerial(redemptionId: string, adminId: string): Pr
     // If the PAY was broadcast we do not know whether it landed. Leave the row
     // PENDING and say so — a blind retry is how somebody gets two months.
     return payHash
-      ? { ok: false, txHash: payHash, needsReconciliation: true, error: `outcome unknown: ${msg}` }
+      ? {
+          ok: false,
+          txHash: payHash,
+          needsReconciliation: true,
+          error: `outcome unknown: ${msg}`,
+        }
       : { ok: false, error: msg };
   }
 
@@ -177,7 +249,12 @@ async function settleRedemptionSerial(redemptionId: string, adminId: string): Pr
   if (claimed.count === 0) {
     // Paid on chain but somebody else marked the row first. Report it loudly:
     // the player has their month, but the ledger needs a human to look.
-    return { ok: false, txHash: payHash, needsReconciliation: true, error: "row was settled concurrently" };
+    return {
+      ok: false,
+      txHash: payHash,
+      needsReconciliation: true,
+      error: "row was settled concurrently",
+    };
   }
 
   return { ok: true, txHash: payHash };

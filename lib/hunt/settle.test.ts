@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planSettlement } from "./settle";
+import { checkPriceDrift, planSettlement } from "./settle";
 
 const WMON = (n: bigint) => n * 10n ** 18n;
 const base = { costWei: WMON(139n), wmonHeldWei: 0n, allowanceWei: 0n,
@@ -60,5 +60,69 @@ describe("planSettlement", () => {
     expect(p.ok).toBe(false);
     if (p.ok) return;
     expect(p.reason).toBe("cost_not_positive");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The guard that was missing.
+//
+// settleRedemption re-read the live tier price and paid THAT, while the row's
+// own costCreditWei was parsed and thrown away. The real case: TurboCohortV7
+// was set to 0.001 WMON for a test and restored to 139 WMON, so a redemption
+// created in between would have settled at 139,000x what its credit bought.
+// Nothing in the code objected — the only obstacle was the settler not holding
+// 139 WMON, which is an empty wallet, not a control.
+// ---------------------------------------------------------------------------
+describe("checkPriceDrift", () => {
+  const wmon = (n: string) => BigInt(n) * 10n ** 18n;
+
+  it("REFUSES the real incident: credit bought at 0.001, due at 139", () => {
+    const credited = 1_000_000_000_000_000n; // 0.001 WMON
+    const due = wmon("139");
+    const d = checkPriceDrift(credited, due);
+    expect(d.ok).toBe(false);
+    expect(d.driftBps).toBeGreaterThan(1_000_000); // ~139,000x
+  });
+
+  it("refuses the reverse too — settling for far LESS than was charged", () => {
+    // Under-paying is not a happy accident: the player was debited 139 WMON of
+    // credit and the cohort would receive 0.001.
+    expect(checkPriceDrift(wmon("139"), 1_000_000_000_000_000n).ok).toBe(false);
+  });
+
+  it("allows an ordinary repricing, which is why this is a band", () => {
+    // Tier prices are admin-set and may legitimately move. Refusing every
+    // change would wedge settlement on a 1% adjustment.
+    expect(checkPriceDrift(wmon("100"), wmon("110")).ok).toBe(true);
+    expect(checkPriceDrift(wmon("100"), wmon("90")).ok).toBe(true);
+  });
+
+  it("allows an exact match", () => {
+    const d = checkPriceDrift(wmon("139"), wmon("139"));
+    expect(d).toEqual({ ok: true, driftBps: 0 });
+  });
+
+  it("holds the boundary exactly at the tolerance", () => {
+    expect(checkPriceDrift(10_000n, 12_500n).driftBps).toBe(2_500);
+    expect(checkPriceDrift(10_000n, 12_500n).ok).toBe(true);
+    expect(checkPriceDrift(10_000n, 12_501n).ok).toBe(false);
+  });
+
+  it("does not truncate a real drift to zero", () => {
+    // bigint division truncates. Dividing before scaling would turn a 24%
+    // move into 0 and report no movement at all — a guard that reads as green
+    // on exactly the input it exists to measure.
+    expect(checkPriceDrift(10_000n, 12_400n).driftBps).toBe(2_400);
+  });
+
+  it("refuses a row recording no credit rather than dividing by zero", () => {
+    // Paying real WMON against a zero-credit row is the overspend itself.
+    expect(checkPriceDrift(0n, wmon("139")).ok).toBe(false);
+    expect(checkPriceDrift(-1n, wmon("1")).ok).toBe(false);
+  });
+
+  it("takes an explicit tolerance", () => {
+    expect(checkPriceDrift(10_000n, 11_000n, 500).ok).toBe(false);
+    expect(checkPriceDrift(10_000n, 11_000n, 2_000).ok).toBe(true);
   });
 });
