@@ -114,6 +114,58 @@ async function sendQuoted(
 }
 
 /**
+ * Quote, simulate, and re-quote past a route that will not execute.
+ *
+ * Kuru's router intermittently hands back a path that reverts (0x5264a63f).
+ * Measured on mainnet within one minute, with the balance and allowance
+ * unchanged throughout: 497520 and 450000 simulated fine while 400000 and
+ * 300000 reverted, and moments earlier the same full amount had reverted and
+ * then worked. It is neither the amount nor the allowance — it is the route,
+ * and the cure is to ask again.
+ *
+ * Without this a hunter sees a failure on a swap that would have worked on the
+ * next tap, which is indistinguishable from the app being broken.
+ */
+async function quoteThatExecutes(args: {
+  account: LocalAccount;
+  token: string;
+  tokenIn: string;
+  tokenOut: string;
+  amount: bigint;
+  attempts?: number;
+}): Promise<KuruQuote> {
+  const pc = publicClient();
+  const attempts = args.attempts ?? 4;
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    const q = await kuruQuote({
+      token: args.token,
+      userAddress: args.account.address,
+      tokenIn: args.tokenIn,
+      tokenOut: args.tokenOut,
+      amount: args.amount,
+    });
+    try {
+      // The simulation IS the check. Monad charges the full gas limit on a
+      // revert, so a route that fails here must never be signed.
+      await pc.call({
+        account: args.account.address,
+        to: q.to,
+        data: q.calldata,
+        value: q.value,
+      });
+      return q;
+    } catch (e) {
+      last = e;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  throw last instanceof Error
+    ? last
+    : new Error("kuru: no route simulated successfully");
+}
+
+/**
  * MON -> AUSD, with the trade on Kuru's order book.
  *
  * `onStep` is called before each leg so the page can say which of the three
@@ -135,9 +187,9 @@ export async function swapMonToAusdViaKuru(args: {
   const token = await kuruToken(user);
 
   // --- 1. the trade, on the book ------------------------------------------
-  const leg1 = await kuruQuote({
+  const leg1 = await quoteThatExecutes({
+    account,
     token,
-    userAddress: user,
     tokenIn: "0x0000000000000000000000000000000000000000",
     tokenOut: USDC,
     amount: monWei,
@@ -201,9 +253,9 @@ export async function swapMonToAusdViaKuru(args: {
 
   // --- 3. the conversion, quoted from what actually arrived ---------------
   step("converting");
-  const leg2 = await kuruQuote({
+  const leg2 = await quoteThatExecutes({
+    account,
     token,
-    userAddress: user,
     tokenIn: USDC,
     tokenOut: AUSD,
     amount: usdcIn,
