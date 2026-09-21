@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  collectorEntry,
   parseCatalogue,
   readCatalogue,
   resetCatalogueCache,
@@ -192,5 +193,119 @@ describe("readCatalogue", () => {
       reason: "catalogue_unavailable",
     });
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   The collector tier.
+
+   Hunt placed only the standard licence until 2026-09-21, because collector
+   prices are deliberately enormous — Killah's is 1,000,000 WMON — and a card
+   nobody could act on is noise. That reason stopped holding once placeableFor
+   started filtering by what the hunter can pay: the affordability filter makes
+   an unreachable card unreachable, and excluding the tier only denied a funded
+   hunter the one card they might have wanted.
+
+   So these check the two things the catalogue is still responsible for: a real
+   price, and remaining supply.
+--------------------------------------------------------------------------- */
+
+/** Dime Que Sí as the venue reports it: 0.8 standard, 500 collector, 100 left. */
+const DUAL_TIER = {
+  id: "music-143-13",
+  tokenId: "13",
+  price: "800000000000000000",
+  collectorPrice: "500000000000000000000",
+  collectorsRemaining: 100,
+  isArt: false,
+  name: "Dime Que Si",
+  imageUrl: "https://gw/ipfs/QmCover",
+  previewUrl: "https://gw/ipfs/QmClip",
+};
+
+describe("collectorEntry", () => {
+  it("offers the collector tier when it is priced and has supply", () => {
+    const e = collectorEntry(DUAL_TIER, REG)!;
+    expect(e.tier).toBe("COLLECTOR");
+    expect(e.priceWei).toBe(500_000_000_000_000_000_000n);
+    expect(e.masterId).toBe("13");
+  });
+
+  it("carries the same name and artwork as the standard tier", () => {
+    // Two offers for one work; a card for either must draw the same record.
+    const std = toEntry(DUAL_TIER, REG)!;
+    const col = collectorEntry(DUAL_TIER, REG)!;
+    expect(col.name).toBe(std.name);
+    expect(col.imageUrl).toBe(std.imageUrl);
+    expect(col.previewUrl).toBe(std.previewUrl);
+    expect(col.kind).toBe(std.kind);
+  });
+
+  it("offers nothing when the venue does not send the field at all", () => {
+    // An older venue deployment. This is what makes the rollout safe: the
+    // catalogue behaves exactly as it did before the field existed.
+    const { collectorPrice, collectorsRemaining, ...older } = DUAL_TIER;
+    void collectorPrice;
+    void collectorsRemaining;
+    expect(collectorEntry(older, REG)).toBeNull();
+  });
+
+  it("treats a zero collector price as no tier, not as free", () => {
+    // The venue reverts on a zero price, so it is unbuyable either way.
+    expect(
+      collectorEntry({ ...DUAL_TIER, collectorPrice: "0" }, REG),
+    ).toBeNull();
+  });
+
+  it("refuses a sold-out tier even though it is still priced", () => {
+    // purchase() reverts past maxCollectorEditions, and Monad charges the full
+    // gas limit on a revert — an offered card that cannot complete costs the
+    // hunter real MON to find out.
+    expect(
+      collectorEntry({ ...DUAL_TIER, collectorsRemaining: 0 }, REG),
+    ).toBeNull();
+  });
+
+  it("counts a missing or malformed supply as sold out", () => {
+    for (const bad of [undefined, null, "100", -1, Number.NaN]) {
+      expect(
+        collectorEntry({ ...DUAL_TIER, collectorsRemaining: bad }, REG),
+      ).toBeNull();
+    }
+  });
+
+  it("offers nothing when the work itself is not offerable", () => {
+    // No usable standard entry means no id or no price — neither tier stands.
+    expect(collectorEntry({ ...DUAL_TIER, tokenId: undefined }, REG)).toBeNull();
+  });
+
+  it("DOES offer a 1,000,000 WMON collector edition", () => {
+    // Deliberate. The catalogue's job is not to guess who can afford what —
+    // placeableFor filters on the hunter's actual balance before the draw, so
+    // excluding this here would only deny a funded hunter a card they could
+    // have taken.
+    const killah = {
+      ...DUAL_TIER,
+      tokenId: "9",
+      collectorPrice: "1000000000000000000000000",
+      collectorsRemaining: 5,
+    };
+    expect(collectorEntry(killah, REG)!.priceWei).toBe(
+      1_000_000_000_000_000_000_000_000n,
+    );
+  });
+});
+
+describe("parseCatalogue — two tiers", () => {
+  it("emits both offers for one dual-tier track", () => {
+    const out = parseCatalogue({ tracks: [DUAL_TIER] }, REG)!;
+    expect(out.map((e) => e.tier).sort()).toEqual(["COLLECTOR", "STANDARD"]);
+    expect(new Set(out.map((e) => e.masterId))).toEqual(new Set(["13"]));
+  });
+
+  it("still emits one offer for a standard-only track", () => {
+    const out = parseCatalogue(LIVE_BODY, REG)!;
+    expect(out).toHaveLength(2); // two tracks, neither with a collector tier
+    expect(out.every((e) => e.tier === "STANDARD")).toBe(true);
   });
 });

@@ -15,13 +15,24 @@
 // before anything could be drawn), and the `active` filter — 12 masters exist,
 // 6 are active, and the endpoint returns exactly those 6.
 //
-// ## STANDARD tier only
+// ## BOTH tiers, and why the old reason for STANDARD-only no longer holds
 //
-// Hunt places the standard licence and never the collector edition. Collector
-// prices are set deliberately and some are enormous on purpose — Killah's is
-// 1,000,000 WMON — so placing one would put a card on the scope that no hunter
-// could ever act on. Collector editions are bought at the venue by fans who
-// chose to fund a wallet, not found while walking.
+// This placed the standard licence and never the collector edition, because
+// collector prices are set deliberately and some are enormous on purpose —
+// Killah's is 1,000,000 WMON — so placing one would put a card on the scope
+// that no hunter could ever act on.
+//
+// That reasoning was right when it was written and is now redundant.
+// `placeableFor` filters the catalogue by what the hunter can actually pay
+// BEFORE the draw, so a 1,000,000 WMON card is already unreachable for
+// everyone who cannot afford it, and reachable for anyone who can. Excluding
+// the tier outright did not protect a hunter from an impossible card; it
+// denied a funded one the only card they might have wanted.
+//
+// So the guard that matters is affordability, which exists, plus supply:
+// `purchase` reverts once maxCollectorEditions is reached, so a sold-out tier
+// must never be offered. That is what `collectorsRemaining` is for, and it is
+// why the price alone is not enough to decide.
 //
 // ## Unavailable is not empty
 //
@@ -51,6 +62,13 @@ interface VenueTrack {
   name?: unknown;
   imageUrl?: unknown;
   previewUrl?: unknown;
+  /**
+   * The collector tier. Absent on a venue that has not deployed the field yet,
+   * which is exactly how this rolls out safely: no collectorPrice means no
+   * collector entry, and the catalogue behaves as it always did.
+   */
+  collectorPrice?: unknown;
+  collectorsRemaining?: unknown;
 }
 
 function asString(v: unknown): string | null {
@@ -96,6 +114,55 @@ export function toEntry(
   };
 }
 
+/**
+ * The same work's COLLECTOR offer, or null when there is not one to make.
+ *
+ * Separate from `toEntry` rather than folded into it because the two tiers fail
+ * for different reasons and a caller must be able to get one without the other:
+ * a master can have a perfectly good standard licence and a sold-out collector
+ * tier, and the standard one should still be placed.
+ *
+ * Reject by default. Four ways to have no collector offer, all of them normal:
+ *   - the venue does not send the field at all (older deployment)
+ *   - the master has no collector tier, which prices at zero
+ *   - the tier is sold out
+ *   - the price is unparseable
+ *
+ * Supply is checked HERE and not left to the purchase, because `purchase`
+ * reverts once maxCollectorEditions is reached and Monad charges the whole gas
+ * limit on a revert. An offered card that cannot complete costs the hunter
+ * real MON to discover.
+ */
+export function collectorEntry(
+  track: VenueTrack,
+  collection: string,
+): CatalogueEntry | null {
+  const standard = toEntry(track, collection);
+  // Reuse the standard mapping for everything the two tiers share — id, name,
+  // artwork, kind. If the work is not offerable at all, neither tier is.
+  if (standard === null) return null;
+
+  const raw = asString(track.collectorPrice);
+  if (raw === null) return null;
+  let priceWei: bigint;
+  try {
+    priceWei = BigInt(raw);
+  } catch {
+    return null;
+  }
+  // Zero means "no collector tier for this master", not "free" — the venue
+  // reverts on a zero price, so this is unbuyable either way.
+  if (!(priceWei > 0n)) return null;
+
+  // Anything that is not a positive number counts as sold out. A missing field
+  // from an older venue lands here, which is the safe direction.
+  const remaining =
+    typeof track.collectorsRemaining === "number" ? track.collectorsRemaining : 0;
+  if (!(remaining > 0)) return null;
+
+  return { ...standard, tier: "COLLECTOR", priceWei };
+}
+
 /** Parse a whole response body. Exported so it can be tested without a network. */
 export function parseCatalogue(
   body: unknown,
@@ -104,9 +171,19 @@ export function parseCatalogue(
   if (typeof body !== "object" || body === null) return null;
   const tracks = (body as { tracks?: unknown }).tracks;
   if (!Array.isArray(tracks)) return null;
-  return tracks
-    .map((t) => toEntry(t as VenueTrack, collection))
-    .filter((e): e is CatalogueEntry => e !== null);
+  // One track can yield two offers. The draw is uniform over OFFERS, not over
+  // works, so a master with both tiers is twice as likely to come up as one
+  // with only a standard licence — which is correct: there are two distinct
+  // things to be found, at two prices, and a hunter may hold one of each.
+  return tracks.flatMap((t) => {
+    const track = t as VenueTrack;
+    const out: CatalogueEntry[] = [];
+    const standard = toEntry(track, collection);
+    if (standard !== null) out.push(standard);
+    const collector = collectorEntry(track, collection);
+    if (collector !== null) out.push(collector);
+    return out;
+  });
 }
 
 const DEFAULT_TTL_MS = 5 * 60_000;
