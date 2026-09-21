@@ -13,7 +13,11 @@
 // Cache lat/lng appear ONLY in `listCaches`, which is called from the
 // OPERATOR-gated cache management screen. No other function here selects them.
 
-import { PayoutStatus, Prisma } from "@prisma/client";
+import {
+  PayoutStatus,
+  Prisma,
+  RedemptionStatus,
+} from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { haversineMeters } from "@/lib/geo/distance";
 import { signedWei, sumWei, weiOf } from "@/lib/admin/format";
@@ -1015,4 +1019,84 @@ export async function listAdminActions(params: {
     }),
   ]);
   return { total, rows };
+}
+
+// ── Redemptions ──────────────────────────────────────────────────────────────
+//
+// A redemption is a debt: credit is already spent and the months are owed. The
+// row is the only record that it happened, so an operator queue is not a
+// convenience — without one a PENDING row is invisible and the player simply
+// never receives what they paid for.
+
+export interface RedemptionReviewRow {
+  id: string;
+  status: RedemptionStatus;
+  months: number;
+  tier: string;
+  costCreditWei: Prisma.Decimal;
+  tierPriceWei: Prisma.Decimal;
+  settledBy: string | null;
+  settledAt: Date | null;
+  settlementNote: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
+  createdAt: Date;
+  player: {
+    id: string;
+    walletAddress: string;
+    turboUsername: string | null;
+    displayName: string | null;
+  };
+}
+
+export async function listRedemptionReview(params: {
+  statuses: RedemptionStatus[];
+  page: { skip: number; take: number };
+}): Promise<{ rows: RedemptionReviewRow[]; total: number }> {
+  const where: Prisma.RedemptionWhereInput = {
+    status: { in: params.statuses },
+  };
+  const [total, rows] = await Promise.all([
+    prisma.redemption.count({ where }),
+    prisma.redemption.findMany({
+      where,
+      // Oldest PENDING first: the queue is a debt ledger, and the longest
+      // outstanding debt is the one most likely to have been forgotten.
+      orderBy: { createdAt: "asc" },
+      skip: params.page.skip,
+      take: params.page.take,
+      include: {
+        player: {
+          select: {
+            id: true,
+            walletAddress: true,
+            turboUsername: true,
+            displayName: true,
+          },
+        },
+      },
+    }),
+  ]);
+  return { rows, total };
+}
+
+const ALL_REDEMPTION_STATUSES: RedemptionStatus[] = [
+  "PENDING",
+  "SETTLED",
+  "VOIDED",
+];
+
+export async function redemptionStatusCounts(): Promise<
+  Record<RedemptionStatus, number>
+> {
+  const grouped = await prisma.redemption.groupBy({
+    by: ["status"],
+    where: { status: { in: ALL_REDEMPTION_STATUSES } },
+    _count: { _all: true },
+  });
+  const out = Object.fromEntries(
+    ALL_REDEMPTION_STATUSES.map((s) => [s, 0]),
+  ) as Record<RedemptionStatus, number>;
+  for (const g of grouped) out[g.status] = g._count._all;
+  return out;
 }

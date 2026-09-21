@@ -20,6 +20,11 @@ export const dynamic = "force-dynamic";
 const NAV: Array<{ href: string; label: string; min: AdminRole }> = [
   { href: "/admin", label: "Treasury", min: AdminRole.VIEWER },
   { href: "/admin/payouts", label: "Payouts", min: AdminRole.VIEWER },
+  {
+    href: "/admin/redemptions",
+    label: "Redemptions",
+    min: AdminRole.VIEWER,
+  },
   { href: "/admin/abuse", label: "Abuse", min: AdminRole.VIEWER },
   { href: "/admin/hunts", label: "Hunts & caches", min: AdminRole.VIEWER },
   { href: "/admin/survey", label: "Survey", min: AdminRole.OPERATOR },
