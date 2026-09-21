@@ -10,7 +10,7 @@ import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { LeashHistory } from "@/components/cota/LeashHistory";
 import { readback } from "@/lib/cota/readback";
 import { leverageX100, LossyScaleError, usdE6 } from "@/lib/cota/scale";
-import { newBrowserNonce, signAndAnchorCota, signCota } from "@/lib/cota/sign";
+import { newBrowserNonce, signAndAnchorCota } from "@/lib/cota/sign";
 import type { CotaMessage } from "@/lib/cota/typedData";
 
 // ---------------------------------------------------------------------------
@@ -150,20 +150,12 @@ export default function CotaPage() {
     });
   }, []);
   const crossesHost = huntHref !== null && huntHref.startsWith("http");
-  // Practice vs live, chosen UP FRONT. Both sign the same leash; this only
-  // decides where the leash is used — a funded account shouldn't have to sign,
-  // then dig past practice to find the live door.
-  // Live by DEFAULT. Practice used to be the default behind two half-page
-  // buttons, which meant a hunter arriving at Cota was shown a demo and the
-  // real product was hidden behind a toggle they had to find. The whole live
-  // ladder -- swap, bridge, deposit, trade, risk -- rendered only after a tap
-  // nobody had a reason to make.
-  //
-  // Safe to default here because live mode is already gated where it counts: a
-  // warn Note, a $3 minimum notional, and a sign button disabled under it. And
-  // practice is not hidden -- it has its own page, its own door in the live
-  // CTA ("Or practice first"), and the header toggle below.
-  const [mode, setMode] = useState<"practice" | "live">("live");
+  // PRACTICE MODE IS GONE. It never was a sandbox: it signed the same message
+  // with the same real passkey, posted the same body to the same table, and
+  // differed only in skipping the on-chain anchor. Nothing on the row recorded
+  // which mode it came from, so the leash history correctly showed real
+  // leashes to someone who believed they were practising. The paper-trading
+  // simulator at /cota/practice is the real sandbox and is still linked below.
 
   useEffect(() => {
     let live = true;
@@ -242,20 +234,12 @@ export default function CotaPage() {
         clientTs: now,
         nonce: newBrowserNonce(),
       };
-      // Anchoring is a LIVE-mode concern: it is an on-chain tx that costs gas
-      // and exists to make a real trading authorisation independently
-      // verifiable. Practice is a simulation, so it signs the leash (to have a
-      // limit to practice against) but does NOT anchor — no gas, no on-chain
-      // record for a practice session.
-      let signature: `0x${string}`;
-      let anchorTxHash: string | null = null;
-      if (mode === "live") {
-        const signed = await signAndAnchorCota(message);
-        signature = signed.signature;
-        anchorTxHash = signed.anchorTxHash;
-      } else {
-        signature = await signCota(message);
-      }
+      // Anchoring always happens: it costs gas and makes a real trading
+      // authorisation independently verifiable, and every leash signed here is
+      // now a real one.
+      const signed = await signAndAnchorCota(message);
+      const signature: `0x${string}` = signed.signature;
+      const anchorTxHash: string | null = signed.anchorTxHash;
       const res = await fetch("/api/cota", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -287,7 +271,7 @@ export default function CotaPage() {
     } finally {
       setBusy(false);
     }
-  }, [ceilings, durationSeconds, mode]);
+  }, [ceilings, durationSeconds]);
 
   return (
     <main className="safe-top safe-bottom mx-auto w-full max-w-lg space-y-4 p-4 pb-24">
@@ -332,105 +316,65 @@ export default function CotaPage() {
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
           <LanguageSwitch />
-          {/* Practice lives here now: reachable in one tap, but no longer
-              occupying the top of the page as though choosing a demo were the
-              first decision a hunter has to make. Colour carries the state --
-              phosphor means real money. */}
-          <div
-            role="group"
-            aria-label={lang === "es" ? "Modo" : "Mode"}
-            className="border-hull-line inline-flex overflow-hidden rounded-full border"
-          >
-            {(["live", "practice"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                aria-current={mode === m ? "true" : undefined}
-                className={`px-3 py-1.5 font-mono text-xs tracking-wide transition-colors ${
-                  mode === m
-                    ? m === "live"
-                      ? "bg-phosphor text-void"
-                      : "bg-ink text-void"
-                    : "text-ink-dim hover:text-ink"
-                }`}
-              >
-                {m === "live"
-                  ? lang === "es"
-                    ? "EN VIVO"
-                    : "LIVE"
-                  : lang === "es"
-                    ? "PRÁCTICA"
-                    : "PRACTICE"}
-              </button>
-            ))}
-          </div>
         </div>
       </header>
 
-      <Note tone={mode === "live" ? "warn" : "info"}>
-        {mode === "live"
-          ? lang === "es"
-            ? "Opera AUSD real en Perpl bajo tu correa firmada. Necesitas una cuenta Perpl ya fondeada con AUSD."
-            : "Trade real AUSD on Perpl under your signed leash. Needs a Perpl account already funded with AUSD."
-          : lang === "es"
-            ? "Practica con dinero de mentira. No necesitas cripto ni AUSD."
-            : "Practice with fake money — no crypto or AUSD needed."}
+      <Note tone="warn">
+        {lang === "es"
+          ? "Opera AUSD real en Perpl bajo tu correa firmada. Necesitas una cuenta Perpl ya fondeada con AUSD."
+          : "Trade real AUSD on Perpl under your signed leash. Needs a Perpl account already funded with AUSD."}
       </Note>
 
-      {/* The live path needs AUSD; there are two ways to get it, by where your
-          money already is. Surfaced here so neither route is orphaned. */}
-      {mode === "live" && (
-        <div className="grid gap-2">
-          <a
-            href="/cota/swap"
-            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-          >
-            {lang === "es"
-              ? "Cambiar MON cazado → AUSD →"
-              : "Swap hunted MON → AUSD →"}
-          </a>
-          <a
-            href="/cota/bridge"
-            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-          >
-            {lang === "es"
-              ? "Traer AUSD de otra red (puente) →"
-              : "Bring AUSD from another chain →"}
-          </a>
-          {/* Once you hold AUSD, this opens the Perpl account. It must run
+      {/* The path to AUSD; two ways, by where your money already is. */}
+      <div className="grid gap-2">
+        <a
+          href="/cota/swap"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es"
+            ? "Cambiar MON cazado → AUSD →"
+            : "Swap hunted MON → AUSD →"}
+        </a>
+        <a
+          href="/cota/bridge"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es"
+            ? "Traer AUSD de otra red (puente) →"
+            : "Bring AUSD from another chain →"}
+        </a>
+        {/* Once you hold AUSD, this opens the Perpl account. It must run
               before enrolling a key — enrollment 404s without an account. */}
-          <a
-            href="/cota/deposit"
-            className="bg-phosphor/10 border-phosphor/40 text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-          >
-            {lang === "es"
-              ? "Fondear cuenta Perpl (depositar AUSD) →"
-              : "Fund Perpl account (deposit AUSD) →"}
-          </a>
-          <a
-            href="/cota/trade"
-            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-          >
-            {lang === "es"
-              ? "Operar bajo tu correa →"
-              : "Trade under your leash →"}
-          </a>
-          {/* Exposure. Only meaningful once there is a Perpl position, so it
+        <a
+          href="/cota/deposit"
+          className="bg-phosphor/10 border-phosphor/40 text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es"
+            ? "Fondear cuenta Perpl (depositar AUSD) →"
+            : "Fund Perpl account (deposit AUSD) →"}
+        </a>
+        <a
+          href="/cota/trade"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es"
+            ? "Operar bajo tu correa →"
+            : "Trade under your leash →"}
+        </a>
+        {/* Exposure. Only meaningful once there is a Perpl position, so it
               lives inside the live block — but it had no link at all until
               now, which made a whole screen unreachable. */}
-          <a
-            href="/cota/risk"
-            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-          >
-            {lang === "es"
-              ? "Ver mi riesgo y exposición →"
-              : "See my risk and exposure →"}
-          </a>
-        </div>
-      )}
+        <a
+          href="/cota/risk"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es"
+            ? "Ver mi riesgo y exposición →"
+            : "See my risk and exposure →"}
+        </a>
+      </div>
 
-      {/* Spot sits OUTSIDE the mode toggle, deliberately.
+      {/* Spot sits apart from the Perpl ladder, deliberately.
           Everything above is the Perpl ladder: get AUSD, fund an account,
           enrol a key, trade under a leash. Spot needs none of it — no AUSD, no
           Perpl account, no leash, just the wallet the passkey already derived.
@@ -453,13 +397,12 @@ export default function CotaPage() {
             : "No Perpl account, no AUSD — just your wallet"}
         </span>
         {/* Says REAL, and says it here rather than on the spot page itself.
-            In practice mode the whole live block above is hidden, so this card
-            renders directly under a notice reading "Practice with fake money".
-            Nothing between them said otherwise, and the sublabel above never
-            uses the word real — so the one control on this page that spends
-            actual MON on a live order book sat immediately beneath a fake-money
-            banner. Whoever taps practice is exactly the person who should not
-            have to infer that. */}
+            Added when a practice mode existed and this card could render
+            directly beneath a "Practice with fake money" notice. That mode is
+            gone, but the warning stays: the sublabel above sells the card on
+            needing no account and no AUSD, which reads as low stakes, and this
+            is the one control on the page that spends actual MON on a live
+            order book. */}
         <span className="mt-1 text-xs font-semibold text-amber-400">
           {lang === "es"
             ? "Dinero real — esto no es práctica"
@@ -506,39 +449,22 @@ export default function CotaPage() {
           >
             {t("another")}
           </Button>
-          {/* The primary CTA follows the mode chosen up top — live users get the
-              live door, not a practice button they have to look past. */}
-          {mode === "live" ? (
-            <>
-              <a
-                href="/cota/enroll"
-                className="bg-phosphor text-void flex min-h-14 w-full items-center justify-center rounded-2xl px-5 text-lg font-semibold"
-              >
-                {lang === "es" ? "Operar en vivo →" : "Trade live →"}
-              </a>
-              <a
-                href="/cota/practice"
-                className="border-hull-line text-ink-dim flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm"
-              >
-                {lang === "es" ? "O practica primero" : "Or practice first"}
-              </a>
-            </>
-          ) : (
-            <>
-              <a
-                href="/cota/practice"
-                className="bg-phosphor text-void flex min-h-14 w-full items-center justify-center rounded-2xl px-5 text-lg font-semibold"
-              >
-                {t("practice")}
-              </a>
-              <a
-                href="/cota/enroll"
-                className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm"
-              >
-                {lang === "es" ? "Operar en vivo →" : "Trade live →"}
-              </a>
-            </>
-          )}
+          {/* One door now. The secondary link keeps the paper simulator
+              reachable -- it is the only honest "practice" in the product. */}
+          <a
+            href="/cota/enroll"
+            className="bg-phosphor text-void flex min-h-14 w-full items-center justify-center rounded-2xl px-5 text-lg font-semibold"
+          >
+            {lang === "es" ? "Operar en vivo →" : "Trade live →"}
+          </a>
+          <a
+            href="/cota/practice"
+            className="border-hull-line text-ink-dim flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm"
+          >
+            {lang === "es"
+              ? "O prueba con dinero de mentira"
+              : "Or try it with fake money"}
+          </a>
           <p className="text-ink-faint text-center text-xs">
             {lang === "es"
               ? "En vivo es para cuentas ya fondeadas con AUSD en Perpl. ¿Nuevo? Usa práctica."
@@ -649,7 +575,7 @@ export default function CotaPage() {
             </Note>
           ) : null}
 
-          {mode === "live" && maxNotional < MIN_LIVE_NOTIONAL_USD ? (
+          {maxNotional < MIN_LIVE_NOTIONAL_USD ? (
             <Note tone="warn">
               {lang === "es"
                 ? `En vivo, el tamaño máximo debe ser al menos $${MIN_LIVE_NOTIONAL_USD}. Órdenes más pequeñas no se ejecutan en Perpl.`
@@ -659,9 +585,7 @@ export default function CotaPage() {
           <Button
             onClick={() => void onSign()}
             disabled={
-              busy ||
-              ceilings === null ||
-              (mode === "live" && maxNotional < MIN_LIVE_NOTIONAL_USD)
+              busy || ceilings === null || maxNotional < MIN_LIVE_NOTIONAL_USD
             }
           >
             {busy ? t("signing") : t("sign")}
