@@ -127,7 +127,12 @@
     "editionsSeeAll": "See all {count} works",
     "editionsCount": "{count, plural, one {# work} other {# works}}",
     "editionFree": "free",
-    "creditNotePriceUnknown": "Credit is a discount on the TURBO cohort subscription. We could not read this month's price just now, so we are not showing how far this goes."
+    "creditNotePriceUnknown": "Credit is a discount on the TURBO cohort subscription. We could not read this month's price just now, so we are not showing how far this goes.",
+    "link": "Link",
+    "linking": "Linking…",
+    "linkFailed": "Could not link that handle.",
+    "linkOnceWarning": "This can only be set once — an operator has to change it afterwards. Check the spelling.",
+    "handlePlaceholder": "your-github-handle"
   },
   "huntList": {
     "pageTitle": "Hunts",

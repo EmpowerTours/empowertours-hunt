@@ -153,9 +153,22 @@ model Player {
   // this only records how they proved it.
   passkeyCredentialId String? @unique
 
-  // TURBO registry handle. Links a hunt player to their builder identity so
-  // credit can be redeemed against their cohort subscription.
-  turboUsername String?
+  /// TURBO registry handle. Links a hunt player to their builder identity so
+  /// credit can be redeemed against their cohort subscription.
+  ///
+  /// UNIQUE, and stored lowercased by `lib/hunt/turboHandle.ts`. Two wallets
+  /// pointing at one builder identity is the collision this exists to prevent,
+  /// and GitHub handles are case-insensitive — so without the lowering,
+  /// "Foo" and "foo" would be two rows and one person. Prisma cannot express a
+  /// functional `lower()` index, which is why the stored form IS the
+  /// comparison form rather than a second key column.
+  ///
+  /// Set once by `app/api/me/turbo`, with a conditional UPDATE rather than a
+  /// read-then-write: credit accrues to a wallet over weeks and is redeemed
+  /// against whatever handle the row names at settlement, so a freely mutable
+  /// handle is a credit-redirection primitive. Changing it is an operator
+  /// action with an audit row.
+  turboUsername String? @unique
   displayName   String?
 
   // Signup is open — anyone may register. `active` is therefore a moderation

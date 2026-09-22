@@ -79,6 +79,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "no_price" }, { status: 503 });
     }
 
+    // ---- A redemption needs somebody to redeem it FOR.
+    //
+    // The wallet screen has always told players "credit can only be redeemed
+    // once a TURBO registry handle is linked to this wallet", and nothing
+    // enforced it. A redemption is settled BY HAND against a builder identity
+    // (see prisma `model Redemption` and app/admin/redemptions), so without a
+    // handle this debits real credit and hands an operator a row naming
+    // nobody. Now the code says what the screen says.
+    //
+    // Checked BEFORE the debit, not inside the transaction: it is a property
+    // of the player that no concurrent request can change — `turboUsername` is
+    // set once and never cleared except by an operator — so there is nothing
+    // here to race, unlike the balance below.
+    const identity = await prisma.player.findUniqueOrThrow({
+      where: { id: player.id },
+      select: { turboUsername: true },
+    });
+    if (
+      identity.turboUsername === null ||
+      identity.turboUsername.length === 0
+    ) {
+      return NextResponse.json(
+        { error: "no_turbo_handle", reason: "no_turbo_handle" },
+        { status: 409 },
+      );
+    }
+
     const costWei = tierPriceWei * BigInt(months);
     const costParam = fromWei(costWei);
 

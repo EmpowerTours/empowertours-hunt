@@ -127,7 +127,12 @@
     "editionsSeeAll": "Ver las {count} obras",
     "editionsCount": "{count, plural, one {# obra} other {# obras}}",
     "editionFree": "gratis",
-    "creditNotePriceUnknown": "El crédito es un descuento en la suscripción de la cohorte TURBO. No pudimos leer el precio del mes en este momento, así que no mostramos cuánto alcanza."
+    "creditNotePriceUnknown": "El crédito es un descuento en la suscripción de la cohorte TURBO. No pudimos leer el precio del mes en este momento, así que no mostramos cuánto alcanza.",
+    "link": "Vincular",
+    "linking": "Vinculando…",
+    "linkFailed": "No se pudo vincular ese usuario.",
+    "linkOnceWarning": "Solo se puede establecer una vez — después lo tiene que cambiar un operador. Revisa que esté bien escrito.",
+    "handlePlaceholder": "tu-usuario-de-github"
   },
   "huntList": {
     "pageTitle": "Búsquedas",

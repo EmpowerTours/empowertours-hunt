@@ -17,6 +17,7 @@ import type {
   PlayerProgress,
 } from "@/components/hunt/types";
 import { Note, Panel, Stat } from "@/components/ui/primitives";
+import { LinkTurbo } from "@/app/hunt/wallet/LinkTurbo";
 import { Sheet, SheetOpener } from "@/components/ui/Sheet";
 
 /* ---------------------------------------------------------------------------
@@ -43,6 +44,11 @@ export function ProgressPanel() {
   const t = useTranslations("wallet");
   const auth = useAuthSlot();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // Set by LinkTurbo on success so the panel flips immediately. Null means
+  // "nothing linked in this session" and defers to the fetched value -- it
+  // must never be read as "no handle", or a linked wallet would show the form
+  // again on every render.
+  const [linked, setLinked] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -250,18 +256,22 @@ export function ProgressPanel() {
         />
       </div>
 
-      {progress.turboUsername ? (
+      {/* `linked` shadows the fetched value so the panel flips the moment the
+          server confirms, rather than waiting for the next page load. The
+          server's stored handle is what gets shown -- it lowercases, and the
+          typed form would disagree with every later screen. */}
+      {(linked ?? progress.turboUsername) ? (
         <Panel>
           <div className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
             {t("turboHandle")}
           </div>
           <div className="text-ink mt-1 font-mono text-lg">
-            {progress.turboUsername}
+            {linked ?? progress.turboUsername}
           </div>
           <p className="text-ink-faint mt-2 text-xs">{t("turboHandleNote")}</p>
         </Panel>
       ) : (
-        <Note title={t("noHandleTitle")}>{t("noHandleBody")}</Note>
+        <LinkTurbo onLinked={setLinked} />
       )}
     </div>
   );

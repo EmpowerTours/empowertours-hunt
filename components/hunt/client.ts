@@ -544,6 +544,34 @@ export async function fetchProgress(
 }
 
 /**
+ * Link a TURBO builder handle to this wallet.
+ *
+ * SET ONCE. The server enforces it with a conditional UPDATE, so a second
+ * attempt is refused there rather than here — a client-side guard on a rule
+ * about somebody else's money is a courtesy, never the control.
+ *
+ * A refusal is RETURNED, not thrown: "another wallet already linked that
+ * handle" is an ordinary answer a person needs to read, not an exception.
+ */
+export async function linkTurboHandle(
+  handle: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; handle?: string; error?: string }> {
+  try {
+    const body = await request("/api/me/turbo", {
+      method: "POST",
+      body: JSON.stringify({ handle }),
+      signal,
+    });
+    const v = isRecord(body) ? body : {};
+    return { ok: v.ok === true, handle: str(v.handle) ?? undefined };
+  } catch (e) {
+    if (e instanceof ApiError) return { ok: false, error: e.message };
+    return { ok: false, error: "Could not reach the hunt server." };
+  }
+}
+
+/**
  * Establish a verified position without finding anything.
  *
  * Spawns anchor to `PlayerHunt.lastVerified*`, which used to be written only by
