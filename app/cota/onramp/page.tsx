@@ -345,7 +345,7 @@ export default function OnrampPage() {
 
           <Note>{t.notAusd}</Note>
           <a
-            href="/cota/swap"
+            href="/cota/swap/usdc"
             className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
           >
             {t.swap}

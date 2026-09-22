@@ -346,6 +346,17 @@ export default function CotaPage() {
         {/* The door for money that is on neither Monad nor a chain we bridge
             AUSD from. One address, any chain, no wallet to connect — it lands
             USDC, so it feeds /cota/swap rather than replacing it. */}
+        {/* The other half of the on-ramp. A hunter who funded through Aurora
+            holds USDC, not MON, so the MON swap above is the wrong door for
+            them — it answers "you have no MON". */}
+        <a
+          href="/cota/swap/usdc"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es"
+            ? "Cambiar USDC → AUSD →"
+            : "Swap USDC → AUSD →"}
+        </a>
         <a
           href="/cota/onramp"
           className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"

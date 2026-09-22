@@ -215,7 +215,55 @@ export async function swapMonToAusdViaKuru(args: {
     throw new Error("kuru: the order-book trade delivered no USDC");
   }
 
-  // --- 2. allowance, only if it is short ----------------------------------
+  const { ausdOut, convertTxHash } = await convertUsdcToAusd({
+    account,
+    token,
+    usdcAmount: usdcIn,
+    onStep: step,
+  });
+
+  step("done");
+  return {
+    // Measured, not quoted. What the hunter has is what the chain says.
+    ausdOut,
+    bookTxHash,
+    convertTxHash,
+    wentThroughOrderBook: leg1.usesOrderBook,
+  };
+}
+
+export interface UsdcConversion {
+  /** AUSD that actually arrived, measured from the balance, not the quote. */
+  ausdOut: bigint;
+  convertTxHash: `0x${string}`;
+}
+
+/**
+ * USDC -> AUSD: the approval and the conversion, and nothing else.
+ *
+ * Pulled out of the MON path rather than duplicated because of what lives in
+ * it. The spender is KURU_EXECUTOR, not the address the transaction is sent
+ * to — established by elimination on mainnet, absent from Kuru's
+ * documentation, and worth exactly one copy. A second implementation that
+ * approved the entrypoint would look right and revert 0x5264a63f.
+ *
+ * A hunter arriving from /cota/onramp starts HERE: Aurora already delivered
+ * their USDC, so the order-book leg that buys it has nothing to do.
+ */
+export async function convertUsdcToAusd(args: {
+  account: LocalAccount;
+  usdcAmount: bigint;
+  /** Reused when the caller already fetched one; fetched otherwise. */
+  token?: string;
+  onStep?: (step: KuruStep) => void;
+}): Promise<UsdcConversion> {
+  const { account, usdcAmount } = args;
+  const step = args.onStep ?? (() => {});
+  const pc = publicClient();
+  const user = account.address;
+  const token = args.token ?? (await kuruToken(user));
+
+  // --- allowance, only if it is short -------------------------------------
   //
   // THE SPENDER IS NOT THE ADDRESS THE TRANSACTION IS SENT TO. Approving the
   // entrypoint that `to` names is the obvious thing and it does not work: the
@@ -236,7 +284,7 @@ export async function swapMonToAusdViaKuru(args: {
     functionName: "allowance",
     args: [user, KURU_EXECUTOR],
   })) as bigint;
-  if (allowance < usdcIn) {
+  if (allowance < usdcAmount) {
     step("approving");
     // Exactly what this swap needs, not an unbounded approval. A hunter's
     // wallet is their whole balance here and there is no reason to leave a
@@ -245,20 +293,20 @@ export async function swapMonToAusdViaKuru(args: {
       address: USDC,
       abi: ERC20_ABI,
       functionName: "approve",
-      args: [KURU_EXECUTOR, usdcIn],
+      args: [KURU_EXECUTOR, usdcAmount],
     });
     const r = await pc.waitForTransactionReceipt({ hash: approveHash });
     if (r.status !== "success") throw new Error("kuru: USDC approval reverted");
   }
 
-  // --- 3. the conversion, quoted from what actually arrived ---------------
+  // --- the conversion, quoted from the amount actually held ---------------
   step("converting");
   const leg2 = await quoteThatExecutes({
     account,
     token,
     tokenIn: USDC,
     tokenOut: AUSD,
-    amount: usdcIn,
+    amount: usdcAmount,
   });
   const ausdBefore = (await pc.readContract({
     address: AUSD,
@@ -274,12 +322,5 @@ export async function swapMonToAusdViaKuru(args: {
     args: [user],
   })) as bigint;
 
-  step("done");
-  return {
-    // Measured, not quoted. What the hunter has is what the chain says.
-    ausdOut: ausdAfter - ausdBefore,
-    bookTxHash,
-    convertTxHash,
-    wentThroughOrderBook: leg1.usesOrderBook,
-  };
+  return { ausdOut: ausdAfter - ausdBefore, convertTxHash };
 }
