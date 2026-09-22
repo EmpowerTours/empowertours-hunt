@@ -70,8 +70,41 @@ export function useHint(
     return () => window.clearInterval(id);
   }, [enabled]);
 
+  /**
+   * The latest fix, read at SEND time rather than depended on.
+   *
+   * ## This is the check-in bug, still alive in the scope
+   *
+   * HuntScreen's check-in effect carries the lesson already: "`fix` changes on
+   * every GPS update; on a moving phone reporting ±2m that is roughly every
+   * second. Each change re-ran the effect, whose cleanup aborted the in-flight
+   * check-in — so on exactly the device this is built for, walking, the
+   * request never survived long enough to land."
+   *
+   * Check-in was fixed by moving `fix` to a ref and dropping the abort. This
+   * hook was not, and kept BOTH halves: `fix` in the dependency array and
+   * `return () => controller.abort()`. So every GPS update killed the hint
+   * request in flight, and because `lastRequestAt` was stamped BEFORE the
+   * fetch, each aborted attempt still burned the full six-second throttle.
+   *
+   * Measured on the live hunt 2026-09-22: ZERO completed hint requests across
+   * three and a half hours of use, while check-ins on the same screen landed
+   * normally. The player stood 2 metres from an unfound cache; a direct probe
+   * of the route with their exact coordinates returned `burning, remaining 1`,
+   * so the server was right the whole time and the request never arrived.
+   */
+  const fixRef = useRef(fix);
   useEffect(() => {
-    if (!enabled || fix === null) return;
+    fixRef.current = fix;
+  }, [fix]);
+  // A BOOLEAN dependency, not the fix itself. It flips once when the first
+  // position arrives, so it starts the scope promptly without reintroducing
+  // the per-second churn that was the bug.
+  const hasFix = fix !== null;
+
+  useEffect(() => {
+    const current = fixRef.current;
+    if (!enabled || current === null) return;
 
     const now = Date.now();
     const previous = lastRequestPos.current;
@@ -85,20 +118,23 @@ export function useHint(
         lastRequestAt: lastRequestAt.current,
         blockedUntil: blockedUntil.current,
         movedMeters:
-          previous === null ? Infinity : haversineMeters(previous, fix),
+          previous === null ? Infinity : haversineMeters(previous, current),
       })
     ) {
       return;
     }
 
-    const controller = new AbortController();
+    // Deliberately NOT aborted on cleanup, exactly as the check-in POST is
+    // not. This is a small request whose whole job is to land; cancelling it
+    // because the GPS moved is what broke it. A late reply is ignored instead.
+    let ignore = false;
     inFlight.current = true;
-    lastRequestAt.current = now;
-    lastRequestPos.current = { lat: fix.lat, lng: fix.lng };
+    lastRequestPos.current = { lat: current.lat, lng: current.lng };
     setStatus((s) => (s === "ok" ? s : "loading"));
 
-    fetchHint(huntId, fix, controller.signal)
+    fetchHint(huntId, current)
       .then((hint) => {
+        if (ignore) return;
         setBand(hint.band);
         setRemaining(hint.remaining);
         setComplete(hint.complete);
@@ -108,7 +144,7 @@ export function useHint(
         setError(null);
       })
       .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
+        if (ignore) return;
         if (e instanceof ApiError && e.status === 429) {
           blockedUntil.current = Date.now() + BACKOFF_MS;
           setStatus("throttled");
@@ -124,12 +160,21 @@ export function useHint(
       })
       .finally(() => {
         inFlight.current = false;
+        // Stamped when the attempt SETTLES, never when it starts. The old code
+        // stamped it up front, so an attempt that was aborted a millisecond
+        // later still spent the whole interval — the same mistake the check-in
+        // cooldown made ("it was stamped when the request STARTED, so each
+        // aborted attempt still burned the full sixty seconds").
+        lastRequestAt.current = Date.now();
       });
 
-    return () => controller.abort();
-    // `tick` is the heartbeat; `fix` changing mid-interval is also a valid
-    // trigger. Both are intentional dependencies.
-  }, [enabled, fix, huntId, complete, tick]);
+    return () => {
+      ignore = true;
+    };
+    // `tick` is the heartbeat and `hasFix` starts the scope. `fix` itself is
+    // NOT a dependency: it changes about once a second on a walking phone, and
+    // depending on it is what aborted every request before it could land.
+  }, [enabled, hasFix, huntId, complete, tick]);
 
   return {
     band,
