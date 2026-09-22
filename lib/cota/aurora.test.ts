@@ -8,6 +8,11 @@ import {
   parseDepositQuote,
   parseDeposits,
   parseStatus,
+  isDepositChain,
+  parsePersistentAddress,
+  parsePersistentDeposits,
+  readPersistentDeposits,
+  requestPersistentDepositAddress,
   requestUsdcDepositAddress,
 } from "./aurora";
 import { USDC as KURU_USDC } from "./kuru";
@@ -236,5 +241,149 @@ describe("requestUsdcDepositAddress", () => {
         { appKey: "test-key", fetch: doFetch },
       ),
     ).rejects.toThrow(/502/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Persistent deposit addresses.
+//
+// Every request/response shape below was measured against the live API on
+// 2026-09-22 with a real key, not copied from the docs — which do not state the
+// idempotency behaviour at all and spell the chain list differently.
+// ---------------------------------------------------------------------------
+
+describe("the deposit chain list", () => {
+  it("spells Solana the way the API does, not the way a person would", () => {
+    // `solana` is a 400. This is pinned because the obvious guess is wrong and
+    // the failure only shows up against the network.
+    expect(isDepositChain("sol")).toBe(true);
+    expect(isDepositChain("solana")).toBe(false);
+  });
+
+  it("carries the evm shortcut, which is the whole point of one address", () => {
+    expect(isDepositChain("evm")).toBe(true);
+  });
+
+  it("rejects anything not on the API's own list", () => {
+    expect(isDepositChain("monad")).toBe(true);
+    expect(isDepositChain("ethereum")).toBe(false);
+    expect(isDepositChain("")).toBe(false);
+  });
+});
+
+function addressFetch(body: unknown, status = 200) {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const fake = vi.fn(async (url: string | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    return new Response(JSON.stringify(body), { status });
+  }) as unknown as typeof fetch;
+  return { fake, calls };
+}
+
+describe("asking Aurora for a persistent address", () => {
+  it("pins the destination so a caller cannot redirect a hunter's money", async () => {
+    const { fake, calls } = addressFetch({
+      depositAddress: "0xDB1a7B889613a75506DEf808B92130E436B8FD12",
+      alreadyExists: false,
+    });
+    await requestPersistentDepositAddress(
+      { recipient: RECIPIENT, sender: "player-1", depositChain: "evm" },
+      { fetch: fake, appKey: "k" },
+    );
+    const sent = JSON.parse(String(calls[0]!.init!.body));
+    // Neither of these is a parameter. The downstream leg can only spend Monad
+    // USDC, so the request is not allowed to ask for anything else.
+    expect(sent.destinationChain).toBe("monad");
+    expect(sent.destinationAsset).toBe(MONAD_USDC_ASSET_ID);
+    expect(sent.sender).toBe("player-1");
+  });
+
+  it("puts the key in the path, because Aurora has no auth header", async () => {
+    const { fake, calls } = addressFetch({ depositAddress: "0xabc" });
+    await requestPersistentDepositAddress(
+      { recipient: RECIPIENT, sender: "p", depositChain: "btc" },
+      { fetch: fake, appKey: "SECRET" },
+    );
+    expect(calls[0]!.url).toContain("/api/persistent-deposit-address/SECRET");
+  });
+
+  it("refuses a response with no address rather than returning undefined", () => {
+    expect(() => parsePersistentAddress({})).toThrow(AuroraError);
+    expect(() => parsePersistentAddress({ depositAddress: "" })).toThrow(
+      AuroraError,
+    );
+  });
+
+  it("reports alreadyExists, which means our table and theirs disagreed", () => {
+    expect(
+      parsePersistentAddress({ depositAddress: "0xa", alreadyExists: true })
+        .alreadyExists,
+    ).toBe(true);
+    // Absent is not true. A missing field must not read as "we already had it".
+    expect(
+      parsePersistentAddress({ depositAddress: "0xa" }).alreadyExists,
+    ).toBe(false);
+  });
+});
+
+describe("reading what has landed", () => {
+  it("asks for one bucket at a time, by address", async () => {
+    const { fake, calls } = addressFetch({ deposits: [] });
+    await readPersistentDeposits("0xDEP", "success", {
+      fetch: fake,
+      appKey: "k",
+    });
+    expect(calls[0]!.url).toContain("/api/persistent-deposit-status/k");
+    expect(calls[0]!.url).toContain("address=0xDEP");
+    expect(calls[0]!.url).toContain("type=success");
+  });
+
+  it("takes the status from the bucket asked for, not from the row", () => {
+    // There is no status field on this endpoint. The filter IS the status, so
+    // a row returned under ?type=failed is a failure even if it says nothing.
+    const [row] = parsePersistentDeposits(
+      { deposits: [{ depositAddress: "0xDEP" }] },
+      "failed",
+    );
+    expect(row!.status).toBe("FAILED");
+  });
+
+  it("drops a row it cannot read instead of inventing one", () => {
+    // The row shape here is a guess at a sibling endpoint's fields until real
+    // money moves through. A row without an address cannot be shown against any
+    // deposit, and showing an amount nobody sent is worse than showing nothing.
+    const rows = parsePersistentDeposits(
+      { deposits: [{ amountInFormatted: "10.0" }, { depositAddress: "0xDEP" }] },
+      "received",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.depositAddress).toBe("0xDEP");
+  });
+
+  it("survives a response that is not the shape we expect at all", () => {
+    expect(parsePersistentDeposits({}, "received")).toEqual([]);
+    expect(parsePersistentDeposits({ deposits: "no" }, "received")).toEqual([]);
+    expect(parsePersistentDeposits(null, "received")).toEqual([]);
+  });
+});
+
+describe("what the idempotency key has to survive", () => {
+  it("is stable under case, because Aurora compares bytes", async () => {
+    // requirePlayer lowercases the wallet it looks up, but a sender that
+    // differed only in case would be a different sender to Aurora and would
+    // mint a SECOND address for one hunter.
+    const seen: string[] = [];
+    const fake = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      seen.push(JSON.parse(String(init!.body)).sender);
+      return new Response(JSON.stringify({ depositAddress: "0xa" }));
+    }) as unknown as typeof fetch;
+
+    for (const wallet of [RECIPIENT, RECIPIENT.toLowerCase()]) {
+      await requestPersistentDepositAddress(
+        { recipient: wallet, sender: wallet.toLowerCase(), depositChain: "evm" },
+        { fetch: fake, appKey: "k" },
+      );
+    }
+    expect(new Set(seen).size).toBe(1);
   });
 });

@@ -333,3 +333,180 @@ export function parseDeposits(body: unknown): DepositRecord[] {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// PERSISTENT DEPOSIT ADDRESSES
+//
+// The quote flow above is a different product from this one, and the difference
+// decides what a funding screen can be.
+//
+// `POST /api/quote` prices a specific movement: it wants an amount, a slippage
+// tolerance, a deadline and a refundTo, and it hands back an address good for
+// that one swap. A hunter would have to say how much they were about to send
+// before they sent it, and the address would go stale.
+//
+// A persistent deposit address takes none of that. No amount, no deadline, no
+// refundTo — it is a mailbox. Aurora's docs are explicit that it has no TTL, and
+// the API confirms the rest: creation is IDEMPOTENT on `sender`. Posting the
+// same request twice returns the same address with `alreadyExists: true`, and
+// changing only `sender` mints a different one. Measured against the live API
+// 2026-09-22, not inferred from the docs, which do not state it.
+//
+// So: one row per hunter per deposit chain, written once, read forever.
+// ---------------------------------------------------------------------------
+
+/**
+ * The chains Aurora will accept as a deposit origin.
+ *
+ * Pinned from the API's OWN rejection message rather than from the docs page,
+ * because that is the list the server actually validates against — a 400 on an
+ * unlisted value enumerates every accepted one. Note `sol`, not `solana`: the
+ * obvious spelling is a 400.
+ *
+ * `evm` is the one that matters here. It is not a chain; it is a shortcut that
+ * yields ONE address accepting funds from every EVM chain in this list, which
+ * is the "no separate deposit flow to build per chain" the bounty describes.
+ */
+export const DEPOSIT_CHAINS = [
+  "eth", "bera", "base", "gnosis", "arb", "bsc", "avax", "op", "pol", "monad",
+  "adi", "plasma", "scroll", "xlayer", "sui", "aptos", "xrp", "btc", "doge",
+  "tron", "ton", "near", "sol", "zec", "ltc", "cardano", "stellar", "aleo",
+  "bch", "dash", "starknet", "coca", "evm",
+] as const;
+
+export type DepositChain = (typeof DEPOSIT_CHAINS)[number];
+
+export function isDepositChain(value: string): value is DepositChain {
+  return (DEPOSIT_CHAINS as readonly string[]).includes(value);
+}
+
+export interface PersistentAddressRequest {
+  /** Where the USDC lands. The hunter's Monad address. */
+  recipient: string;
+  /**
+   * Aurora's attribution key, and the thing creation is idempotent on.
+   *
+   * It is OUR identifier for the hunter, not an address they hold. Two hunters
+   * sharing a `sender` would share a deposit address and therefore each other's
+   * incoming money, so this must be something unique per player and stable
+   * forever — the player id, never a wallet that can be rotated.
+   */
+  sender: string;
+  depositChain: DepositChain;
+}
+
+export interface PersistentAddress {
+  depositAddress: string;
+  /** False the first time, true on every repeat. Useful only as a signal. */
+  alreadyExists: boolean;
+}
+
+export async function requestPersistentDepositAddress(
+  req: PersistentAddressRequest,
+  deps: AuroraDeps = {},
+): Promise<PersistentAddress> {
+  const key = appKeyOrThrow(deps);
+  const doFetch = deps.fetch ?? fetch;
+  const res = await doFetch(`${API}/api/persistent-deposit-address/${key}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      recipient: req.recipient,
+      sender: req.sender,
+      depositChain: req.depositChain,
+      destinationChain: "monad",
+      destinationAsset: MONAD_USDC_ASSET_ID,
+    }),
+    signal: deps.signal,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new AuroraError(`aurora: persistent-deposit-address ${res.status}`);
+  }
+  return parsePersistentAddress(await res.json());
+}
+
+export function parsePersistentAddress(body: unknown): PersistentAddress {
+  const b = body as { depositAddress?: unknown; alreadyExists?: unknown };
+  if (typeof b.depositAddress !== "string" || b.depositAddress.length === 0) {
+    throw new AuroraError("aurora: no depositAddress in response");
+  }
+  return {
+    depositAddress: b.depositAddress,
+    alreadyExists: b.alreadyExists === true,
+  };
+}
+
+/**
+ * The three buckets a deposit can be in. There is no richer enum on this path —
+ * `received`, `success` and `failed` are query filters, not a status field, and
+ * asking for anything else is a 400.
+ */
+export const DEPOSIT_TYPES = ["received", "success", "failed"] as const;
+export type DepositType = (typeof DEPOSIT_TYPES)[number];
+
+export async function readPersistentDeposits(
+  depositAddress: string,
+  type: DepositType,
+  deps: AuroraDeps = {},
+): Promise<DepositRecord[]> {
+  const key = appKeyOrThrow(deps);
+  const doFetch = deps.fetch ?? fetch;
+  const url =
+    `${API}/api/persistent-deposit-status/${key}` +
+    `?address=${encodeURIComponent(depositAddress)}&type=${type}`;
+  const res = await doFetch(url, { signal: deps.signal, cache: "no-store" });
+  if (!res.ok) {
+    throw new AuroraError(`aurora: persistent-deposit-status ${res.status}`);
+  }
+  return parsePersistentDeposits(await res.json(), type);
+}
+
+/**
+ * UNVERIFIED ROW SHAPE, and it is spelled out here rather than discovered later.
+ *
+ * `{"deposits":[]}` is the only response this code has ever seen from the live
+ * API, because no money has moved through an address we own. The field names
+ * below are the ones the transactions endpoint uses, which is a guess about a
+ * sibling endpoint, not knowledge.
+ *
+ * So this parser is TOTAL: anything it cannot read becomes a dropped row rather
+ * than a thrown error or an invented amount. A funding screen that shows one
+ * fewer row than it should is a bug; one that shows a number nobody sent is a
+ * lie about somebody's money. The first real deposit is what settles this, and
+ * until then the caller must treat an empty list as "nothing readable yet"
+ * rather than "nothing arrived".
+ */
+export function parsePersistentDeposits(
+  body: unknown,
+  type: DepositType,
+): DepositRecord[] {
+  const rows = (body as { deposits?: unknown })?.deposits;
+  if (!Array.isArray(rows)) return [];
+  const out: DepositRecord[] = [];
+  for (const row of rows) {
+    const r = row as Record<string, unknown>;
+    const depositAddress =
+      typeof r.depositAddress === "string"
+        ? r.depositAddress
+        : typeof r.address === "string"
+          ? r.address
+          : null;
+    if (depositAddress === null) continue;
+    out.push({
+      // The bucket we asked for IS the status. There is no status field to read
+      // and disagree with.
+      status: type === "success" ? "SUCCESS" : type === "failed" ? "FAILED" : "PENDING_DEPOSIT",
+      depositAddress,
+      originAsset: typeof r.originAsset === "string" ? r.originAsset : "",
+      destinationAsset:
+        typeof r.destinationAsset === "string" ? r.destinationAsset : "",
+      amountInFormatted:
+        typeof r.amountInFormatted === "string" ? r.amountInFormatted : null,
+      amountOutFormatted:
+        typeof r.amountOutFormatted === "string" ? r.amountOutFormatted : null,
+      createdAt: typeof r.createdAt === "string" ? r.createdAt : null,
+    });
+  }
+  return out;
+}

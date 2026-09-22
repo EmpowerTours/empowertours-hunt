@@ -343,6 +343,17 @@ export default function CotaPage() {
             ? "Traer AUSD de otra red (puente) →"
             : "Bring AUSD from another chain →"}
         </a>
+        {/* The door for money that is on neither Monad nor a chain we bridge
+            AUSD from. One address, any chain, no wallet to connect — it lands
+            USDC, so it feeds /cota/swap rather than replacing it. */}
+        <a
+          href="/cota/onramp"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es"
+            ? "Fondear desde cualquier red →"
+            : "Fund from any chain →"}
+        </a>
         {/* Once you hold AUSD, this opens the Perpl account. It must run
               before enrolling a key — enrollment 404s without an account. */}
         <a

@@ -189,26 +189,27 @@ model Player {
 
   createdAt DateTime @default(now())
 
-  finds          Find[]
-  attempts       ClaimAttempt[]
-  payouts        Payout[]
-  hintRequests   HintRequest[]
-  huntStats      PlayerHunt[]
-  credits        CreditLedger[]
-  spawns         Spawn[]
-  enrollments    Enrollment[]
-  cotas          Cota[]
-  redemptions    Redemption[]
-  warranties     PlantWarranty[]
-  createdHunts   Hunt[]              @relation("HuntCreator")
-  surveyedZones  Zone[]
-  editions       Edition[]
-  editionClaims  EditionClaim[]
-  perpKey        PerpKey?
-  cotaFills      CotaFill[]
-  cotaOrders     CotaOrder[]
-  agentDecisions CotaAgentDecision[]
-  cotaNotes      CotaNote[]
+  finds           Find[]
+  attempts        ClaimAttempt[]
+  payouts         Payout[]
+  hintRequests    HintRequest[]
+  huntStats       PlayerHunt[]
+  credits         CreditLedger[]
+  spawns          Spawn[]
+  enrollments     Enrollment[]
+  cotas           Cota[]
+  redemptions     Redemption[]
+  warranties      PlantWarranty[]
+  createdHunts    Hunt[]                 @relation("HuntCreator")
+  surveyedZones   Zone[]
+  editions        Edition[]
+  editionClaims   EditionClaim[]
+  perpKey         PerpKey?
+  cotaFills       CotaFill[]
+  cotaOrders      CotaOrder[]
+  agentDecisions  CotaAgentDecision[]
+  cotaNotes       CotaNote[]
+  auroraAddresses AuroraDepositAddress[]
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -1708,4 +1709,53 @@ model KuruSwap {
   at DateTime @default(now())
 
   @@index([wallet, at])
+}
+
+/// One Aurora Intents deposit address, owned by one hunter, forever.
+///
+/// A persistent deposit address has no TTL and its creation is idempotent on
+/// the `sender` we send — so this table is a cache of a decision Aurora already
+/// made, not a source of truth we could disagree with. Re-issuing would return
+/// the same string; we store it so the funding screen can render without a
+/// network call, and so a hunter's address survives Aurora being down.
+///
+/// The unique key is (player, depositChain) because `evm` is one address for
+/// every EVM chain while `btc` or `sol` each need their own. A hunter may
+/// therefore hold several rows, one per origin they have ever been offered.
+model AuroraDepositAddress {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  /// One of Aurora's 33 accepted values (lib/cota/aurora.ts DEPOSIT_CHAINS).
+  /// `evm` is the shortcut that accepts funds from every EVM chain at once.
+  depositChain String
+
+  /// What Aurora handed us. Case preserved exactly as returned — it is an
+  /// address on a chain we may not be able to checksum.
+  depositAddress String
+
+  /// The Monad address the swapped USDC lands at, recorded as it was at
+  /// issuance. A hunter whose wallet somehow changed must be issued a NEW
+  /// address rather than keep sending to one that pays the old wallet.
+  recipient String
+
+  /// Exactly what we sent Aurora as `sender` — the lowercased wallet address.
+  ///
+  /// Stored so the idempotency key is auditable, but note what it means that it
+  /// is DERIVABLE: the wallet comes from the hunter's passkey, so this whole
+  /// row can be rebuilt by asking Aurora again with the same sender. Losing
+  /// this table loses a cache, not a hunter's deposit address.
+  sender String
+
+  /// True when Aurora said `alreadyExists` on the call that produced this row —
+  /// i.e. we asked for an address we had lost. Worth knowing: it means our
+  /// table and theirs disagreed.
+  reissued Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@unique([playerId, depositChain])
+  @@index([depositAddress])
 }
