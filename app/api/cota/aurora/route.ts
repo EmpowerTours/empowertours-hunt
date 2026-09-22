@@ -117,14 +117,24 @@ export async function GET(req: Request) {
         recipient: row.recipient,
       });
     }
-    const parsed = Type.safeParse(typeParam);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "bad_type" }, { status: 400 });
+    // `all` is ours, not Aurora's: their endpoint filters to one bucket, but a
+    // hunter watching for their money wants both halves of the journey at once
+    // — what left the origin chain and what arrived on Monad. Fetched in
+    // parallel so the screen costs one round trip rather than two.
+    let deposits;
+    if (typeParam === "all") {
+      const [received, success] = await Promise.all([
+        readPersistentDeposits(row.depositAddress, "received"),
+        readPersistentDeposits(row.depositAddress, "success"),
+      ]);
+      deposits = [...success, ...received];
+    } else {
+      const parsed = Type.safeParse(typeParam);
+      if (!parsed.success) {
+        return NextResponse.json({ error: "bad_type" }, { status: 400 });
+      }
+      deposits = await readPersistentDeposits(row.depositAddress, parsed.data);
     }
-    const deposits = await readPersistentDeposits(
-      row.depositAddress,
-      parsed.data,
-    );
     return NextResponse.json({
       address: row.depositAddress,
       depositChain: row.depositChain,

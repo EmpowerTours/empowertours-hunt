@@ -449,7 +449,7 @@ export async function readPersistentDeposits(
   depositAddress: string,
   type: DepositType,
   deps: AuroraDeps = {},
-): Promise<DepositRecord[]> {
+): Promise<PersistentDeposit[]> {
   const key = appKeyOrThrow(deps);
   const doFetch = deps.fetch ?? fetch;
   const url =
@@ -463,49 +463,97 @@ export async function readPersistentDeposits(
 }
 
 /**
- * UNVERIFIED ROW SHAPE, and it is spelled out here rather than discovered later.
+ * A movement through a persistent deposit address, as the API really shapes it.
  *
- * `{"deposits":[]}` is the only response this code has ever seen from the live
- * API, because no money has moved through an address we own. The field names
- * below are the ones the transactions endpoint uses, which is a guess about a
- * sibling endpoint, not knowledge.
+ * MEASURED FROM A REAL DEPOSIT 2026-09-22, not guessed. An earlier version of
+ * this parser looked for `depositAddress` and `address`; the field is actually
+ * `deposit_address`, so it dropped every row — silently, because the parser is
+ * total by design. The first real 2 USDC from Base is what exposed it, which is
+ * the argument for sending the two dollars rather than reasoning about it.
  *
- * So this parser is TOTAL: anything it cannot read becomes a dropped row rather
- * than a thrown error or an invented amount. A funding screen that shows one
- * fewer row than it should is a bug; one that shows a number nobody sent is a
- * lie about somebody's money. The first real deposit is what settles this, and
- * until then the caller must treat an empty list as "nothing readable yet"
- * rather than "nothing arrived".
+ * The two buckets carry DIFFERENT fields, and the difference is the journey:
+ *   received -> `fromChain` ("base"), `from` (the sender's address), the amount
+ *               that LEFT the origin chain
+ *   success  -> `destinationChain` ("monad"), no `from`, the amount that
+ *               ARRIVED after Aurora's fee
+ * Both carry `tx_hash`, but they are transactions on different chains.
  */
+export interface PersistentDeposit {
+  status: DepositStatus;
+  /** On `received` this is the origin-chain tx; on `success`, the Monad one. */
+  txHash: string | null;
+  /** `fromChain` for a receipt, `destinationChain` for a delivery. */
+  chain: string | null;
+  assetId: string | null;
+  /**
+   * Smallest units, kept as a STRING. USDC is 6dp today and the row says so,
+   * but a number here would be a rounding bug waiting for the first asset that
+   * is not.
+   */
+  amount: string | null;
+  decimals: number | null;
+  /** Human units, derived by string arithmetic. Display only. */
+  amountFormatted: string | null;
+  depositAddress: string;
+  recipient: string | null;
+  createdAt: string | null;
+}
+
+/**
+ * Smallest units -> human units without ever touching a float.
+ *
+ * `Number(amount) / 10 ** decimals` is the obvious version and it is wrong for
+ * exactly the values that matter: a large deposit loses precision silently.
+ */
+export function formatUnits(amount: string, decimals: number): string | null {
+  if (!/^\d+$/.test(amount) || decimals < 0 || decimals > 36) return null;
+  const padded = amount.padStart(decimals + 1, "0");
+  const whole = padded.slice(0, padded.length - decimals);
+  const frac = decimals === 0 ? "" : padded.slice(padded.length - decimals);
+  const trimmed = frac.replace(/0+$/, "");
+  return trimmed.length === 0 ? whole : `${whole}.${trimmed}`;
+}
+
 export function parsePersistentDeposits(
   body: unknown,
   type: DepositType,
-): DepositRecord[] {
+): PersistentDeposit[] {
   const rows = (body as { deposits?: unknown })?.deposits;
   if (!Array.isArray(rows)) return [];
-  const out: DepositRecord[] = [];
+  const out: PersistentDeposit[] = [];
   for (const row of rows) {
     const r = row as Record<string, unknown>;
-    const depositAddress =
-      typeof r.depositAddress === "string"
-        ? r.depositAddress
-        : typeof r.address === "string"
-          ? r.address
-          : null;
-    if (depositAddress === null) continue;
+    // snake_case, and the only field worth failing a row over: a movement we
+    // cannot attribute to an address must not be shown against one.
+    if (typeof r.deposit_address !== "string") continue;
+
+    const amount = typeof r.amount === "string" ? r.amount : null;
+    const decimals = typeof r.decimals === "number" ? r.decimals : null;
     out.push({
-      // The bucket we asked for IS the status. There is no status field to read
-      // and disagree with.
-      status: type === "success" ? "SUCCESS" : type === "failed" ? "FAILED" : "PENDING_DEPOSIT",
-      depositAddress,
-      originAsset: typeof r.originAsset === "string" ? r.originAsset : "",
-      destinationAsset:
-        typeof r.destinationAsset === "string" ? r.destinationAsset : "",
-      amountInFormatted:
-        typeof r.amountInFormatted === "string" ? r.amountInFormatted : null,
-      amountOutFormatted:
-        typeof r.amountOutFormatted === "string" ? r.amountOutFormatted : null,
-      createdAt: typeof r.createdAt === "string" ? r.createdAt : null,
+      // The bucket asked for IS the status. There is no status field to read.
+      status:
+        type === "success"
+          ? "SUCCESS"
+          : type === "failed"
+            ? "FAILED"
+            : "PENDING_DEPOSIT",
+      txHash: typeof r.tx_hash === "string" ? r.tx_hash : null,
+      chain:
+        typeof r.fromChain === "string"
+          ? r.fromChain
+          : typeof r.destinationChain === "string"
+            ? r.destinationChain
+            : null,
+      assetId: typeof r.asset_id === "string" ? r.asset_id : null,
+      amount,
+      decimals,
+      amountFormatted:
+        amount !== null && decimals !== null
+          ? formatUnits(amount, decimals)
+          : null,
+      depositAddress: r.deposit_address,
+      recipient: typeof r.recipient === "string" ? r.recipient : null,
+      createdAt: typeof r.created_at === "string" ? r.created_at : null,
     });
   }
   return out;

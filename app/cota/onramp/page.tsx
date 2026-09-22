@@ -32,10 +32,19 @@ import { SignInPrompt } from "@/components/auth/SignInPrompt";
 
 type Lang = "es" | "en";
 
+interface Deposit {
+  status: string;
+  txHash: string | null;
+  chain: string | null;
+  amountFormatted: string | null;
+  createdAt: string | null;
+}
+
 interface AddressState {
   address: string | null;
   depositChain: string;
   recipient?: string;
+  deposits?: Deposit[];
 }
 
 const COPY = {
@@ -58,6 +67,12 @@ const COPY = {
       "Aurora no respondió. Tu dirección, si ya tienes una, sigue siendo válida — vuelve a intentarlo.",
     swap: "Cambiar USDC → AUSD →",
     back: "← Cota",
+    arrivals: "Lo que ha llegado",
+    nothingYet:
+      "Nada todavía. Cuando envíes, aparece aquí — primero salida, luego llegada.",
+    left: "salió de",
+    arrived: "llegó a Monad",
+    refresh: "Actualizar",
   },
   en: {
     title: "Fund from any chain",
@@ -78,6 +93,12 @@ const COPY = {
       "Aurora did not answer. Any address you already have is still valid — try again.",
     swap: "Swap USDC → AUSD →",
     back: "← Cota",
+    arrivals: "What has arrived",
+    nothingYet:
+      "Nothing yet. Once you send, it shows here — first the departure, then the arrival.",
+    left: "left",
+    arrived: "arrived on Monad",
+    refresh: "Refresh",
   },
 } as const;
 
@@ -100,7 +121,9 @@ export default function OnrampPage() {
     let live = true;
     void (async () => {
       try {
-        const res = await fetch("/api/cota/aurora", { cache: "no-store" });
+        const res = await fetch("/api/cota/aurora?type=all", {
+          cache: "no-store",
+        });
         if (!live) return;
         if (res.status === 503) {
           const body = (await res.json().catch(() => ({}))) as {
@@ -158,6 +181,19 @@ export default function OnrampPage() {
     }
   }, [address]);
 
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cota/aurora?type=all", {
+        cache: "no-store",
+      });
+      if (res.ok) setState((await res.json()) as AddressState);
+    } catch {
+      // A failed refresh leaves the last known list on screen rather than
+      // blanking it: an empty list here reads as "nothing arrived", and that is
+      // a claim a network error has no business making.
+    }
+  }, []);
+
   if (!signedIn) {
     return (
       <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-6">
@@ -204,6 +240,43 @@ export default function OnrampPage() {
                   {t.lands} <span className="font-mono">{state.recipient}</span>
                 </p>
               ) : null}
+            </Panel>
+          )}
+
+          {address == null ? null : (
+            <Panel>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-ink/60 text-xs uppercase">{t.arrivals}</p>
+                <button
+                  type="button"
+                  onClick={refresh}
+                  className="text-ink/60 text-xs underline"
+                >
+                  {t.refresh}
+                </button>
+              </div>
+              {(state?.deposits?.length ?? 0) === 0 ? (
+                <p className="text-ink/60 mt-2 text-xs">{t.nothingYet}</p>
+              ) : (
+                <ul className="mt-2 space-y-2">
+                  {state!.deposits!.map((d, i) => (
+                    <li
+                      key={`${d.txHash ?? "row"}-${i}`}
+                      className="text-ink text-sm"
+                    >
+                      <span className="font-mono">
+                        {d.amountFormatted ?? "?"}
+                      </span>{" "}
+                      USDC{" "}
+                      <span className="text-ink/60">
+                        {d.status === "SUCCESS"
+                          ? t.arrived
+                          : `${t.left} ${d.chain ?? "?"}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Panel>
           )}
 

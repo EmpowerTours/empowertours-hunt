@@ -10,6 +10,7 @@ import {
   parseStatus,
   isDepositChain,
   parsePersistentAddress,
+  formatUnits,
   parsePersistentDeposits,
   readPersistentDeposits,
   requestPersistentDepositAddress,
@@ -338,22 +339,72 @@ describe("reading what has landed", () => {
     expect(calls[0]!.url).toContain("type=success");
   });
 
+  // The exact payload the live API returned for the first real deposit:
+  // 2 USDC sent from Base on 2026-09-22. Pinned verbatim, because the field
+  // names are snake_case and an earlier parser looking for `depositAddress`
+  // dropped every row without erroring.
+  const RECEIVED = {
+    deposits: [
+      {
+        tx_hash:
+          "0xc3c58138efde71f871aa3210c903758eda8f21f6ab6981ba4214a92a2257fb4f",
+        fromChain: "base",
+        asset_id: "base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
+        decimals: 6,
+        amount: "2312039",
+        from: "0x7c5090B9456261840CA991a5583dD452FD3409E0",
+        created_at: "2026-09-22T18:07:03.609Z",
+        deposit_address: "0x85741326Ce25073399AfbAF9D443A6508557C77f",
+        recipient: "0xe2ab465839e409c80d1ca4bb4508fea7eb808395",
+      },
+    ],
+  };
+
+  const SUCCESS = {
+    deposits: [
+      {
+        tx_hash:
+          "0xe0398f2c85cc30f5e7ba7c9f6835df437a0f8ac82a9fc1c234c227d15150a549",
+        destinationChain: "monad",
+        asset_id: "nep245:v2_1.omni.hot.tg:143_2dmLwYWkCQKyTjeUPAsGJuiVLbFx",
+        decimals: 6,
+        amount: "2310379",
+        created_at: "2026-09-22T18:07:17.815Z",
+        deposit_address: "0x85741326Ce25073399AfbAF9D443A6508557C77f",
+        recipient: "0xe2ab465839e409c80d1ca4bb4508fea7eb808395",
+      },
+    ],
+  };
+
+  it("reads the row a real deposit actually produced", () => {
+    const [row] = parsePersistentDeposits(RECEIVED, "received");
+    expect(row!.depositAddress).toBe(
+      "0x85741326Ce25073399AfbAF9D443A6508557C77f",
+    );
+    expect(row!.chain).toBe("base");
+    expect(row!.amountFormatted).toBe("2.312039");
+    expect(row!.status).toBe("PENDING_DEPOSIT");
+  });
+
+  it("reads the delivery, which is a different chain and a smaller amount", () => {
+    const [row] = parsePersistentDeposits(SUCCESS, "success");
+    expect(row!.chain).toBe("monad");
+    // 2.312039 left Base, 2.310379 arrived: Aurora's fee is the difference.
+    expect(row!.amountFormatted).toBe("2.310379");
+    expect(row!.status).toBe("SUCCESS");
+  });
+
   it("takes the status from the bucket asked for, not from the row", () => {
-    // There is no status field on this endpoint. The filter IS the status, so
-    // a row returned under ?type=failed is a failure even if it says nothing.
     const [row] = parsePersistentDeposits(
-      { deposits: [{ depositAddress: "0xDEP" }] },
+      { deposits: [{ deposit_address: "0xDEP" }] },
       "failed",
     );
     expect(row!.status).toBe("FAILED");
   });
 
-  it("drops a row it cannot read instead of inventing one", () => {
-    // The row shape here is a guess at a sibling endpoint's fields until real
-    // money moves through. A row without an address cannot be shown against any
-    // deposit, and showing an amount nobody sent is worse than showing nothing.
+  it("drops a row it cannot attribute instead of inventing one", () => {
     const rows = parsePersistentDeposits(
-      { deposits: [{ amountInFormatted: "10.0" }, { depositAddress: "0xDEP" }] },
+      { deposits: [{ amount: "10" }, { deposit_address: "0xDEP" }] },
       "received",
     );
     expect(rows).toHaveLength(1);
@@ -364,6 +415,31 @@ describe("reading what has landed", () => {
     expect(parsePersistentDeposits({}, "received")).toEqual([]);
     expect(parsePersistentDeposits({ deposits: "no" }, "received")).toEqual([]);
     expect(parsePersistentDeposits(null, "received")).toEqual([]);
+  });
+});
+
+describe("formatting units without a float", () => {
+  it("does not lose precision on an amount a double cannot hold", () => {
+    // 2^53 is where Number stops counting integers exactly. An 18dp token
+    // amount passes that routinely, which is why this is string arithmetic.
+    expect(formatUnits("9007199254740993", 0)).toBe("9007199254740993");
+    expect(formatUnits("1000000000000000001", 18)).toBe("1.000000000000000001");
+  });
+
+  it("pads an amount smaller than one whole unit", () => {
+    expect(formatUnits("1", 6)).toBe("0.000001");
+    expect(formatUnits("0", 6)).toBe("0");
+  });
+
+  it("trims trailing zeros but keeps the whole part", () => {
+    expect(formatUnits("2310000", 6)).toBe("2.31");
+    expect(formatUnits("2000000", 6)).toBe("2");
+  });
+
+  it("refuses input it cannot trust rather than guessing", () => {
+    expect(formatUnits("-1", 6)).toBeNull();
+    expect(formatUnits("1.5", 6)).toBeNull();
+    expect(formatUnits("abc", 6)).toBeNull();
   });
 });
 
