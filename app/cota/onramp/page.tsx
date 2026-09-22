@@ -50,7 +50,7 @@ interface AddressState {
 const COPY = {
   es: {
     title: "Fondear desde cualquier red",
-    lead: "Te damos una dirección. Envía lo que tengas, desde donde lo tengas — otra red EVM, un exchange, tu wallet. Llega como USDC en Monad.",
+    lead: "Te damos una dirección. Envía desde otra red EVM, un exchange o tu wallet — llega como USDC en Monad.",
     get: "Dame mi dirección",
     working: "Pidiendo…",
     yours: "Tu dirección de depósito",
@@ -73,10 +73,16 @@ const COPY = {
     left: "salió de",
     arrived: "llegó a Monad",
     refresh: "Actualizar",
+    canSend: "Qué puedes enviar",
+    onlyThese:
+      "SOLO estos activos, y solo desde estas redes. Aurora no devuelve lo que no reconoce — un envío fuera de esta lista puede perderse y no hay forma de recuperarlo.",
+    listDown:
+      "No podemos leer la lista ahora mismo. No envíes nada hasta que cargue.",
+    more: "y",
   },
   en: {
     title: "Fund from any chain",
-    lead: "We give you an address. Send whatever you hold, from wherever it sits — another EVM chain, an exchange, your wallet. It arrives as USDC on Monad.",
+    lead: "We give you an address. Send from another EVM chain, an exchange or your wallet — it arrives as USDC on Monad.",
     get: "Give me my address",
     working: "Asking…",
     yours: "Your deposit address",
@@ -99,6 +105,12 @@ const COPY = {
     left: "left",
     arrived: "arrived on Monad",
     refresh: "Refresh",
+    canSend: "What you can send",
+    onlyThese:
+      "ONLY these assets, and only from these chains. Aurora does not return what it does not recognise — a send outside this list can be lost with no way to recover it.",
+    listDown:
+      "We cannot read the list right now. Do not send anything until it loads.",
+    more: "and",
   },
 } as const;
 
@@ -112,6 +124,9 @@ export default function OnrampPage() {
   const [error, setError] = useState<"unconfigured" | "upstream" | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [options, setOptions] = useState<
+    Array<{ chain: string; symbols: string[] }> | null
+  >(null);
 
   // A GET never calls Aurora — it only reads what we already issued — so this
   // is safe to run on open and tells us both the address and whether the route
@@ -142,6 +157,30 @@ export default function OnrampPage() {
       live = false;
     };
   }, [signedIn]);
+
+  // Public and unauthenticated on purpose — this is the one thing on the page
+  // that must render even when the session or the key is not working, because
+  // it is what stops a hunter sending an asset that cannot come back.
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/cota/aurora/tokens", {
+          cache: "no-store",
+        });
+        if (!live || !res.ok) return;
+        const body = (await res.json()) as {
+          options?: Array<{ chain: string; symbols: string[] }>;
+        };
+        setOptions(body.options ?? []);
+      } catch {
+        // Left null, which the screen renders as "do not send yet".
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const issue = useCallback(async () => {
     setBusy(true);
@@ -279,6 +318,30 @@ export default function OnrampPage() {
               )}
             </Panel>
           )}
+
+          <Panel>
+            <p className="text-ink/60 text-xs uppercase">{t.canSend}</p>
+            {options === null ? (
+              <p className="text-ink mt-2 text-xs">{t.listDown}</p>
+            ) : (
+              <>
+                <ul className="mt-2 space-y-1">
+                  {options.map((o) => (
+                    <li key={o.chain} className="text-ink text-sm">
+                      <span className="font-mono uppercase">{o.chain}</span>{" "}
+                      <span className="text-ink/70">
+                        {o.symbols.slice(0, 6).join(", ")}
+                        {o.symbols.length > 6
+                          ? ` ${t.more} ${o.symbols.length - 6}`
+                          : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-ink/60 mt-3 text-xs">{t.onlyThese}</p>
+              </>
+            )}
+          </Panel>
 
           <Note>{t.notAusd}</Note>
           <a
