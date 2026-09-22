@@ -32,6 +32,13 @@ import { SignInPrompt } from "@/components/auth/SignInPrompt";
 
 type Lang = "es" | "en";
 
+interface Holding {
+  symbol: string;
+  chain: string;
+  amount: string;
+  valueUsd: number | null;
+}
+
 interface Deposit {
   status: string;
   txHash: string | null;
@@ -79,6 +86,7 @@ const COPY = {
     listDown:
       "No podemos leer la lista ahora mismo. No envíes nada hasta que cargue.",
     more: "y",
+    holdings: "Tu saldo",
   },
   en: {
     title: "Fund from any chain",
@@ -111,6 +119,7 @@ const COPY = {
     listDown:
       "We cannot read the list right now. Do not send anything until it loads.",
     more: "and",
+    holdings: "Your balance",
   },
 } as const;
 
@@ -127,6 +136,7 @@ export default function OnrampPage() {
   const [options, setOptions] = useState<
     Array<{ chain: string; symbols: string[] }> | null
   >(null);
+  const [holdings, setHoldings] = useState<Holding[] | null>(null);
 
   // A GET never calls Aurora — it only reads what we already issued — so this
   // is safe to run on open and tells us both the address and whether the route
@@ -149,6 +159,15 @@ export default function OnrampPage() {
         }
         if (!res.ok) return;
         setState((await res.json()) as AddressState);
+
+        // Separate call, and a failure here is silent: a balance we cannot
+        // read must render as nothing rather than as zero, and it must never
+        // take the deposit address down with it.
+        const bal = await fetch("/api/cota/zerion", { cache: "no-store" });
+        if (live && bal.ok) {
+          const body = (await bal.json()) as { holdings?: Holding[] };
+          setHoldings(body.holdings ?? []);
+        }
       } catch {
         if (live) setError("upstream");
       }
@@ -279,6 +298,32 @@ export default function OnrampPage() {
                   {t.lands} <span className="font-mono">{state.recipient}</span>
                 </p>
               ) : null}
+            </Panel>
+          )}
+
+          {address == null || holdings === null || holdings.length === 0 ? null : (
+            <Panel>
+              <p className="text-ink/60 text-xs uppercase">{t.holdings}</p>
+              <ul className="mt-2 space-y-1">
+                {holdings.map((h, i) => (
+                  <li
+                    key={`${h.chain}-${h.symbol}-${i}`}
+                    className="text-ink flex items-baseline justify-between text-sm"
+                  >
+                    <span>
+                      <span className="font-mono">{h.amount}</span> {h.symbol}
+                      {h.chain === "monad" ? null : (
+                        <span className="text-ink/50 text-xs"> · {h.chain}</span>
+                      )}
+                    </span>
+                    {h.valueUsd === null ? null : (
+                      <span className="text-ink/50 font-mono text-xs">
+                        ${h.valueUsd.toFixed(2)}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </Panel>
           )}
 
