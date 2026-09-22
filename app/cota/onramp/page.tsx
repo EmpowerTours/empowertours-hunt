@@ -330,10 +330,11 @@ export default function OnrampPage() {
                     <li key={o.chain} className="text-ink text-sm">
                       <span className="font-mono uppercase">{o.chain}</span>{" "}
                       <span className="text-ink/70">
-                        {o.symbols.slice(0, 6).join(", ")}
-                        {o.symbols.length > 6
-                          ? ` ${t.more} ${o.symbols.length - 6}`
-                          : ""}
+                        {/* Hiding exactly one reads as a bug — "USDT0 y 1" —
+                            so the cut only happens when it saves something. */}
+                        {o.symbols.length <= 7
+                          ? o.symbols.join(", ")
+                          : `${o.symbols.slice(0, 6).join(", ")} ${t.more} ${o.symbols.length - 6}`}
                       </span>
                     </li>
                   ))}
