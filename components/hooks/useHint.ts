@@ -20,10 +20,7 @@ import type { GeoFix, HintBand } from "@/components/hunt/types";
    has actually moved or the reading has gone stale.
 --------------------------------------------------------------------------- */
 
-const MIN_INTERVAL_MS = 6_000;
-const STALE_AFTER_MS = 12_000;
-const MOVED_METERS = 15;
-const BACKOFF_MS = 20_000;
+import { BACKOFF_MS, shouldRequestHint } from "@/components/hooks/hintSchedule";
 
 export type HintStatus = "idle" | "loading" | "ok" | "throttled" | "error";
 
@@ -74,17 +71,25 @@ export function useHint(
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled || fix === null || complete) return;
+    if (!enabled || fix === null) return;
 
     const now = Date.now();
-    if (inFlight.current) return;
-    if (now < blockedUntil.current) return;
-    if (now - lastRequestAt.current < MIN_INTERVAL_MS) return;
-
     const previous = lastRequestPos.current;
-    const moved = previous === null ? Infinity : haversineMeters(previous, fix);
-    const stale = now - lastRequestAt.current > STALE_AFTER_MS;
-    if (moved < MOVED_METERS && !stale) return;
+    if (
+      !shouldRequestHint({
+        enabled,
+        hasFix: true,
+        inFlight: inFlight.current,
+        complete,
+        now,
+        lastRequestAt: lastRequestAt.current,
+        blockedUntil: blockedUntil.current,
+        movedMeters:
+          previous === null ? Infinity : haversineMeters(previous, fix),
+      })
+    ) {
+      return;
+    }
 
     const controller = new AbortController();
     inFlight.current = true;
@@ -126,5 +131,14 @@ export function useHint(
     // trigger. Both are intentional dependencies.
   }, [enabled, fix, huntId, complete, tick]);
 
-  return { band, remaining, complete, cacheless, status, error, readAt, refresh };
+  return {
+    band,
+    remaining,
+    complete,
+    cacheless,
+    status,
+    error,
+    readAt,
+    refresh,
+  };
 }
