@@ -10,6 +10,103 @@ City. Attendance is free for qualified visitors.
 
 ---
 
+## 0. CORRECTION, 2026-09-24 — the survey changed the lending answer
+
+Everything below about lending was written before surveying the market. The
+survey contradicts parts of it, including a claim of mine that was simply wrong.
+Read this section first.
+
+### What is actually on Monad (DefiLlama API, 2026-09-24)
+
+Thirteen protocols in the Lending category, not fifteen. The distribution is the
+finding:
+
+| Protocol | Monad TVL | 30d | 90d |
+|---|---:|---:|---:|
+| Aave V3 | $290.6M | +1% | — |
+| Euler V2 | $261.5M | +11% | +141% |
+| Morpho Blue | $196.2M | +7% | +124% |
+| Curvance | $128.9M | −8% | +108% |
+| **Neverland** | **$7.8M** | **−37%** | **−80%** |
+| Gearbox | $0.30M | −35% | −57% |
+| Folks Finance xChain | $0.23M | −14% | +6% |
+| TownSquare Lending | $0.22M | −62% | −58% |
+| Covenant | $0.03M | −39% | +24% |
+| Peridot / Sumer / K613 / Quantus | <$1k each | | |
+
+**The top four hold $877M of roughly $886M — about 99%.**
+
+### The category is booming and every challenger is dying
+
+Top-four TVL is **up 240% in 90 days**. This is not a shrinking market.
+
+And yet, measured from each protocol's own peak:
+
+    Gearbox            −99%
+    TownSquare         −95%
+    Folks Finance      −94%
+    Neverland          −83%
+    Peridot            −73%
+
+Not one Monad-native lending challenger is near its high, in a quarter when the
+category tripled. The money went to four battle-tested cross-chain incumbents.
+
+**Neverland — the protocol this plan was originally modelled on — is down 83%
+from a $45.5M peak in May, and lost 37% in the last thirty days alone.** It ran
+the experiment of "be the Monad-native lender with better tokenomics" at real
+scale, and it is losing. That is the single most useful data point here.
+
+The only thing growing outside the top four is **Reservoir Protocol**, a CDP at
+$60M and **+1159% in 30 days**, sitting at its all-time high — a different
+mechanism (minting against collateral), not a lending market.
+
+### The niche I claimed does not exist
+
+This document said fifteen protocols can lend and "none of them can prove their
+rules." That is false, and it took two searches to find out:
+
+- **Aave V3 credit delegation** — `approveDelegation()` sets a per-debt-token
+  allowance for another address. An agent borrows against your collateral, up to
+  a cap you set, per asset. There is already a public "credit line for agents"
+  project built on it.
+- **Euler V2 EVC operators** — delegate control of a sub-account to a contract
+  or bot, with a 256-account bitmask, revocable at any time, plus a lockdown
+  mode. The docs name stop-loss and intent-based trading as the use cases.
+
+Delegated, limited, revocable agent access to a lending position is **shipped**
+in the two largest lenders on this chain.
+
+### What is actually different about the Cota bound, stated honestly
+
+Narrower than "nobody can do this", and still real:
+
+- Aave's limit is an **allowance** — how much of one asset may be borrowed. It
+  says nothing about leverage, loss, frequency or market.
+- Euler's limit is **scope** — which sub-accounts an operator may touch. Inside
+  one, the docs are explicit that an operator "can move funds, borrow, repay,
+  and perform any action on your behalf."
+- The Cota bound is **behavioural**: market, venue, max leverage, max notional,
+  trades per day, daily loss ceiling, expiry — checked before every order, fails
+  closed, over a key the venue itself will not let withdraw.
+
+Allowance and scope versus rules. That is a genuine difference, and it is about
+**perpetuals**, which is what Cota trades — not lending, where the incumbents
+already have the primitive.
+
+### Revised verdict
+
+**Do not build a lending protocol.** Seven teams ran that experiment on this
+chain in this window and are down 73–99% while the category tripled.
+
+**An integration still makes sense** and the target should change: the AUSD
+yield idea below stands, but the venue should be one of the four that is
+actually winning, not the one this was modelled on.
+
+**The differentiated thing remains the bound over perps**, not over lending —
+which is what section 2 already argues for.
+
+---
+
 ## 1. Lending — integrate, do not build
 
 ### The case against building
