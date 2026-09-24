@@ -93,6 +93,50 @@ Allowance and scope versus rules. That is a genuine difference, and it is about
 **perpetuals**, which is what Cota trades — not lending, where the incumbents
 already have the primitive.
 
+### Why Reservoir is the one thing growing — looked into it
+
+Not a lending market at all. Reservoir is an **RWA-backed stablecoin issuer**
+(Fortunafi): `rUSD` plus yield-bearing `srUSD` / `wsrUSD` / `trUSD`, audited by
+Halborn, with a `DAM` token, points seasons and airdrop campaigns.
+
+The Monad curve is not organic adoption:
+
+    2026-07-26   $0
+    2026-08-25   $4.8M
+    2026-09-03   $42.5M
+    2026-09-24   $60.0M
+
+**Monad is now its LARGEST chain** — $60M of roughly $74M total, ahead of
+Ethereum's $7.6M — on a protocol deployed to seventeen chains.
+
+Two things drove it, and neither is a product anyone on Monad chose:
+
+1. **Distribution through routing infrastructure, not an app.** Reservoir moves
+   through **Enso** with **LayerZero** as the cross-chain rail: $179M of
+   execution volume in thirty days, $700M all time. Enso's own framing is that
+   it "helps make external liquidity reachable without forcing issuers to build
+   and maintain every execution path themselves." Nobody is *using Reservoir on
+   Monad* in a UX sense. Capital is being **routed** there.
+2. **Token incentives.** Points seasons, DAM airdrops, and reward campaigns run
+   through partner vaults — the LiquidDAM campaign paid DAM through an rUSD
+   vault on Morpho.
+
+**The hypothesis this suggests — labelled as a hypothesis, not measured:** this
+is mercenary capital, and it is the same capital that already left the others.
+Neverland at −83% and Gearbox at −99% look like what happens after an incentive
+phase ends. If that is right, Reservoir's $60M is a loan from the market, not a
+moat, and copying the shape of it means competing on emissions.
+
+**What it actually proves about entering this market:** the route to TVL on
+Monad today is to be a multi-chain issuer with a token programme and routing
+partnerships. None of those three things is available to a solo founder, and
+none of them is a product.
+
+**And what it says about what IS available here:** every number in this section
+is capital with no person attached. Cota's asset is the opposite — hunters, who
+walk to a GPS point and get paid. That cannot be routed in by LayerZero and it
+does not leave when emissions stop.
+
 ### Revised verdict
 
 **Do not build a lending protocol.** Seven teams ran that experiment on this
