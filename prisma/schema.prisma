@@ -1732,6 +1732,18 @@ model AuroraDepositAddress {
   /// `evm` is the shortcut that accepts funds from every EVM chain at once.
   depositChain String
 
+  /// "MON" or "USDC" — what this address delivers on Monad.
+  ///
+  /// Part of the address's IDENTITY, not a label: asking Aurora for the same
+  /// sender and chain with a different destination returns a DIFFERENT address
+  /// (measured 2026-09-23). So it has to be in the unique key, or one hunter's
+  /// two addresses would collide on one row and the second would overwrite the
+  /// first — leaving a live address nobody could look up.
+  ///
+  /// Rows created before 2026-09-23 are USDC; MON is the default now, because a
+  /// newcomer who lands USDC cannot pay the gas to move it.
+  destinationAsset String @default("MON")
+
   /// What Aurora handed us. Case preserved exactly as returned — it is an
   /// address on a chain we may not be able to checksum.
   depositAddress String
@@ -1756,6 +1768,6 @@ model AuroraDepositAddress {
 
   createdAt DateTime @default(now())
 
-  @@unique([playerId, depositChain])
+  @@unique([playerId, depositChain, destinationAsset])
   @@index([depositAddress])
 }

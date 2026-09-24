@@ -6,9 +6,11 @@ import {
   AuroraError,
   DEPOSIT_TYPES,
   isDepositChain,
+  isDestinationAsset,
   readPersistentDeposits,
   requestPersistentDepositAddress,
   type DepositChain,
+  type DestinationAsset,
 } from "@/lib/cota/aurora";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,16 @@ import {
 const DEFAULT_CHAIN: DepositChain = "evm";
 
 /**
+ * MON, not USDC, and the reason is the gas trap rather than trading.
+ *
+ * A newcomer who funds entirely through Aurora holds exactly what this delivers.
+ * If that is USDC they hold money they cannot move — the approval and the swap
+ * are both paid in MON. Landing MON costs one extra hop to AUSD, measured at
+ * roughly nothing on a 0 bps book.
+ */
+const DEFAULT_ASSET: DestinationAsset = "MON";
+
+/**
  * Lowercased, because `requirePlayer` lowercases the wallet it looks up and a
  * sender that differed only in case would be a DIFFERENT sender to Aurora — a
  * second address for one hunter, which is the exact failure the unique
@@ -67,6 +79,10 @@ const Post = z.object({
   depositChain: z
     .string()
     .refine(isDepositChain, "not a chain Aurora accepts")
+    .optional(),
+  destinationAsset: z
+    .string()
+    .refine(isDestinationAsset, "not an asset this app delivers")
     .optional(),
 });
 
@@ -97,14 +113,26 @@ export async function GET(req: Request) {
     if (!isDepositChain(chain)) {
       return NextResponse.json({ error: "bad_chain" }, { status: 400 });
     }
+    const asset = url.searchParams.get("destinationAsset") ?? DEFAULT_ASSET;
+    if (!isDestinationAsset(asset)) {
+      return NextResponse.json({ error: "bad_asset" }, { status: 400 });
+    }
 
     const row = await prisma.auroraDepositAddress.findUnique({
       where: {
-        playerId_depositChain: { playerId: player.id, depositChain: chain },
+        playerId_depositChain_destinationAsset: {
+          playerId: player.id,
+          depositChain: chain,
+          destinationAsset: asset,
+        },
       },
     });
     if (row === null) {
-      return NextResponse.json({ address: null, depositChain: chain });
+      return NextResponse.json({
+        address: null,
+        depositChain: chain,
+        destinationAsset: asset,
+      });
     }
 
     // Deposit history is only fetched when asked for, because it is a network
@@ -114,6 +142,7 @@ export async function GET(req: Request) {
       return NextResponse.json({
         address: row.depositAddress,
         depositChain: row.depositChain,
+        destinationAsset: row.destinationAsset,
         recipient: row.recipient,
       });
     }
@@ -138,6 +167,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       address: row.depositAddress,
       depositChain: row.depositChain,
+      destinationAsset: row.destinationAsset,
       recipient: row.recipient,
       deposits,
     });
@@ -156,9 +186,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
     const depositChain = body.data.depositChain ?? DEFAULT_CHAIN;
+    const destinationAsset = body.data.destinationAsset ?? DEFAULT_ASSET;
 
     const existing = await prisma.auroraDepositAddress.findUnique({
-      where: { playerId_depositChain: { playerId: player.id, depositChain } },
+      where: {
+        playerId_depositChain_destinationAsset: {
+          playerId: player.id,
+          depositChain,
+          destinationAsset,
+        },
+      },
     });
     // The recipient is checked, not just the presence of a row: an address that
     // pays a wallet this hunter no longer uses is worse than no address.
@@ -166,6 +203,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         address: existing.depositAddress,
         depositChain,
+        destinationAsset,
         recipient: existing.recipient,
         fresh: false,
       });
@@ -175,13 +213,21 @@ export async function POST(req: Request) {
       recipient: player.walletAddress,
       sender: senderFor(player.walletAddress),
       depositChain,
+      destinationAsset,
     });
 
     const row = await prisma.auroraDepositAddress.upsert({
-      where: { playerId_depositChain: { playerId: player.id, depositChain } },
+      where: {
+        playerId_depositChain_destinationAsset: {
+          playerId: player.id,
+          depositChain,
+          destinationAsset,
+        },
+      },
       create: {
         playerId: player.id,
         depositChain,
+        destinationAsset,
         depositAddress: issued.depositAddress,
         recipient: player.walletAddress,
         sender: senderFor(player.walletAddress),
@@ -197,6 +243,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       address: row.depositAddress,
       depositChain,
+      destinationAsset,
       recipient: row.recipient,
       fresh: !issued.alreadyExists,
     });

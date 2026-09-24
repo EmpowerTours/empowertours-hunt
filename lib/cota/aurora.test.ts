@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AuroraError,
   MONAD_USDC_ADDRESS,
+  MONAD_MON_ASSET_ID,
   MONAD_USDC_ASSET_ID,
   isCredited,
   isTerminal,
@@ -9,6 +10,7 @@ import {
   parseDeposits,
   parseStatus,
   isDepositChain,
+  isDestinationAsset,
   parsePersistentAddress,
   formatUnits,
   parsePersistentDeposits,
@@ -282,9 +284,12 @@ function addressFetch(body: unknown, status = 200) {
 }
 
 describe("asking Aurora for a persistent address", () => {
-  it("pins the destination so a caller cannot redirect a hunter's money", async () => {
+  it("delivers MON by default, so a newcomer can pay their own gas", async () => {
+    // The whole point. Someone who funds only through Aurora holds exactly what
+    // this delivers; if that were USDC they would hold money they cannot move,
+    // because the approval and the swap are both paid in MON.
     const { fake, calls } = addressFetch({
-      depositAddress: "0xDB1a7B889613a75506DEf808B92130E436B8FD12",
+      depositAddress: "0xeb460f216B35889206C95f376a297D72b90C8B15",
       alreadyExists: false,
     });
     await requestPersistentDepositAddress(
@@ -292,11 +297,33 @@ describe("asking Aurora for a persistent address", () => {
       { fetch: fake, appKey: "k" },
     );
     const sent = JSON.parse(String(calls[0]!.init!.body));
-    // Neither of these is a parameter. The downstream leg can only spend Monad
-    // USDC, so the request is not allowed to ask for anything else.
+    expect(sent.destinationAsset).toBe(MONAD_MON_ASSET_ID);
+    // Never a parameter: a deposit that landed on another chain would be gone.
     expect(sent.destinationChain).toBe("monad");
-    expect(sent.destinationAsset).toBe(MONAD_USDC_ASSET_ID);
     expect(sent.sender).toBe("player-1");
+  });
+
+  it("still delivers the exact USDC kuru.ts trades when asked for USDC", async () => {
+    const { fake, calls } = addressFetch({ depositAddress: "0xa" });
+    await requestPersistentDepositAddress(
+      {
+        recipient: RECIPIENT,
+        sender: "player-1",
+        depositChain: "evm",
+        destinationAsset: "USDC",
+      },
+      { fetch: fake, appKey: "k" },
+    );
+    expect(JSON.parse(String(calls[0]!.init!.body)).destinationAsset).toBe(
+      MONAD_USDC_ASSET_ID,
+    );
+  });
+
+  it("rejects an asset this app does not deliver", () => {
+    expect(isDestinationAsset("MON")).toBe(true);
+    expect(isDestinationAsset("USDC")).toBe(true);
+    expect(isDestinationAsset("USDT0")).toBe(false);
+    expect(isDestinationAsset("")).toBe(false);
   });
 
   it("puts the key in the path, because Aurora has no auth header", async () => {

@@ -380,6 +380,32 @@ export function isDepositChain(value: string): value is DepositChain {
   return (DEPOSIT_CHAINS as readonly string[]).includes(value);
 }
 
+/**
+ * What a deposit address delivers on Monad.
+ *
+ * MON IS THE DEFAULT, and the reason is gas rather than trading. A newcomer who
+ * funds entirely through Aurora and has never hunted lands holding exactly one
+ * asset. If that asset is USDC they hold money they cannot move: the approval
+ * and the swap are both transactions paid in MON, and no amount of USDC buys
+ * the ~0.06 MON they cost. Their deposit arrives and stops.
+ *
+ * Landing MON instead costs one extra swap hop on the way to AUSD — MON->USDC
+ * across Kuru's book, then USDC->AUSD. That hop was the original reason this
+ * was pinned to USDC, and it was measured 2026-09-23 by round-tripping 405 MON:
+ * back at 405.56, a -0.138% round trip, so one leg is inside the noise on a
+ * 0 bps book. A free hop is a bad trade against a dead end.
+ */
+export const DESTINATION_ASSETS = {
+  MON: MONAD_MON_ASSET_ID,
+  USDC: MONAD_USDC_ASSET_ID,
+} as const;
+
+export type DestinationAsset = keyof typeof DESTINATION_ASSETS;
+
+export function isDestinationAsset(v: string): v is DestinationAsset {
+  return v === "MON" || v === "USDC";
+}
+
 export interface PersistentAddressRequest {
   /** Where the USDC lands. The hunter's Monad address. */
   recipient: string;
@@ -393,6 +419,8 @@ export interface PersistentAddressRequest {
    */
   sender: string;
   depositChain: DepositChain;
+  /** Defaults to MON. See DESTINATION_ASSETS for why. */
+  destinationAsset?: DestinationAsset;
 }
 
 export interface PersistentAddress {
@@ -415,7 +443,7 @@ export async function requestPersistentDepositAddress(
       sender: req.sender,
       depositChain: req.depositChain,
       destinationChain: "monad",
-      destinationAsset: MONAD_USDC_ASSET_ID,
+      destinationAsset: DESTINATION_ASSETS[req.destinationAsset ?? "MON"],
     }),
     signal: deps.signal,
     cache: "no-store",

@@ -57,7 +57,7 @@ interface AddressState {
 const COPY = {
   es: {
     title: "Fondear desde cualquier red",
-    lead: "Te damos una dirección. Envía desde otra red EVM, un exchange o tu wallet — llega como USDC en Monad.",
+    lead: "Te damos una dirección. Envía desde otra red EVM, un exchange o tu wallet — llega como MON en Monad, listo para usar.",
     get: "Dame mi dirección",
     working: "Pidiendo…",
     yours: "Tu dirección de depósito",
@@ -65,14 +65,14 @@ const COPY = {
       "Es permanente. Es tuya, no caduca, y puedes volver a usarla siempre.",
     lands: "Los fondos llegan a tu wallet de Monad:",
     notAusd:
-      "Llega como USDC, no como AUSD. Perpl cobra en AUSD, así que después pasa por Cambiar USDC → AUSD. Aurora no mueve AUSD en ninguna red.",
+      "Llega como MON, no como AUSD. Perpl cobra en AUSD, así que después pasa por Cambiar MON → AUSD. Llega como MON a propósito: el gas se paga en MON, y sin algo de MON no podrías mover tu propio dinero.",
     copy: "Copiar",
     copied: "Copiado",
     unconfigured:
       "Esta ruta no está disponible ahora mismo. Usa las otras opciones para fondear.",
     upstream:
       "Aurora no respondió. Tu dirección, si ya tienes una, sigue siendo válida — vuelve a intentarlo.",
-    swap: "Cambiar USDC → AUSD →",
+    swap: "Cambiar MON → AUSD →",
     back: "← Cota",
     arrivals: "Lo que ha llegado",
     nothingYet:
@@ -90,7 +90,7 @@ const COPY = {
   },
   en: {
     title: "Fund from any chain",
-    lead: "We give you an address. Send from another EVM chain, an exchange or your wallet — it arrives as USDC on Monad.",
+    lead: "We give you an address. Send from another EVM chain, an exchange or your wallet — it arrives as MON on Monad, ready to use.",
     get: "Give me my address",
     working: "Asking…",
     yours: "Your deposit address",
@@ -98,14 +98,14 @@ const COPY = {
       "It is permanent. It is yours, it does not expire, and you can reuse it forever.",
     lands: "Funds land in your Monad wallet:",
     notAusd:
-      "This arrives as USDC, not AUSD. Perpl settles in AUSD, so you still walk Swap USDC → AUSD afterwards. Aurora carries no AUSD on any chain.",
+      "This arrives as MON, not AUSD. Perpl settles in AUSD, so you still walk Swap MON → AUSD afterwards. MON on purpose: gas is paid in MON, and without a little of it you could not move your own money.",
     copy: "Copy",
     copied: "Copied",
     unconfigured:
       "This route is not available right now. Use the other funding options.",
     upstream:
       "Aurora did not answer. Any address you already have is still valid — try again.",
-    swap: "Swap USDC → AUSD →",
+    swap: "Swap MON → AUSD →",
     back: "← Cota",
     arrivals: "What has arrived",
     nothingYet:
@@ -391,7 +391,7 @@ export default function OnrampPage() {
 
           <Note>{t.notAusd}</Note>
           <a
-            href="/cota/swap/usdc"
+            href="/cota/swap"
             className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
           >
             {t.swap}
