@@ -72,12 +72,22 @@ const ITEMS: Item[] = [
     cost: "free",
   },
   {
-    id: "refusal",
+    id: "record",
     bounty: "The refusal — the point of the product",
     sponsor: "read this one even if you skip the rest",
     claim:
-      "lib/cota/enforce.ts is a pure function: no clock, no database, no network. Practice trades run through that same function, not a copy.",
-    todo: "In practice mode, try to open a position bigger than the size you signed, or keep trading after your daily loss ceiling. It refuses, and names the number you hit. Neither you nor we can override it.",
+      "On 4 September the live agent asked one bound for four trades inside the same second. It allowed one and refused three: a market the bound did not authorise, then leverage, then size. Three ceilings, one leash, no staging.",
+    todo: "Open the production record. These are rows the executor wrote, not a demo — a refusal there means the order never reached the venue. Four real fills on Perpl are listed underneath.",
+    href: "/judge/record",
+    cost: "free",
+  },
+  {
+    id: "practice",
+    bounty: "Try it yourself, if you have a minute spare",
+    sponsor: "optional — the record above is the evidence",
+    claim:
+      "Paper positions against live Perpl marks, enforced by the same function as the live path.",
+    todo: "Sign a leash, then trade against it with no money at stake and push past your own limits. Worth skipping if you are short of time.",
     href: "/cota/practice",
     cost: "free",
   },
@@ -204,7 +214,7 @@ export default function JudgePage() {
           Cota — a walkthrough for judges
         </h1>
         <p className="text-ink/70 text-sm leading-snug">
-          Ten things to try, each naming the bounty it answers. Most need no
+          Eleven things to try, each naming the bounty it answers. Most need no
           money at all — including the one that matters, which is watching the
           software refuse an instruction because of a number you signed.
         </p>
