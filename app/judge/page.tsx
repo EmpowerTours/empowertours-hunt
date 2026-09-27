@@ -30,7 +30,7 @@ import { Note, Panel } from "@/components/ui/primitives";
 // screen this whole product exists to produce.
 // ---------------------------------------------------------------------------
 
-type Cost = "free" | "gas" | "funds";
+type Part = "open" | "fund" | "funded";
 
 interface Item {
   id: string;
@@ -41,13 +41,13 @@ interface Item {
   /** What the judge should do to see it. */
   todo: string;
   href: string;
-  cost: Cost;
+  part: Part;
 }
 
-const COST_LABEL: Record<Cost, string> = {
-  free: "no wallet funds needed",
-  gas: "needs a little MON for gas",
-  funds: "needs funded AUSD",
+const PART_HEADING: Record<Part, string> = {
+  open: "Works right now, on an empty wallet",
+  fund: "Fund yourself — this is the Aurora bounty, and it unlocks the rest",
+  funded: "Once your deposit has landed",
 };
 
 const ITEMS: Item[] = [
@@ -59,7 +59,7 @@ const ITEMS: Item[] = [
       "Mera is the entire account layer. The embedded-wallet SDK was deleted, not disabled — there is no other way in.",
     todo: "Tap sign in. One Face ID / Touch ID prompt and you hold a Monad wallet. Then clear this site's data and sign in again: the same address comes back, reconstructed from the passkey alone.",
     href: "/cota",
-    cost: "free",
+    part: "open",
   },
   {
     id: "leash",
@@ -67,9 +67,9 @@ const ITEMS: Item[] = [
     sponsor: "Perpl",
     claim:
       "A signed EIP-712 bound is the agent's entire authority. Checked before every order, fails closed, over a key Perpl will not let withdraw.",
-    todo: "Set your limits on the Cota form and sign them. No chain transaction is required for the signature — anchoring is a separate, optional act.",
+    todo: "Set your limits on the Cota form and sign them. The signature costs nothing — it never touches the chain.",
     href: "/cota",
-    cost: "free",
+    part: "open",
   },
   {
     id: "record",
@@ -77,69 +77,29 @@ const ITEMS: Item[] = [
     sponsor: "read this one even if you skip the rest",
     claim:
       "On 4 September the live agent asked one bound for four trades inside the same second. It allowed one and refused three: a market the bound did not authorise, then leverage, then size. Three ceilings, one leash, no staging.",
-    todo: "Open the production record. These are rows the executor wrote, not a demo — a refusal there means the order never reached the venue. Four real fills on Perpl are listed underneath.",
+    todo: "Open the production record. These are rows the executor wrote — a refusal there means the order never reached the venue. Four real fills on Perpl are listed underneath.",
     href: "/judge/record",
-    cost: "free",
+    part: "open",
   },
   {
-    id: "practice",
-    bounty: "Try it yourself, if you have a minute spare",
-    sponsor: "optional — the record above is the evidence",
+    id: "prf",
+    bounty: "Mera: One Passkey, Many Keys",
+    sponsor: "Monad Foundation",
     claim:
-      "Paper positions against live Perpl marks, enforced by the same function as the live path.",
-    todo: "Sign a leash, then trade against it with no money at stake and push past your own limits. Worth skipping if you are short of time.",
-    href: "/cota/practice",
-    cost: "free",
-  },
-  {
-    id: "aurora",
-    bounty: "Bring Any-Chain Liquidity to Monad",
-    sponsor: "Aurora Intents",
-    claim:
-      "A permanent deposit address per hunter, accepting 12 EVM chains and dozens of assets, delivering MON on Monad so a newcomer can pay their own gas on arrival.",
-    todo: "Open the funding screen and take your address. A real 2 USDC deposit from Base settled on Monad in 14 seconds — departure and arrival both show in the arrivals list.",
-    href: "/cota/onramp",
-    cost: "free",
-  },
-  {
-    id: "kuru",
-    bounty: "Build the Next Consumer Trading App on Kuru",
-    sponsor: "Kuru",
-    claim:
-      "Spot MON ↔ USDC routed through Kuru's on-chain order book, both directions, with the book crossing verified from the transaction's own logs.",
-    todo: "Open the spot screen. Quotes are live; trading needs a funded wallet.",
-    href: "/cota/spot",
-    cost: "funds",
-  },
-  {
-    id: "agora",
-    bounty: "Best Mobile Trading App on Monad",
-    sponsor: "Agora",
-    claim:
-      "Mera passkey auth, an AUSD balance, and trades executed through Perpl — on the web, as an Android APK, and on iOS through TestFlight. The same passkey yields the same address in all three.",
-    todo: "Use this on a phone. Add it to your home screen, or install the APK from the download page.",
-    href: "/download",
-    cost: "free",
-  },
-  {
-    id: "risk",
-    bounty: "Best Analytics / Risk Tool",
-    sponsor: "Perpl",
-    claim:
-      "Live exposure, leverage and distance-to-ceiling for a leashed account, read from Perpl rather than from our own table.",
-    todo: "Open the risk screen. It is most meaningful on a funded account, but the layout and the numbers it pulls are visible either way.",
-    href: "/cota/risk",
-    cost: "free",
+      "A second PRF salt derives a non-extractable AES-GCM key that is not a wallet and signs nothing. It seals your private note about a leash, as ciphertext this server cannot read.",
+    todo: "Write a note against your leash. Then clear site data and sign in again — it decrypts, because the key came from your passkey and was never stored.",
+    href: "/cota/trade",
+    part: "open",
   },
   {
     id: "kimi",
     bounty: "Best Builds Powered by KIMI",
     sponsor: "Kimi",
     claim:
-      "The agent's trade proposals come from KIMI (api.moonshot.ai, model kimi-k2.6). Every proposal is then checked against the signed bound before it can reach the venue.",
-    todo: "Read lib/cota/propose.ts in the repo — the model proposes, the leash disposes.",
+      "The agent's trade proposals come from KIMI (api.moonshot.ai, model kimi-k2.6). Every proposal is then checked against your signed bound before it can reach the venue.",
+    todo: "Read lib/cota/propose.ts — the model proposes, the leash disposes.",
     href: "https://github.com/EmpowerTours/empowertours-hunt/blob/master/lib/cota/propose.ts",
-    cost: "free",
+    part: "open",
   },
   {
     id: "cre",
@@ -147,19 +107,69 @@ const ITEMS: Item[] = [
     sponsor: "Chainlink",
     claim:
       "A Chainlink Runtime Environment workflow as the agent's scheduler — main.ts, workflow.yaml, staging and production config, and a recorded CRE-CLI simulation run.",
-    todo: "Read cre/agent-scheduler/ in the repo, including SIMULATION.md.",
+    todo: "Read cre/agent-scheduler/, including SIMULATION.md.",
     href: "https://github.com/EmpowerTours/empowertours-hunt/tree/master/cre/agent-scheduler",
-    cost: "free",
+    part: "open",
   },
   {
-    id: "prf",
-    bounty: "Mera: One Passkey, Many Keys",
-    sponsor: "Monad Foundation",
+    id: "agora",
+    bounty: "Best Mobile Trading App on Monad",
+    sponsor: "Agora",
     claim:
-      "A second PRF salt derives a non-extractable AES-GCM key that is not a wallet and signs nothing. It seals a hunter's private note about a leash, as ciphertext this server cannot read.",
-    todo: "On the trade screen, write a note against a leash. Then clear site data and sign in on a fresh profile: the note decrypts again, because the key came from the passkey and was never stored.",
-    href: "/cota/trade",
-    cost: "free",
+      "Mera passkey auth, an AUSD balance and Perpl trades — on the web, as an Android APK, and on iOS through TestFlight. The same passkey yields the same address in all three.",
+    todo: "Open this on a phone and add it to your home screen, or install the APK.",
+    href: "/download",
+    part: "open",
+  },
+  {
+    id: "aurora",
+    bounty: "Bring Any-Chain Liquidity to Monad",
+    sponsor: "Aurora Intents",
+    claim:
+      "One permanent address per hunter, accepting twelve EVM chains and dozens of assets, delivering MON on Monad — so a newcomer can pay their own gas the moment they arrive.",
+    todo: "Take your deposit address and send a few dollars from any chain on the list. A real 2 USDC transfer from Base settled in 14 seconds; watch yours appear in the arrivals list. About $12 covers everything below — $2 is enough for gas and the swap, and Perpl needs 10 AUSD to open an account.",
+    href: "/cota/onramp",
+    part: "fund",
+  },
+  {
+    id: "anchor",
+    bounty: "The bound, on chain",
+    sponsor: "verifiable by anyone, not just by us",
+    claim:
+      "Anchoring writes your leash digest to AuditAnchorV2 from your own wallet, so the bound stops resting on our database and starts resting on a chain event.",
+    todo: "Anchor the leash you signed earlier and open the transaction on MonadScan. It is your address, your digest.",
+    href: "/cota",
+    part: "funded",
+  },
+  {
+    id: "swap",
+    bounty: "Build the Next Consumer Trading App on Kuru",
+    sponsor: "Kuru",
+    claim:
+      "MON → AUSD routes through Kuru's on-chain order book and a Uniswap v4 pool, with the book crossing verified from the transaction's own logs.",
+    todo: "Swap the MON that arrived into AUSD — the collateral Perpl settles in.",
+    href: "/cota/swap",
+    part: "funded",
+  },
+  {
+    id: "spot",
+    bounty: "Spot trading, no leverage, no Perpl account",
+    sponsor: "Kuru",
+    claim:
+      "MON ↔ USDC on Kuru's order book, both directions, for anyone who wants exposure without a leash or a venue account.",
+    todo: "Trade spot in either direction.",
+    href: "/cota/spot",
+    part: "funded",
+  },
+  {
+    id: "risk",
+    bounty: "Best Analytics / Risk Tool",
+    sponsor: "Perpl",
+    claim:
+      "Live exposure, leverage and distance-to-ceiling for a leashed account, read from Perpl rather than from our own table.",
+    todo: "Deposit your AUSD into Perpl, place a trade under your leash, then open the risk screen and watch the distance to your own ceiling.",
+    href: "/cota/deposit",
+    part: "funded",
   },
 ];
 
@@ -214,9 +224,10 @@ export default function JudgePage() {
           Cota — a walkthrough for judges
         </h1>
         <p className="text-ink/70 text-sm leading-snug">
-          Eleven things to try, each naming the bounty it answers. Most need no
-          money at all — including the one that matters, which is watching the
-          software refuse an instruction because of a number you signed.
+          Twelve things to do, each naming the bounty it answers. The first
+          seven work on an empty wallet, including the one that matters — the
+          software refusing an instruction because of a number you signed. The
+          eighth funds you from any chain, and the rest open up once it lands.
         </p>
       </header>
 
@@ -237,59 +248,61 @@ export default function JudgePage() {
         </p>
       </div>
 
-      <ol className="flex flex-col gap-3">
-        {ITEMS.map((item, n) => {
-          const external = item.href.startsWith("http");
-          return (
-            <li key={item.id}>
-              <Panel className={done[item.id] ? "opacity-60" : ""}>
-                <div className="flex items-start gap-3">
-                  <button
-                    type="button"
-                    onClick={() => toggle(item.id)}
-                    aria-pressed={done[item.id] === true}
-                    aria-label={`Mark "${item.bounty}" as done`}
-                    className="border-hull-line mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm"
-                  >
-                    {done[item.id] ? "✓" : ""}
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-ink text-sm font-medium">
-                      {n + 1}. {item.bounty}
-                    </p>
-                    <p className="text-ink/50 text-xs">{item.sponsor}</p>
-                    <p className="text-ink/80 mt-2 text-sm leading-snug">
-                      {item.claim}
-                    </p>
-                    <p className="text-ink/60 mt-2 text-sm leading-snug">
-                      {item.todo}
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      <a
-                        href={item.href}
-                        target={external ? "_blank" : undefined}
-                        rel={external ? "noreferrer" : undefined}
-                        className="border-hull-line text-ink inline-flex min-h-10 items-center rounded-xl border px-4 text-sm"
+      {(["open", "fund", "funded"] as const).map((part) => (
+        <section key={part} className="flex flex-col gap-3">
+          <h2 className="text-ink/60 border-hull-line border-b pb-1 text-xs uppercase">
+            {PART_HEADING[part]}
+          </h2>
+          <ol className="flex flex-col gap-3">
+            {ITEMS.filter((i) => i.part === part).map((item) => {
+              const external = item.href.startsWith("http");
+              const n = ITEMS.indexOf(item) + 1;
+              return (
+                <li key={item.id}>
+                  <Panel className={done[item.id] ? "opacity-60" : ""}>
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggle(item.id)}
+                        aria-pressed={done[item.id] === true}
+                        aria-label={`Mark "${item.bounty}" as done`}
+                        className="border-hull-line mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm"
                       >
-                        {external ? "Open in GitHub →" : "Open →"}
-                      </a>
-                      <span className="text-ink/50 text-xs">
-                        {COST_LABEL[item.cost]}
-                      </span>
+                        {done[item.id] ? "\u2713" : ""}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-ink text-sm font-medium">
+                          {n}. {item.bounty}
+                        </p>
+                        <p className="text-ink/50 text-xs">{item.sponsor}</p>
+                        <p className="text-ink/80 mt-2 text-sm leading-snug">
+                          {item.claim}
+                        </p>
+                        <p className="text-ink/60 mt-2 text-sm leading-snug">
+                          {item.todo}
+                        </p>
+                        <a
+                          href={item.href}
+                          target={external ? "_blank" : undefined}
+                          rel={external ? "noreferrer" : undefined}
+                          className="border-hull-line text-ink mt-3 inline-flex min-h-10 items-center rounded-xl border px-4 text-sm"
+                        >
+                          {external ? "Open in GitHub \u2192" : "Open \u2192"}
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </Panel>
-            </li>
-          );
-        })}
-      </ol>
+                  </Panel>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ))}
 
-      <Note tone="warn" title="What you cannot do without funds">
-        Opening a real Perpl position needs AUSD, and swapping needs a little
-        MON for gas. Everything above marked otherwise works on an empty wallet
-        — including practice, which trades against live Perpl prices through the
-        same enforcement code as the live path.
+      <Note title="If you would rather not spend anything">
+        The first seven items are the argument, and they cost nothing. The
+        funding step exists because the last four genuinely move money on a live
+        venue, and we would rather show you that than describe it.
       </Note>
 
       <a href="/cota" className="text-ink/60 text-sm">
