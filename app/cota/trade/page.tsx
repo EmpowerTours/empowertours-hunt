@@ -147,7 +147,7 @@ const T = {
     revokeFailed: "No se pudo revocar",
     suggest: "Sugerir con Kimi",
     suggesting: "Kimi pensando…",
-    kimiHold: "Kimi sugiere esperar",
+    kimiHold: "Kimi no ve nada que valga la pena abrir ahora",
     proposerDown: "Kimi no está disponible ahora",
     freshNote:
       "Vista previa contra un día limpio (0 abierto, 0 perdido). El agente usa tu estado real al ejecutar.",
@@ -255,7 +255,10 @@ const T = {
     revokeFailed: "Could not revoke",
     suggest: "Suggest with Kimi",
     suggesting: "Kimi thinking…",
-    kimiHold: "Kimi suggests holding",
+    // Not "holding": this screen previews against a clean day, so the model is
+    // always told the account is flat. There is nothing to hold, and the
+    // Spanish ("esperar") has been saying so correctly all along.
+    kimiHold: "Kimi sees nothing worth opening right now",
     proposerDown: "Kimi is unavailable right now",
     freshNote:
       "Previewed against a clean day (0 open, 0 lost). The agent uses your real state when it executes.",
@@ -442,7 +445,9 @@ export default function TradePage() {
         setLev(String(pr.leverage));
         setKimiNote(pr.rationale ?? null);
       } else {
-        setKimiNote(`${t.kimiHold}: ${pr.rationale ?? ""}`);
+        setKimiNote(
+          pr.rationale ? `${t.kimiHold}: ${pr.rationale}` : t.kimiHold,
+        );
       }
     } catch {
       setKimiNote(t.proposerDown);
