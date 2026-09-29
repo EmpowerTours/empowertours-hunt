@@ -344,7 +344,12 @@ zero bundle chunks on `/cota`, `/cota/trade`, `/cota/history`).
 
 ```
 NEXT_PUBLIC_POSTHOG_KEY=phc_...            # enables it
-NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com   # optional, this is the default
+NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com   # optional, this is the default
+# Set it to https://us.i.posthog.com ONLY if the PostHog account was created in
+# the US region. The default is EU because hunt-web and Postgres both run in
+# Railway's europe-west4, so nothing should be sending data to a second
+# jurisdiction. A host that does not match the account's region does not error —
+# events just vanish.
 ```
 
 What it sends: one `$pageview` per navigation carrying the route SHAPE and

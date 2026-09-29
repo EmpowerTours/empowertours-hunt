@@ -49,7 +49,20 @@ type PostHog = (typeof import("posthog-js"))["default"];
 // ---------------------------------------------------------------------------
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
+// EU, to match where everything else already is: hunt-web AND Postgres both
+// run in Railway's europe-west4, so the player rows, wallet addresses and fills
+// are already under EU jurisdiction. Sending analytics to the US cloud would
+// split residency across two jurisdictions for no benefit — the two PostHog
+// clouds are wholly independent instances and moving a project between them
+// later needs their Scale plan and one of their engineers, so this is not a
+// decision that can be revisited cheaply.
+//
+// This does NOT route through Railway. Capture is browser-to-PostHog directly,
+// so the region affects jurisdiction, never latency.
+//
+// It MUST match the region the PostHog account was created in. A mismatch does
+// not error — the events simply go nowhere.
+const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://eu.i.posthog.com";
 
 /**
  * Loaded once, on first use, and only with a key. Held at module scope so a
