@@ -43,6 +43,16 @@ export interface MarketSnapshot {
   priceUsd: number;
   change24hPct?: number;
   fundingRatePct?: number;
+  /**
+   * Recent closes, oldest first, for the market named above.
+   *
+   * Without this the model was handed one spot price and told to prefer
+   * holding, so it held every time — correctly, because a single number is not
+   * a market. This is context for the decision; the ORDER is still priced and
+   * filled against Perpl.
+   */
+  recentCloses?: number[];
+  historyHours?: number;
 }
 
 export interface ProposeInput {
@@ -117,12 +127,37 @@ function systemPrompt(bound: EnforcedBound, state: DayState): string {
 }
 
 function userPrompt(markets: MarketSnapshot[]): string {
-  return [
-    "Current market snapshot:",
-    JSON.stringify(markets),
-    "",
-    "Propose one order within the limits, or hold.",
-  ].join("\n");
+  const lines = ["Current market snapshot:", JSON.stringify(markets), ""];
+  const withHistory = markets.filter(
+    (m) => m.recentCloses !== undefined && m.recentCloses.length > 1,
+  );
+  if (withHistory.length > 0) {
+    lines.push("Recent price history (oldest first, USD):");
+    for (const m of withHistory) {
+      const c = m.recentCloses!;
+      const first = c[0]!;
+      const last = c[c.length - 1]!;
+      const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+      lines.push(
+        `- ${m.market} over ${m.historyHours ?? 24}h: ${c.join(", ")}` +
+          ` (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`,
+      );
+    }
+    lines.push("");
+  }
+  const missing = markets.filter(
+    (m) => m.recentCloses === undefined || m.recentCloses.length <= 1,
+  );
+  if (missing.length > 0) {
+    // Said explicitly, because a model that cannot tell "flat" from "unknown"
+    // will treat silence as flatness and reason from a market that is not there.
+    lines.push(
+      `No price history available for: ${missing.map((m) => m.market).join(", ")}.`,
+      "",
+    );
+  }
+  lines.push("Propose one order within the limits, or hold.");
+  return lines.join("\n");
 }
 
 /**

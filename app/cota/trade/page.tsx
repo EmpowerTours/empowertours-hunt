@@ -136,7 +136,8 @@ const T = {
     noteNoRecovery:
       "Sin recuperación: si pierdes la passkey, esta nota se pierde para siempre. Ni nosotros podemos leerla.",
     autoDays: "días",
-    revoke: "Revocar esta Cota",
+    revoke: "Revocar esta Cota…",
+    revokeHint: "Te explica antes de hacer nada.",
     revokeConfirm: "Confirmar: revocar",
     revokeCancel: "Cancelar",
     revokeNote:
@@ -243,7 +244,8 @@ const T = {
     noteNoRecovery:
       "No recovery: lose the passkey and this note is gone for good. We cannot read it either.",
     autoDays: "days",
-    revoke: "Revoke this Cota",
+    revoke: "Revoke this Cota…",
+    revokeHint: "Explains first — nothing happens on this tap.",
     revokeConfirm: "Confirm: revoke",
     revokeCancel: "Cancel",
     revokeNote:
@@ -1051,39 +1053,46 @@ export default function TradePage() {
               </p>
               <p className="text-ink-faint mt-1 text-xs">{t.autoLede}</p>
             </div>
-            <div className="flex gap-2">
+            {/* Every option carries its own description, because the previous
+                version showed only the description of the mode you were
+                already on — so the only way to learn what "exit only" meant was
+                to SELECT it, and selecting it signs a permission grant.
+                Reading a menu must not change what your agent may do. */}
+            <div className="flex flex-col gap-2">
               {(
                 [
-                  ["off", t.autoOff],
-                  ["observe", t.autoObserve],
-                  ["exit_only", t.autoExit],
-                  ["full", t.autoFull],
+                  ["off", t.autoOff, t.autoOffNote],
+                  ["observe", t.autoObserve, t.autoObserveNote],
+                  ["exit_only", t.autoExit, t.autoExitNote],
+                  ["full", t.autoFull, t.autoFullNote],
                 ] as const
-              ).map(([mode, label]) => (
+              ).map(([mode, label, note]) => (
                 <button
                   key={mode}
                   type="button"
                   disabled={autoBusy}
                   onClick={() => void setAutonomyMode(mode)}
-                  className={`min-h-11 flex-1 rounded-xl border-2 px-2 text-sm font-semibold ${
+                  className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-2 text-left ${
                     autonomy === mode
-                      ? "border-phosphor text-phosphor"
-                      : "border-hull-line text-ink-dim"
+                      ? "border-phosphor"
+                      : "border-hull-line"
                   } disabled:opacity-50`}
                 >
-                  {label}
+                  <span
+                    className={`text-sm font-semibold ${
+                      autonomy === mode ? "text-phosphor" : "text-ink-dim"
+                    }`}
+                  >
+                    {label}
+                    {autonomy === mode ? " ·\u00a0on" : ""}
+                  </span>
+                  <span className="text-ink-faint text-xs leading-snug">
+                    {note}
+                  </span>
                 </button>
               ))}
             </div>
-            <p className="text-ink-faint text-xs">
-              {autonomy === "full"
-                ? t.autoFullNote
-                : autonomy === "exit_only"
-                  ? t.autoExitNote
-                  : autonomy === "observe"
-                    ? t.autoObserveNote
-                    : t.autoOffNote}
-            </p>
+
             {autonomy !== "off" && autonomyUntil && (
               <p className="text-ink-faint text-xs">
                 {t.autoExpires}{" "}
@@ -1330,13 +1339,21 @@ export default function TradePage() {
                   </div>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setRevokeArmed(true)}
-                  className="text-ink-dim text-[12px] underline underline-offset-2"
-                >
-                  {t.revoke}
-                </button>
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRevokeArmed(true)}
+                    className="text-ink-dim text-[12px] underline underline-offset-2"
+                  >
+                    {t.revoke}
+                  </button>
+                  {/* An unlabelled destructive link makes people hesitate to
+                      touch it at all, which is its own failure — it stays quiet
+                      but says that reading it is safe. */}
+                  <span className="text-ink-faint text-[11px]">
+                    {t.revokeHint}
+                  </span>
+                </div>
               )}
             </div>
           )}

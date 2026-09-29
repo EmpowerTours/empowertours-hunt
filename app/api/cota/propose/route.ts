@@ -3,6 +3,7 @@ import { postOnlyResponse } from "@/lib/cota/post-only";
 import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
+import { fetchPriceHistory } from "@/lib/cota/price-history";
 import {
   proposeOrder,
   ProposerError,
@@ -81,7 +82,24 @@ export async function POST(req: Request) {
           priceUsd = 0;
         }
       }
-      markets.push({ market: sym, priceUsd });
+      // Context for the model, never for execution. A market with no history
+      // is sent as such rather than silently looking flat.
+      const hist = await fetchPriceHistory(sym);
+      markets.push({
+        market: sym,
+        priceUsd,
+        ...(hist
+          ? {
+              recentCloses: hist.closes.map((n) =>
+                Number(n.toPrecision(6)),
+              ),
+              historyHours: hist.hours,
+              ...(hist.changePct === null
+                ? {}
+                : { change24hPct: Number(hist.changePct.toFixed(2)) }),
+            }
+          : {}),
+      });
     }
 
     const result = await proposeOrder({
