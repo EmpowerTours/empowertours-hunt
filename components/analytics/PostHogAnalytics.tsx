@@ -87,6 +87,18 @@ function client(): Promise<PostHog | null> {
         api_host: HOST,
         autocapture: false,
         disable_session_recording: true,
+        // Every one of these is pinned FALSE here rather than left to the
+        // project settings, because posthog-js falls back to the server-side
+        // toggle when the client says nothing — heatmaps.ts ends its isEnabled
+        // check with `return this._enabledServerSide`. So a flip in the PostHog
+        // UI, by anyone, would silently start capturing.
+        //
+        // And each of them captures $current_url from window.location, which
+        // is the exact leak the manual pageview below exists to avoid. The
+        // redaction is only as good as "nothing else auto-captures".
+        capture_heatmaps: false,
+        capture_dead_clicks: false,
+        capture_performance: false,
         capture_pageview: false,
         capture_pageleave: false,
         // Never identified, so never a person profile.
