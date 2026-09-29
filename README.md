@@ -335,3 +335,26 @@ their own licences. Walkable-area data is imported from **OpenStreetMap**
 npm install
 ./.claude/verify.sh   # typecheck, lint, 1245 tests, production build, secret scan
 ```
+
+## Analytics (optional, off by default)
+
+PostHog is wired but **inert** unless `NEXT_PUBLIC_POSTHOG_KEY` is set — with
+no key the SDK chunk is never even fetched (verified: zero network requests and
+zero bundle chunks on `/cota`, `/cota/trade`, `/cota/history`).
+
+```
+NEXT_PUBLIC_POSTHOG_KEY=phc_...            # enables it
+NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com   # optional, this is the default
+```
+
+What it sends: one `$pageview` per navigation carrying the route SHAPE and
+nothing else. Autocapture, session recording and person profiles are all off —
+see the header comment in `components/analytics/PostHogAnalytics.tsx` for why
+each one is unacceptable on screens that render a passkey flow, wallet
+addresses and a private note.
+
+URLs are redacted by `components/analytics/route-name.ts` before they leave the
+browser: `/hunt/<id>` becomes `/hunt/:id`, and query strings are dropped
+entirely because some of this app's links carry single-use tokens.
+
+On-chain metrics live in [docs/dune-queries.md](docs/dune-queries.md).

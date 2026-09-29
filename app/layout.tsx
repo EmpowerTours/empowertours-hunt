@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getLocale } from "next-intl/server";
 import "./globals.css";
 import { HuntAuthProvider } from "@/lib/auth/HuntAuthProvider";
+import { PostHogAnalytics } from "@/components/analytics/PostHogAnalytics";
 
 export const metadata: Metadata = {
   title: {
@@ -58,6 +59,9 @@ export default async function RootLayout({
     // unusable. It was hardcoded "en" before this.
     <html lang={locale}>
       <body className="bg-void text-ink font-sans antialiased">
+        {/* Inert unless NEXT_PUBLIC_POSTHOG_KEY is set. Sends a redacted
+            route per navigation and nothing else — see the component. */}
+        <PostHogAnalytics />
         <NextIntlClientProvider>
           <HuntAuthProvider>{children}</HuntAuthProvider>
         </NextIntlClientProvider>
