@@ -18,6 +18,7 @@ import { refusalText } from "@/lib/cota/denial-text";
 import { governsLiveOrders, tradableMarketOf } from "@/lib/cota/active-leash";
 import { mayOpen, type DayState, type ProposedOrder } from "@/lib/cota/enforce";
 import { leverageX100, usdE6 } from "@/lib/cota/scale";
+import { scenario, type Quote, type Scenario } from "@/lib/cota/scenario";
 
 // ---------------------------------------------------------------------------
 // The hunter-facing trade screen. Shows the signed leash, lets a hunter shape
@@ -58,6 +59,40 @@ const T = {
     short: "Corto",
     notional: "Tamaño (USD)",
     leverage: "Apalancamiento",
+    priceTitle: "Precio ahora",
+    bid: "Compran a",
+    ask: "Venden a",
+    mark: "Índice",
+    spread: "Horquilla",
+    markNote:
+      "El índice no es un precio al que puedas operar. Entras pagando el ask y sales cobrando el bid.",
+    h24: "24 h",
+    priceUnknown: "No se pudo leer el precio de la casa.",
+    scenTitle: "Si el precio se mueve",
+    scenLede:
+      "Aritmética, no pronóstico. Nadie sabe a dónde va el precio; esto es lo que te queda si llega ahí.",
+    scenMove: "Mueve",
+    scenNet: "Te queda",
+    scenOfMargin: "de tu dinero",
+    scenEntry: "Entras a",
+    scenUnits: "Unidades",
+    scenMargin: "Tu dinero",
+    scenCost: "Ida y vuelta",
+    scenCostNote:
+      "Lo que cuesta abrir y cerrar sin que el precio se mueva: la horquilla más las dos comisiones. Empiezas abajo por esto.",
+    scenBreakeven: "Empatas si sube",
+    scenBreakevenShort: "Empatas si baja",
+    scenStop: "Tocas tu tope diario si",
+    scenStopNote:
+      "Tu propio tope firmado, no una liquidación: Perpl documenta sus márgenes en unidades contradictorias y un precio de liquidación mal leído te diría que estás a salvo.",
+    scenNone: "Escribe un tamaño y un apalancamiento para ver los números.",
+    scenWorst: "Lo máximo que puedes perder",
+    scenWorstShort: "Sin tope — un corto puede perder más de lo que pusiste",
+    scenStopNever: "Tu tope diario no se alcanza con este tamaño",
+    scenStopNeverNote:
+      "El tope firmado es mayor que todo lo que esta operación puede perder, así que no es lo que te protege aquí. Lo que te limita es el tamaño.",
+    feeNote:
+      "Se cobran comisiones de los dos lados (8.9 pb cada uno, medidos en llenados reales). Si la casa cobra menos, te queda más.",
     allowed: "Dentro de tu correa ✓",
     verdict: "Veredicto de la correa",
     maxN: "Tamaño máx.",
@@ -167,6 +202,40 @@ const T = {
     short: "Short",
     notional: "Size (USD)",
     leverage: "Leverage",
+    priceTitle: "Price now",
+    bid: "Buyers at",
+    ask: "Sellers at",
+    mark: "Index",
+    spread: "Spread",
+    markNote:
+      "The index is not a price you can trade at. You get in paying the ask and out taking the bid.",
+    h24: "24h",
+    priceUnknown: "Could not read the venue's price.",
+    scenTitle: "If the price moves",
+    scenLede:
+      "Arithmetic, not a forecast. Nobody knows where the price goes; this is what you keep if it gets there.",
+    scenMove: "Move",
+    scenNet: "You keep",
+    scenOfMargin: "of your money",
+    scenEntry: "You enter at",
+    scenUnits: "Units",
+    scenMargin: "Your money",
+    scenCost: "Round trip",
+    scenCostNote:
+      "What opening and closing costs with the price unchanged: the spread plus both fees. This is why you start behind.",
+    scenBreakeven: "Break even if it rises",
+    scenBreakevenShort: "Break even if it falls",
+    scenStop: "You hit your daily cap if",
+    scenStopNote:
+      "Your own signed cap, not a liquidation: Perpl documents its margin in contradictory units, and a liquidation price read the wrong way would tell you that you are safe.",
+    scenNone: "Enter a size and a leverage to see the numbers.",
+    scenWorst: "Most you can lose",
+    scenWorstShort: "No ceiling — a short can lose more than you put in",
+    scenStopNever: "Your daily cap cannot be hit at this size",
+    scenStopNeverNote:
+      "The signed cap is larger than everything this trade can lose, so it is not what protects you here. The size is.",
+    feeNote:
+      "Fees are charged on both sides (8.9 bps each, measured off real fills). If the venue charges less, you keep more.",
     allowed: "Within your leash ✓",
     verdict: "Leash verdict",
     maxN: "Max size",
@@ -276,6 +345,44 @@ const FRESH_DAY: DayState = {
   openNotionalUsdE6: 0n,
 };
 
+/**
+ * A 24h shape, not a chart. Twelve CoinGecko closes with no axes and no
+ * numbers, because it exists to say "this has been moving / this has been
+ * flat" and anything more precise would invite reading a trend into a dozen
+ * points. Renders nothing at all rather than a flat line when there is no
+ * series — an absent history must never look like a still market.
+ */
+function Sparkline({ closes }: { closes: number[] }) {
+  if (closes.length < 2) return null;
+  const lo = Math.min(...closes);
+  const hi = Math.max(...closes);
+  const span = hi - lo || 1;
+  const pts = closes
+    .map((c, i) => {
+      const x = (i / (closes.length - 1)) * 100;
+      const y = 24 - ((c - lo) / span) * 22 - 1;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+  const up = closes[closes.length - 1]! >= closes[0]!;
+  return (
+    <svg
+      viewBox="0 0 100 24"
+      preserveAspectRatio="none"
+      className="mt-2 h-8 w-full"
+      aria-hidden="true"
+    >
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={up ? "#4ade80" : "#f87171"}
+        strokeWidth="1.5"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
 export default function TradePage() {
   const lang: Lang = useLocale() === "es" ? "es" : "en";
   const t = T[lang];
@@ -315,6 +422,18 @@ export default function TradePage() {
     unrealisedUsd: number | null;
   } | null>(null);
   const [posMark, setPosMark] = useState<number | null>(null);
+  // The book for the market being sized, polled. The order form showed no
+  // price at all before this: a hunter chose a dollar size with nothing on
+  // screen saying what the thing cost or what spread they would cross.
+  const [quote, setQuote] = useState<
+    | (Quote & {
+        spreadBps: number | null;
+        history: { closes: number[]; changePct: number | null } | null;
+      })
+    | null
+  >(null);
+  const [quoteFailed, setQuoteFailed] = useState(false);
+
   const [autonomy, setAutonomy] = useState<
     "off" | "observe" | "exit_only" | "full"
   >("off");
@@ -793,6 +912,70 @@ export default function TradePage() {
     };
   }, [refreshHistory]);
 
+  const refreshQuote = useCallback(async () => {
+    if (!market) return;
+    try {
+      const res = await fetch(
+        `/api/cota/quote?market=${encodeURIComponent(market)}`,
+      );
+      if (!res.ok) {
+        setQuoteFailed(true);
+        return;
+      }
+      const b = (await res.json()) as {
+        markUsd: number | null;
+        bidUsd: number | null;
+        askUsd: number | null;
+        spreadBps: number | null;
+        history: { closes: number[]; changePct: number | null } | null;
+      };
+      // Both sides or nothing. A half-read book cannot price an entry, and
+      // showing one side invites the eye to fill in the other.
+      if (b.bidUsd === null || b.askUsd === null) {
+        setQuoteFailed(true);
+        return;
+      }
+      setQuoteFailed(false);
+      setQuote({
+        markUsd: b.markUsd ?? 0,
+        bidUsd: b.bidUsd,
+        askUsd: b.askUsd,
+        spreadBps: b.spreadBps,
+        history: b.history,
+      });
+    } catch {
+      setQuoteFailed(true);
+    }
+  }, [market]);
+
+  useEffect(() => {
+    let live = true;
+    const tick = () => {
+      if (live) void refreshQuote();
+    };
+    tick();
+    const id = setInterval(tick, 8000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [refreshQuote]);
+
+  // Pure arithmetic over the current form, recomputed as either moves. Nothing
+  // here predicts anything: it answers "what do I keep at price X".
+  const scen: Scenario | null = useMemo(() => {
+    if (!quote || !cota) return null;
+    return scenario(
+      {
+        side,
+        notionalUsd: Number(notional || "0"),
+        leverageX: Number(lev || "0"),
+      },
+      quote,
+      { maxDailyLossUsd: Number(cota.maxDailyLossUsdE6) / 1e6 },
+    );
+  }, [quote, cota, side, notional, lev]);
+
   const refreshPosition = useCallback(async () => {
     if (!market) return;
     try {
@@ -978,6 +1161,66 @@ export default function TradePage() {
               ))}
             </div>
 
+            {/* The price. Absent from this form until now, which meant sizing
+                a position in dollars with nothing on screen saying what the
+                thing cost or what spread the round trip would cross. */}
+            <div className="border-hull-line bg-hull-2/40 rounded-xl border p-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
+                  {t.priceTitle}
+                </span>
+                {quote?.history?.changePct != null && (
+                  <span
+                    className={`font-mono text-xs ${
+                      quote.history.changePct >= 0
+                        ? "text-phosphor"
+                        : "text-alert"
+                    }`}
+                  >
+                    {quote.history.changePct >= 0 ? "+" : ""}
+                    {quote.history.changePct.toFixed(2)}% {t.h24}
+                  </span>
+                )}
+              </div>
+
+              {quote === null ? (
+                <p className="text-ink-faint mt-2 text-xs">
+                  {quoteFailed ? t.priceUnknown : "…"}
+                </p>
+              ) : (
+                <>
+                  <Sparkline closes={quote.history?.closes ?? []} />
+                  <dl className="text-ink-dim mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-xs">
+                    <div className="flex justify-between">
+                      <dt>{t.bid}</dt>
+                      <dd className="text-ink">${quote.bidUsd.toFixed(6)}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>{t.ask}</dt>
+                      <dd className="text-ink">${quote.askUsd.toFixed(6)}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>{t.mark}</dt>
+                      <dd className="text-ink-faint">
+                        ${quote.markUsd.toFixed(6)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>{t.spread}</dt>
+                      <dd className="text-ink">
+                        {quote.spreadBps === null
+                          ? "—"
+                          : `${quote.spreadBps.toFixed(1)} bps`}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="text-ink-faint mt-2 text-[11px] leading-snug">
+                    {t.markNote}
+                  </p>
+                </>
+              )}
+            </div>
+
             <label className="text-ink-dim block text-xs tracking-wide uppercase">
               {t.side}
             </label>
@@ -1026,6 +1269,155 @@ export default function TradePage() {
                 />
               </div>
             </div>
+          </Panel>
+
+          {/* What the size above is actually worth at a price. Arithmetic
+              only — see lib/cota/scenario.ts. Nothing here ranks or weights an
+              outcome, because nothing knows which one happens. */}
+          <Panel className="space-y-3">
+            <div>
+              <p className="text-ink-dim text-xs tracking-wide uppercase">
+                {t.scenTitle}
+              </p>
+              <p className="text-ink-faint mt-1 text-xs leading-snug">
+                {t.scenLede}
+              </p>
+            </div>
+
+            {scen === null ? (
+              <p className="text-ink-faint text-xs">
+                {quoteFailed ? t.priceUnknown : t.scenNone}
+              </p>
+            ) : (
+              <>
+                <dl className="text-ink-dim grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-xs">
+                  <div className="flex justify-between">
+                    <dt>{t.scenEntry}</dt>
+                    <dd className="text-ink">
+                      ${scen.entryPriceUsd.toFixed(6)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt>{t.scenUnits}</dt>
+                    <dd className="text-ink">{scen.units.toFixed(0)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt>{t.scenMargin}</dt>
+                    <dd className="text-ink">${scen.marginUsd.toFixed(2)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt>{t.scenCost}</dt>
+                    <dd className="text-alert">
+                      −${scen.roundTripCostUsd.toFixed(4)}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="text-ink-faint text-[11px] leading-snug">
+                  {t.scenCostNote}
+                </p>
+
+                <table className="w-full font-mono text-xs">
+                  <thead>
+                    <tr className="text-ink-faint text-[10px] tracking-widest uppercase">
+                      <th className="py-1 text-left font-normal">
+                        {t.scenMove}
+                      </th>
+                      <th className="py-1 text-right font-normal">
+                        {t.scenNet}
+                      </th>
+                      <th className="py-1 text-right font-normal">
+                        {t.scenOfMargin}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scen.rows.map((r) => (
+                      <tr
+                        key={r.movePct}
+                        className="border-hull-line/50 border-t"
+                      >
+                        <td
+                          className={`py-1.5 ${
+                            r.movePct === 0 ? "text-ink" : "text-ink-dim"
+                          }`}
+                        >
+                          {r.movePct > 0 ? "+" : ""}
+                          {r.movePct}%
+                        </td>
+                        <td
+                          className={`py-1.5 text-right ${
+                            r.netUsd >= 0 ? "text-phosphor" : "text-alert"
+                          }`}
+                        >
+                          {r.netUsd < 0 ? "−" : "+"}$
+                          {Math.abs(r.netUsd).toFixed(4)}
+                        </td>
+                        <td
+                          className={`py-1.5 text-right ${
+                            r.netUsd >= 0 ? "text-phosphor" : "text-alert"
+                          }`}
+                        >
+                          {r.netPctOfMargin < 0 ? "−" : "+"}
+                          {Math.abs(r.netPctOfMargin).toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="border-hull-line space-y-1 border-t pt-2">
+                  <div className="text-ink-dim flex justify-between font-mono text-xs">
+                    <span>
+                      {side === "long" ? t.scenBreakeven : t.scenBreakevenShort}
+                    </span>
+                    <span className="text-ink">
+                      {Math.abs(scen.breakevenMovePct).toFixed(2)}%
+                    </span>
+                  </div>
+                  {/* Null is unbounded, never zero: a short can lose more than
+                      was put in, and a number here would deny it. It gets its
+                      own line because it is a sentence, not a value. */}
+                  {scen.worstCaseUsd === null ? (
+                    <p className="text-alert font-mono text-xs leading-snug">
+                      {t.scenWorstShort}
+                    </p>
+                  ) : (
+                    <div className="text-ink-dim flex justify-between font-mono text-xs">
+                      <span>{t.scenWorst}</span>
+                      <span className="text-alert">
+                        −${Math.abs(scen.worstCaseUsd).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {scen.leashStopUnreachable ? (
+                    <>
+                      <div className="text-ink-dim font-mono text-xs">
+                        {t.scenStopNever}
+                      </div>
+                      <p className="text-ink-faint text-[11px] leading-snug">
+                        {t.scenStopNeverNote}
+                      </p>
+                    </>
+                  ) : scen.leashStopMovePct !== null ? (
+                    <>
+                      <div className="text-ink-dim flex justify-between font-mono text-xs">
+                        <span>{t.scenStop}</span>
+                        <span className="text-alert">
+                          {scen.leashStopMovePct > 0 ? "+" : "−"}
+                          {Math.abs(scen.leashStopMovePct).toFixed(2)}%
+                        </span>
+                      </div>
+                      <p className="text-ink-faint text-[11px] leading-snug">
+                        {t.scenStopNote}
+                      </p>
+                    </>
+                  ) : null}
+                </div>
+                <p className="text-ink-faint text-[11px] leading-snug">
+                  {t.feeNote}
+                </p>
+              </>
+            )}
           </Panel>
 
           <Button

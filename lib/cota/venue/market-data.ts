@@ -184,6 +184,67 @@ export function readMark(
  * pricing an exit must refuse on null rather than fall back to the mark — the
  * mark is precisely the number that makes a losing close look profitable.
  */
+/**
+ * Mark, bid and ask for one market from a single context payload.
+ *
+ * Pure, so it can be tested against a recorded response. Kept next to readBook
+ * because it reads the SAME endpoint: the order form needs all three and there
+ * is no reason to fetch twice.
+ *
+ * The three are not interchangeable and the code must never treat them so. On
+ * MON, verified live on 2026-09-29, the mark sat BELOW the bid (mrk 27131, bid
+ * 27189, ask 27260). It is an index, not a price anyone can fill at, so it is
+ * shown for reference and never used to price an entry or an exit.
+ *
+ * Any of the three may be null. A caller that needs a fill price must refuse on
+ * null rather than substitute another field.
+ */
+export function quoteFromContext(
+  body: unknown,
+  marketId: number,
+  priceDecimals: number,
+): {
+  markUsd: number | null;
+  bidUsd: number | null;
+  askUsd: number | null;
+} | null {
+  const b = body as {
+    markets?: {
+      id?: number;
+      state?: { mrk?: number; bid?: number; ask?: number } | null;
+    }[];
+  };
+  const m = b?.markets?.find((x) => x.id === marketId);
+  if (!m?.state) return null;
+  const scale = 10 ** priceDecimals;
+  const num = (v: number | undefined) =>
+    v === undefined || !Number.isFinite(Number(v)) || Number(v) <= 0
+      ? null
+      : Number(v) / scale;
+  return {
+    markUsd: num(m.state.mrk),
+    bidUsd: num(m.state.bid),
+    askUsd: num(m.state.ask),
+  };
+}
+
+/** One GET for all three. Null when the venue could not be read at all. */
+export async function readQuote(
+  marketId: number,
+  priceDecimals: number,
+  opts: { signal?: AbortSignal } = {},
+): Promise<{
+  markUsd: number | null;
+  bidUsd: number | null;
+  askUsd: number | null;
+} | null> {
+  const url =
+    process.env.PERPL_CONTEXT_URL ?? "https://app.perpl.xyz/api/v1/pub/context";
+  const res = await fetch(url, { signal: opts.signal, cache: "no-store" });
+  if (!res.ok) return null;
+  return quoteFromContext(await res.json(), marketId, priceDecimals);
+}
+
 export async function readBook(
   marketId: number,
   priceDecimals: number,
