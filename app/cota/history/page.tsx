@@ -40,7 +40,7 @@ const T = {
     emptyNote:
       "Cuando el agente llene una orden bajo tu correa, aparecerá aquí con lo que ganó o perdió.",
     realised: "Resultado neto",
-    realisedSub: "de operaciones cerradas, ya descontadas las comisiones",
+    realisedSub: "de operaciones cerradas, neto de comisiones",
     fees: "Comisiones",
     feesSub: "pagadas a la casa en total",
     trades: "Operaciones",
