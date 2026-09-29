@@ -117,7 +117,8 @@ const T = {
     autoSaved: "Permiso guardado",
     autoFailed: "No se pudo guardar",
     autoExpires: "Caduca",
-    histTitle: "Qué ha hecho el agente",
+    histTitle: "Qué ha decidido el agente",
+    histResults: "Y qué han dado esas decisiones →",
     histNone:
       "Todavía no ha decidido nada. Corre cada minuto; concédele permiso y aparecerá aquí.",
     histDry: "simulación",
@@ -225,7 +226,8 @@ const T = {
     autoSaved: "Permission saved",
     autoFailed: "Could not save",
     autoExpires: "Expires",
-    histTitle: "What the agent has done",
+    histTitle: "What the agent has decided",
+    histResults: "And what those decisions made →",
     histNone:
       "No decisions yet. It runs every minute — grant it permission and they appear here.",
     histDry: "dry run",
@@ -1078,9 +1080,7 @@ export default function TradePage() {
                   disabled={autoBusy}
                   onClick={() => void setAutonomyMode(mode)}
                   className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-2 text-left ${
-                    autonomy === mode
-                      ? "border-phosphor"
-                      : "border-hull-line"
+                    autonomy === mode ? "border-phosphor" : "border-hull-line"
                   } disabled:opacity-50`}
                 >
                   <span
@@ -1172,6 +1172,15 @@ export default function TradePage() {
                   ))}
                 </ul>
               )}
+              {/* This list is DECISIONS. A decision that opened a position is
+                  not a result, and reading one as the other is the confusion
+                  that left a real closed trade invisible for two weeks. */}
+              <a
+                href="/cota/history"
+                className="text-phosphor block pt-1 text-xs hover:underline"
+              >
+                {t.histResults}
+              </a>
             </div>
           </Panel>
 

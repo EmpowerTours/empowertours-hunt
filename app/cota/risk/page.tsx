@@ -57,6 +57,7 @@ const T = {
     agentOff: "apagado",
     noLiq: "Sin precio de liquidación",
     back: "Cota",
+    results: "Ver lo que han dado mis operaciones →",
   },
   en: {
     title: "Risk",
@@ -86,6 +87,7 @@ const T = {
     agentOff: "off",
     noLiq: "No liquidation price",
     back: "Cota",
+    results: "See what my trades made →",
   },
 } as const;
 
@@ -198,8 +200,14 @@ export default function RiskPage() {
           <SignInPrompt label={t.signIn} />
         </Panel>
       ) : risk && risk.leash === null ? (
-        <Panel>
+        <Panel className="space-y-3">
           <p className="text-ink-dim text-sm">{t.none}</p>
+          <a
+            href="/cota/history"
+            className="text-phosphor block text-sm hover:underline"
+          >
+            {t.results}
+          </a>
         </Panel>
       ) : (
         <>
@@ -208,7 +216,15 @@ export default function RiskPage() {
               {t.closeNow}
             </p>
             {p === null ? (
-              <p className="text-ink-faint text-sm">{t.flat}</p>
+              <>
+                <p className="text-ink-faint text-sm">{t.flat}</p>
+                <a
+                  href="/cota/history"
+                  className="text-phosphor block text-sm hover:underline"
+                >
+                  {t.results}
+                </a>
+              </>
             ) : (
               <>
                 <p

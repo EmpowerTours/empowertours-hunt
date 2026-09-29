@@ -353,9 +353,7 @@ export default function CotaPage() {
           href="/cota/swap/usdc"
           className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
         >
-          {lang === "es"
-            ? "Cambiar USDC → AUSD →"
-            : "Swap USDC → AUSD →"}
+          {lang === "es" ? "Cambiar USDC → AUSD →" : "Swap USDC → AUSD →"}
         </a>
         <a
           href="/cota/onramp"
@@ -393,6 +391,16 @@ export default function CotaPage() {
           {lang === "es"
             ? "Ver mi riesgo y exposición →"
             : "See my risk and exposure →"}
+        </a>
+        {/* Results. Deliberately NOT inside anything conditional on a live
+            leash: the hunter asking what they made is usually the one whose
+            position is closed and whose leash has expired, which is the exact
+            state that makes the risk screen say nothing. */}
+        <a
+          href="/cota/history"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es" ? "Ver mis resultados →" : "See my results →"}
         </a>
       </div>
 
