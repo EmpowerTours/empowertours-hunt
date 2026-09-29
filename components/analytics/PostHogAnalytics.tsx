@@ -69,6 +69,15 @@ const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://eu.i.posthog.com";
  * remount does not re-import or re-init.
  */
 let loading: Promise<PostHog | null> | null = null;
+/**
+ * The resolved client, held synchronously.
+ *
+ * `pagehide` is the last moment a tab is alive, and awaiting a promise there
+ * often loses the event. So the leave handler reads this instead of the
+ * promise, and simply does nothing if the SDK has not finished loading — one
+ * missing $pageleave is a rounding error, a hung unload handler is not.
+ */
+let ready: PostHog | null = null;
 
 function client(): Promise<PostHog | null> {
   if (!KEY) return Promise.resolve(null);
@@ -87,6 +96,7 @@ function client(): Promise<PostHog | null> {
         mask_all_text: true,
         mask_all_element_attributes: true,
       });
+      ready = m.default;
       return m.default;
     })
     .catch(() => {
@@ -103,18 +113,49 @@ export function PostHogAnalytics() {
   useEffect(() => {
     if (!KEY || pathname === null) return;
     let live = true;
+    let left = false;
     const route = routeName(pathname);
+    // Set explicitly, here and on the leave below. Left alone, PostHog reads
+    // window.location and would ship the query string — which on some of this
+    // app's routes is a single-use token.
+    const props = {
+      $current_url: window.location.origin + route,
+      $pathname: route,
+    };
+
     void client().then((ph) => {
       if (!live || !ph) return;
-      ph.capture("$pageview", {
-        // Set explicitly. Left alone, PostHog reads window.location and would
-        // ship the query string — which on some routes is a single-use token.
-        $current_url: window.location.origin + route,
-        $pathname: route,
-      });
+      ph.capture("$pageview", props);
     });
+
+    /**
+     * Paired with the view above, because PostHog's web analytics derives
+     * session duration and bounce rate from the two together. Without it those
+     * numbers are simply absent, and they are the retention-shaped ones.
+     *
+     * Fires once per view: whichever of a route change or a tab closing
+     * happens first wins.
+     */
+    const leave = () => {
+      if (left) return;
+      left = true;
+      ready?.capture("$pageleave", props);
+    };
+
+    // pagehide covers closing, navigating away and bfcache. visibilitychange
+    // covers backgrounding, which on a phone is how most sessions really end —
+    // and this app is used outdoors, one-handed, on phones.
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") leave();
+    };
+    window.addEventListener("pagehide", leave);
+    document.addEventListener("visibilitychange", onHidden);
+
     return () => {
       live = false;
+      window.removeEventListener("pagehide", leave);
+      document.removeEventListener("visibilitychange", onHidden);
+      leave();
     };
   }, [pathname]);
 
