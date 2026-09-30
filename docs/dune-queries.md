@@ -260,3 +260,41 @@ claim about the leash.
 - 5 queries, several retries: **~23 credits of 2,500**. Cost is not the
   constraint; the 14-day trial window (30 Sep – 14 Oct) is. That window does
   cover the Metropolis close on 13 Oct.
+
+## The funnel that wasn't, and what replaced it (2026-09-29)
+
+Checked whether the swap-desk wallets overlap the anchoring wallet before
+drawing any funnel. They do, but not usefully:
+
+| Wallet | Swaps | When | Who |
+|---|---|---|---|
+| `0x8dF64bAC…8ec1` | 4 | 13 Sep 01:15–01:44 | main deployer — testing |
+| `0xe2ab4658…8395` | 1 | 13 Sep 19:45 | the Cota hunter wallet |
+
+**So no funnel was drawn.** Two wallets, one of them a test. A funnel asserts a
+population and a drop-off rate; two is not a population, and 50% of two is an
+anecdote with a percentage sign on it.
+
+What the data DID support is better: the same wallet appears at every stage, so
+the story is one complete loop rather than a cohort. Query **8863954**, `Cota —
+the complete loop, one wallet, on chain`, 14 rows:
+
+    07 Sep 15:07     first signed leash anchored
+    07–08 Sep        eight leashes anchored
+    13 Sep 19:45:25  swap MON → AUSD
+    13 Sep 19:48:26  approve AUSD
+    13 Sep 19:48:27  deposit to Perpl
+    14 Sep 19:30     second Perpl deposit
+    15 Sep 20:20     ninth leash anchored
+
+Three minutes from swap to funded perps account; first fill 14 Sep 22:34.
+
+Two scopes are stated in the query's own comments rather than hidden: the
+wallet also did Kuru and edition-relayer work on 21 Sep for a different product
+(excluded — it would pad the story), and **the fills are not on chain from this
+wallet at all**, because Perpl forwards orders from its own infrastructure. An
+executed trade is therefore not a transaction from the hunter; the fills live in
+the app's ledger.
+
+Supporting query **8863951** (`Cota — the hunter wallet's on-chain activity`)
+lists all 10 counterparties, 23 transactions, if the scope ever needs defending.
