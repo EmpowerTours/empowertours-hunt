@@ -14,6 +14,8 @@ Everything below was verified on 2026-09-29, not assumed:
   contract.
 - `nextSequence(0xe2ab4658…8395)` on AuditAnchorV2 returns **9**, so there are
   nine anchored leashes to find.
+- **Dune's Monad coverage reaches back to at least 2026-07-30** — confirmed by
+  running query 1, which returned rows from that date onward.
 
 ## What is ours, and what is not
 
@@ -33,7 +35,34 @@ needed, filter to `tx_from` in our own set of hunter addresses.
 
 ---
 
+## 0. The contract holds MORE than our leashes — split by anchorer first
+
+Run this before quoting any total. AuditAnchorV2 is shared with
+quantum-portfolio, and a count of the contract is **not** a count of Cota.
+
+Measured 2026-09-29: **17 anchors from two addresses.** `0xe2ab4658…8395` has
+**9** (the Cota leashes, 7 Sep onward — matching both the database and
+`nextSequence`); the other address has **8**, from 30 Jul to 1 Sep, and those
+are quantum-portfolio's.
+
+```sql
+SELECT
+    bytearray_substring(topic1, 13, 20) AS anchorer,
+    COUNT(*)                            AS anchors,
+    MIN(block_time)                     AS first_anchor,
+    MAX(block_time)                     AS last_anchor
+FROM monad.logs
+WHERE contract_address = 0x8422b555dce11913a4657c2f47c839637fc71ffd
+  AND topic0 = 0xa58519225e4f9c8267cd9793b73fec57d8d8f98424e8f206c6d7288d6fe037e7
+GROUP BY 1
+ORDER BY anchors DESC
+```
+
 ## 1. Leashes anchored per day
+
+**Unfiltered — this counts BOTH products.** Add
+`AND topic1 = 0x000000000000000000000000e2ab465839e409c80d1ca4bb4508fea7eb808395`
+to restrict it to Cota.
 
 The core product metric: a signed trading limit committed to chain. No
 decoding, so nothing here depends on a Dune helper function.
@@ -127,7 +156,9 @@ WHERE to IN (
 
 ## Reading these honestly
 
-As of 2026-09-29 the number of anchored leashes is **9**, from **one** wallet.
+As of 2026-09-29 the number of anchored **Cota** leashes is **9**, from **one**
+wallet. The contract shows 17 because quantum-portfolio anchors to the same
+place; do not quote that figure as Cota's.
 That is a real, independently verifiable on-chain record of the product
 working, and it is also one user. Both halves are true and the second one does
 not stop being true because the first is on a chain.
