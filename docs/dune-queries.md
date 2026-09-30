@@ -40,10 +40,23 @@ needed, filter to `tx_from` in our own set of hunter addresses.
 Run this before quoting any total. AuditAnchorV2 is shared with
 quantum-portfolio, and a count of the contract is **not** a count of Cota.
 
-Measured 2026-09-29: **17 anchors from two addresses.** `0xe2ab4658…8395` has
-**9** (the Cota leashes, 7 Sep onward — matching both the database and
-`nextSequence`); the other address has **8**, from 30 Jul to 1 Sep, and those
-are quantum-portfolio's.
+Measured 2026-09-29: **17 anchors from THREE addresses, all of them ours.**
+
+| Address | Anchors | Window | What it is |
+|---|---|---|---|
+| `0xe2ab4658…8395` | 9 | 7–15 Sep | Mera passkey wallet — **the Cota leashes** |
+| `0x8dF64bAC…8ec1` | 7 | 30 Jul–30 Aug | main deployer — quantum-portfolio |
+| `0x7D5BE289…6853` | 1 | 1 Sep | the founder's MetaMask |
+
+No outside party has ever used this contract. The first Cota anchor reads
+`2026-09-07 15:07:52` here against `15:07:53` in the database — the same event,
+confirmed independently from chain.
+
+**So `COUNT(DISTINCT topic1)` is a WALLET count, not a user count.** Three
+wallets, one person. Query 1's `hunters` column would read 3 and mean 1. At this
+scale that distinction is the whole difference between a true statement and a
+fabricated one, so do not put that column in front of anyone without the
+sentence above next to it.
 
 ```sql
 SELECT
