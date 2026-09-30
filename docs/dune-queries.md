@@ -221,3 +221,42 @@ not stop being true because the first is on a chain.
 
 If these charts are going in front of anyone, say what they are: evidence that
 the mechanism runs, not evidence of demand.
+
+---
+
+# BUILT — 2026-09-29
+
+All five exist as saved queries on Dune, executed against real data, under the
+account **`@toursempower`** (the one the MCP authenticated into and the one
+holding the trial credits). **Connect THAT account to DeltaV** — a connector
+pointed at `@empowertours` finds an empty workspace.
+
+**Dashboard:** https://dune.com/toursempower/cota-signed-trading-limits-anchored-on-monad
+
+| Query | ID | Result |
+|---|---|---|
+| Cota — leashes anchored per day | 8863873 | 3 rows: 1 / 7 / 1 |
+| AuditAnchorV2 — anchors by wallet | 8863874 | 3 rows: 9 / 7 / 1 |
+| Cota — cumulative leashes anchored | 8863878 | ends at 9 |
+| Cota — every leash anchored | 8863879 | 9 rows, sequence 0–8 unbroken |
+| MonAusdSwap — daily activity | 8863895 | 1 row: 2026-09-13, 5 swaps, 2 wallets |
+
+The audit trail reconciles against the application's own database: sequence 0 is
+tx `0x7a56d24d…a58b30` at 2026-09-07 15:07:52, sequence 1 is `0x4b536ddc…`,
+sequence 2 is `0x76da589a…` — the same hashes `Cota.anchorTxHash` holds. Chain
+and database agree on the transactions, not merely on the counts.
+
+MonAusdSwap is deliberately NOT on the dashboard. It is real and it is ours, but
+the swap desk is not Cota and five transactions on one day adds no signal to a
+claim about the leash.
+
+## Engine notes (credits are finite now)
+
+- The `free` engine **times out after 2 minutes** on `monad.logs` and is often
+  *more* expensive than `small` when it does finish — 2.8 credits for a grind
+  versus 0.35 for the same query on `small`. Use `small` for logs.
+- `monad.transactions` needs **`medium`**; it timed out on `small`.
+- The free engine allows only **3 parallel executions**.
+- 5 queries, several retries: **~23 credits of 2,500**. Cost is not the
+  constraint; the 14-day trial window (30 Sep – 14 Oct) is. That window does
+  cover the Metropolis close on 13 Oct.
