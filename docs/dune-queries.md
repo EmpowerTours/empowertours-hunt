@@ -167,6 +167,49 @@ WHERE to IN (
 
 ---
 
+# The set to actually save (2026-09-29)
+
+Dune's free tier went **view-only on 2026-09-10**: no credits, no query
+execution, no API. A new account gets 2,500 trial credits for 14 days and then
+hits the same wall. Paid starts at $399/mo.
+
+**Saved RESULTS stay viewable after the trial** — view-only means you cannot
+re-execute, not that the data disappears. So run these once, save each, and a
+dashboard built from them keeps rendering. Never build anything that depends on
+them re-running.
+
+Because credits are finite, the two queries using helper functions are last: a
+wrong function name costs a credit for nothing.
+
+Filter for Cota only — the Mera passkey wallet, padded to the 32-byte topic:
+
+    AND topic1 = 0x000000000000000000000000e2ab465839e409c80d1ca4bb4508fea7eb808395
+
+`"from"` and `"to"` must be double-quoted in `monad.transactions`. Addresses are
+unquoted `0x…` varbinary literals — proven in a real run, whatever the docs'
+example shows.
+
+1. `Cota — leashes anchored per day` — query 1 above plus the topic1 filter, and
+   **without** a `hunters` column.
+2. `Cota — cumulative leashes anchored` — query 3 plus the topic1 filter.
+3. `AuditAnchorV2 — anchors by wallet` — query 0. The one to show a judge: it
+   gives the 9 / 7 / 1 decomposition rather than a headline, and uses no helper
+   functions so it cannot fail on a name.
+4. `MonAusdSwap — daily activity` — query 4. May be legitimately empty.
+5. `Cota — every leash anchored` — query 2. Uses `bytearray_substring` and
+   `bytearray_to_uint256`; if either errors, drop those columns and keep
+   `block_time, topic2, tx_hash`.
+
+**Skip query 5 (distinct wallets across our contracts) entirely.** It has the
+wallets-versus-people problem in its purest form and the honest answer today is
+one person.
+
+**PostHog, not Dune, is the connector to hang the DeltaV application on.** It is
+live, verified, EU, and its free tier does not expire. Dune here is an artifact
+to point at, not a feed to depend on.
+
+---
+
 ## Reading these honestly
 
 As of 2026-09-29 the number of anchored **Cota** leashes is **9**, from **one**
