@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { trackActivation, trackCoreAction } from "@/components/analytics/track";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
@@ -266,6 +267,14 @@ export default function CotaPage() {
       setSignedDigest(body.cota?.digest ?? null);
       // Prefer the server-verified hash; fall back to what we anchored.
       setAnchorTx(body.cota?.anchorTxHash ?? anchorTxHash ?? null);
+      // Signing a leash IS the core job this product exists for, so it is the
+      // activation event. `anchored` is a boolean, not the hash: whether the
+      // on-chain record exists is the interesting fact, and the hash itself
+      // would be a unique per-user identifier.
+      trackActivation("leash_signed");
+      trackCoreAction("leash_signed", {
+        anchored: (body.cota?.anchorTxHash ?? anchorTxHash) !== null,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed");
     } finally {

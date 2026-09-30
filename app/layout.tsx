@@ -59,11 +59,14 @@ export default async function RootLayout({
     // unusable. It was hardcoded "en" before this.
     <html lang={locale}>
       <body className="bg-void text-ink font-sans antialiased">
-        {/* Inert unless NEXT_PUBLIC_POSTHOG_KEY is set. Sends a redacted
-            route per navigation and nothing else — see the component. */}
-        <PostHogAnalytics />
         <NextIntlClientProvider>
-          <HuntAuthProvider>{children}</HuntAuthProvider>
+          <HuntAuthProvider>
+            {/* Inert unless NEXT_PUBLIC_POSTHOG_KEY is set. Inside the auth
+                provider so it can see sign-in, which is one of the six events
+                — it reads auth.status only, never the wallet. */}
+            <PostHogAnalytics />
+            {children}
+          </HuntAuthProvider>
         </NextIntlClientProvider>
       </body>
     </html>

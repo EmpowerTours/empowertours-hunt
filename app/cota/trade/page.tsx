@@ -18,6 +18,7 @@ import { refusalText } from "@/lib/cota/denial-text";
 import { governsLiveOrders, tradableMarketOf } from "@/lib/cota/active-leash";
 import { mayOpen, type DayState, type ProposedOrder } from "@/lib/cota/enforce";
 import { leverageX100, usdE6 } from "@/lib/cota/scale";
+import { trackCoreAction, trackFeature } from "@/components/analytics/track";
 import { scenario, type Quote, type Scenario } from "@/lib/cota/scenario";
 
 // ---------------------------------------------------------------------------
@@ -710,6 +711,10 @@ export default function TradePage() {
       } else if (body.filled) {
         setPlaceMsg(t.placed);
         setPlacePhase("done");
+        // Market and side are categorical. Size, price and notional are the
+        // hunter's money and are deliberately absent — a funnel does not need
+        // them and track.ts will not carry them.
+        trackCoreAction("order_placed", { market, side, filled: true });
       } else if (body.accepted) {
         // "Accepted (not filled yet)" on its own is what every silent failure
         // looked like. When the venue said what became of the order, say that
@@ -728,6 +733,7 @@ export default function TradePage() {
             : head,
         );
         setPlacePhase("done");
+        trackCoreAction("order_placed", { market, side, filled: false });
       } else {
         // The leash allowed it and the VENUE refused. `error` carries the real
         // reason — OrderForwardingNotAllowed is the one to expect on a fresh
@@ -817,6 +823,9 @@ export default function TradePage() {
         });
         const out = (await res.json()) as { error?: string };
         setAutoMsg(res.ok ? t.autoSaved : (out.error ?? t.autoFailed));
+        // The MODE is the interesting fact — how much rope the agent was
+        // given — and it is one of four fixed strings.
+        if (res.ok) trackFeature("autonomy_granted", { mode });
       } catch {
         setAutoMsg(t.autoFailed);
       } finally {
@@ -1049,6 +1058,14 @@ export default function TradePage() {
         );
       } else if (body.filled) {
         setCloseMsg(t.closeDone);
+        // `full` distinguishes closing out from trimming. The realised PnL is
+        // deliberately not sent — it is the hunter's money, and /cota/history
+        // is where they read it.
+        trackCoreAction("position_closed", {
+          market,
+          full: fraction === 1,
+          filled: true,
+        });
       } else {
         const v = body.venue;
         setCloseMsg(
@@ -1056,6 +1073,11 @@ export default function TradePage() {
             ? `${t.closeAccepted} — ${v.statusName}: ${v.reasonName ?? "?"}`
             : t.closeAccepted,
         );
+        trackCoreAction("position_closed", {
+          market,
+          full: fraction === 1,
+          filled: false,
+        });
       }
     } catch {
       setCloseMsg(t.closeFailed);

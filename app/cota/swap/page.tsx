@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { trackFeature } from "@/components/analytics/track";
 import { useLocale } from "next-intl";
 import { formatEther, parseEther } from "viem";
 import { useAuthSlot } from "@/app/providers";
@@ -299,6 +300,7 @@ export default function SwapPage() {
         setTxHash(r.convertTxHash);
         setAusdOut(r.ausdOut);
         setPhase("done");
+        trackFeature("swap_mon_to_ausd");
         setStep(null);
         void refreshBalances();
         return;
@@ -340,6 +342,7 @@ export default function SwapPage() {
       }
       setAusdOut(q);
       setPhase("done");
+      trackFeature("swap_mon_to_ausd");
       void refreshBalances();
     } catch (e) {
       setError(explainSwapError(e, lang));

@@ -2,125 +2,39 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { useAuthSlot } from "@/app/providers";
+import { client, readyClient, KEY } from "./client";
 import { routeName } from "./route-name";
-
-// Type-only, so importing it emits nothing into the bundle.
-type PostHog = (typeof import("posthog-js"))["default"];
+import { trackSessionStarted, trackSignup } from "./track";
 
 // ---------------------------------------------------------------------------
 // Product analytics, configured for an app that holds passkeys and wallets.
 //
-// WHY IT EXISTS. DeltaV's Demo Day application gates on connecting an
-// analytics source, and this repo had none of any kind. It is also simply
-// true that nobody knows which screens get used.
+// INERT WITHOUT A KEY. No NEXT_PUBLIC_POSTHOG_KEY, no init, no network, and
+// the SDK chunk is never even fetched — see client.ts.
 //
-// INERT WITHOUT A KEY. No NEXT_PUBLIC_POSTHOG_KEY, no init, no network. That
-// is the default, so merging this changes nothing until somebody deliberately
-// sets the variable.
+// WHAT IS TURNED OFF, AND WHY EACH ONE MATTERS ON THESE SCREENS:
 //
-// WHAT IS TURNED OFF, AND WHY EACH ONE MATTERS HERE:
+//   autocapture       — off. It attaches the text of clicked elements, and
+//                       hunt/wallet/ProgressPanel.tsx renders a full wallet
+//                       address as visible text.
+//   session recording — off. It replays the DOM, and cota/trade/page.tsx has a
+//                       textarea for a note the UI promises is sealed in the
+//                       browser and unreadable by the server. Recording it
+//                       would make that sentence false.
+//   capture_pageview  — off, replaced below by a manual capture of a REDACTED
+//                       route. PostHog's own reads window.location, and some
+//                       of this app's links carry single-use tokens.
+//   person_profiles   — "identified_only", and nothing calls identify(). Every
+//                       event is anonymous.
 //
-//   autocapture            — off. On by default, it records clicks and the
-//                            text of the elements clicked. On these screens
-//                            that is wallet addresses, balances and amounts.
-//   session recording      — off. It replays the DOM. This app renders a
-//                            passkey flow and a private note; there is no
-//                            version of recording that is acceptable.
-//   capture_pageview       — off, and replaced below by a manual capture that
-//                            sends a REDACTED route. PostHog's own pageview
-//                            reads window.location, which on this app carries
-//                            hunt ids, player ids and single-use tokens.
-//   person_profiles        — "identified_only", and nothing ever calls
-//                            identify(). So every event is anonymous and no
-//                            person record is created.
-//
-// WHAT IT DOES SEND: a page-view event per navigation, carrying the route
-// SHAPE (/hunt/:id, never /hunt/<real id>) and nothing else. That is enough
-// for the funnel and retention numbers an application asks for, and it is the
-// least that can answer them.
-//
-// IF SOMEBODY LATER WANTS RICHER EVENTS: add explicit posthog.capture() calls
-// with hand-written properties. Do not turn autocapture back on to get them.
-//
-// THE SDK IS LOADED DYNAMICALLY, and only when a key is set. A static import
-// would put ~200KB of vendor code into the bundle of every page for a feature
-// that is off, on an app whose users are on phones on Mexican mobile data.
-// With no key the chunk is never requested at all.
+// Product events go through track.ts, which is a closed API: call sites pick
+// from a union and cannot pass a wallet address, a digest or an amount.
 // ---------------------------------------------------------------------------
-
-const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-// EU, to match where everything else already is: hunt-web AND Postgres both
-// run in Railway's europe-west4, so the player rows, wallet addresses and fills
-// are already under EU jurisdiction. Sending analytics to the US cloud would
-// split residency across two jurisdictions for no benefit — the two PostHog
-// clouds are wholly independent instances and moving a project between them
-// later needs their Scale plan and one of their engineers, so this is not a
-// decision that can be revisited cheaply.
-//
-// This does NOT route through Railway. Capture is browser-to-PostHog directly,
-// so the region affects jurisdiction, never latency.
-//
-// It MUST match the region the PostHog account was created in. A mismatch does
-// not error — the events simply go nowhere.
-const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://eu.i.posthog.com";
-
-/**
- * Loaded once, on first use, and only with a key. Held at module scope so a
- * remount does not re-import or re-init.
- */
-let loading: Promise<PostHog | null> | null = null;
-/**
- * The resolved client, held synchronously.
- *
- * `pagehide` is the last moment a tab is alive, and awaiting a promise there
- * often loses the event. So the leave handler reads this instead of the
- * promise, and simply does nothing if the SDK has not finished loading — one
- * missing $pageleave is a rounding error, a hung unload handler is not.
- */
-let ready: PostHog | null = null;
-
-function client(): Promise<PostHog | null> {
-  if (!KEY) return Promise.resolve(null);
-  loading ??= import("posthog-js")
-    .then((m) => {
-      m.default.init(KEY, {
-        api_host: HOST,
-        autocapture: false,
-        disable_session_recording: true,
-        // Every one of these is pinned FALSE here rather than left to the
-        // project settings, because posthog-js falls back to the server-side
-        // toggle when the client says nothing — heatmaps.ts ends its isEnabled
-        // check with `return this._enabledServerSide`. So a flip in the PostHog
-        // UI, by anyone, would silently start capturing.
-        //
-        // And each of them captures $current_url from window.location, which
-        // is the exact leak the manual pageview below exists to avoid. The
-        // redaction is only as good as "nothing else auto-captures".
-        capture_heatmaps: false,
-        capture_dead_clicks: false,
-        capture_performance: false,
-        capture_pageview: false,
-        capture_pageleave: false,
-        // Never identified, so never a person profile.
-        person_profiles: "identified_only",
-        // Belt and braces: if a future edit ever enables recording, it still
-        // cannot read text or inputs.
-        mask_all_text: true,
-        mask_all_element_attributes: true,
-      });
-      ready = m.default;
-      return m.default;
-    })
-    .catch(() => {
-      // An analytics vendor being unreachable must never break a page. The
-      // hunter came here to trade, not to be measured.
-      return null;
-    });
-  return loading;
-}
 
 export function PostHogAnalytics() {
   const pathname = usePathname();
+  const auth = useAuthSlot();
 
   useEffect(() => {
     if (!KEY || pathname === null) return;
@@ -128,8 +42,7 @@ export function PostHogAnalytics() {
     let left = false;
     const route = routeName(pathname);
     // Set explicitly, here and on the leave below. Left alone, PostHog reads
-    // window.location and would ship the query string — which on some of this
-    // app's routes is a single-use token.
+    // window.location and would ship the query string.
     const props = {
       $current_url: window.location.origin + route,
       $pathname: route,
@@ -142,21 +55,18 @@ export function PostHogAnalytics() {
 
     /**
      * Paired with the view above, because PostHog's web analytics derives
-     * session duration and bounce rate from the two together. Without it those
-     * numbers are simply absent, and they are the retention-shaped ones.
-     *
-     * Fires once per view: whichever of a route change or a tab closing
-     * happens first wins.
+     * session duration and bounce rate from the two together. Fires once per
+     * view: whichever of a route change or a tab closing happens first wins.
      */
     const leave = () => {
       if (left) return;
       left = true;
-      ready?.capture("$pageleave", props);
+      readyClient()?.capture("$pageleave", props);
     };
 
     // pagehide covers closing, navigating away and bfcache. visibilitychange
     // covers backgrounding, which on a phone is how most sessions really end —
-    // and this app is used outdoors, one-handed, on phones.
+    // and this app is used outdoors, one-handed.
     const onHidden = () => {
       if (document.visibilityState === "hidden") leave();
     };
@@ -170,6 +80,14 @@ export function PostHogAnalytics() {
       leave();
     };
   }, [pathname]);
+
+  // Sign-in lifecycle. "passkey" is how the wallet is derived — a Mera key
+  // from a WebAuthn PRF — never whose it is.
+  useEffect(() => {
+    if (auth.status !== "signed-in") return;
+    trackSignup("passkey");
+    trackSessionStarted();
+  }, [auth.status]);
 
   return null;
 }

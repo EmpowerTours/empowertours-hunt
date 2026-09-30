@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { trackFeature } from "@/components/analytics/track";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel } from "@/components/ui/primitives";
@@ -215,6 +216,7 @@ export default function SwapUsdcPage() {
       setAusdOut(result.ausdOut);
       setTxHash(result.convertTxHash);
       setPhase("done");
+      trackFeature("swap_usdc_to_ausd");
     } catch (err) {
       setError(explainSwapError(err, lang));
       setPhase("idle");
