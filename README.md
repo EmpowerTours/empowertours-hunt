@@ -7,7 +7,7 @@ real-world locations; the server decides whether they were actually there.
 
 |              | Cache finds                       | Spawns                                 |
 | ------------ | --------------------------------- | -------------------------------------- |
-| Pays         | **TURBO credit** (WMON-wei)       | **native MON** (~0.001)                |
+| Pays         | **TURBO credit** (WMON-wei)       | **native MON** (per-hunt range)        |
 | Withdrawable | No — a discount on a subscription | Yes                                    |
 | Location     | Hidden, never sent to a client    | **Public by design**, visible on radar |
 | Lifetime     | Permanent                         | Ephemeral, expires                     |
@@ -21,6 +21,14 @@ someone actually joins the cohort.
 
 Spawns are the only path in the system where money leaves the treasury. Every
 bound on them is enforced as an atomic database invariant.
+
+The amount is not a constant — it is drawn per spawn from each hunt's own
+`spawnMinWei`/`spawnMaxWei` range, so it is whatever that hunt was configured
+with. **On the live hunt today both bounds are 1 MON**, so every spawn pays
+exactly 1 MON, and all 11 payouts sent to date were 1 MON each. Read the hunt
+row before quoting a figure; an earlier version of this table said ~0.001 MON,
+which was wrong by three orders of magnitude and made the treasury maths look
+far cheaper than it is.
 
 `TOURS` is intended as the consumable layer — lures, hints, re-rolls — which
 gives the token the sink it currently lacks. Not built yet.
