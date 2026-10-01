@@ -34,6 +34,28 @@ Because the product makes claims that are worthless unless they can be checked:
 Those are checkable here, by reading the code. That is the point of publishing
 it.
 
+DUAL LICENSING
+
+This software is available under TWO licences, and you choose which one you
+take it under:
+
+  1. GNU AGPL-3.0 (the LICENSE file). Free. You may read, run, modify and
+     redistribute it. If you run a MODIFIED version as a network service you
+     must offer your users the complete corresponding source of your version
+     under this same licence.
+
+  2. A COMMERCIAL licence from EmpowerTours S.A.S. de C.V. For anyone who wants
+     to build on this work without the obligations of AGPL section 13 — to run
+     a modified version as a service while keeping their own source closed.
+     Paid, negotiated per case: admin@empowertours.xyz
+
+Neither licence is a trick. Option 1 is a genuine open-source grant and always
+will be. Option 2 exists because AGPL's obligations are real, and a company
+that cannot accept them should be able to pay rather than simply take.
+
+This arrangement is only possible while EmpowerTours holds the copyright in
+the whole work — see the contributor grant in CONTRIBUTING.md.
+
 COPYRIGHT AND FUTURE LICENSING
 
 EmpowerTours S.A.S. de C.V. holds the copyright in this work. As sole copyright

@@ -397,6 +397,11 @@ your users the complete corresponding source of your version under this same
 licence. For a hosted web app that is the clause that matters: you may fork this
 and compete, but you may not fork it, close it, and compete.
 
+**Dual licensed.** AGPL-3.0 as above, or a **commercial licence** from
+EmpowerTours for anyone who wants to build on this without AGPL section 13's
+obligations — i.e. to run a modified version as a service with their own source
+closed. Enquiries: admin@empowertours.xyz
+
 The source is public so the product's claims can be checked — that the trading
 bound is enforced by a pure function which fails closed, that the private note
 is sealed with a key the server never holds, that analytics never receives a
