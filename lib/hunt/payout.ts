@@ -77,8 +77,29 @@ import { monad, monadRpcUrl } from "@/lib/monad";
 import { prisma } from "@/lib/db/prisma";
 import { toWei } from "@/lib/wei";
 
-/** A native MON transfer to an EOA costs exactly this. */
-const GAS_LIMIT_NATIVE_TRANSFER = 21_000n;
+/**
+ * Floor for a native MON transfer, and the cost to a PLAIN EOA.
+ *
+ * It is a floor, not the answer. An EIP-7702 delegated account is still an EOA
+ * but carries a delegation indicator, and a transfer to one costs more —
+ * measured at 21,047 against real mainnet state on a Monad fork. Sending with
+ * a hardcoded 21,000 to such an address does NOT throw: the node accepts it,
+ * the receipt comes back `status: 0x0`, and the payout silently fails while
+ * being charged the full limit. The operator's own MetaMask is such an account,
+ * and any player using one would never have been paid.
+ *
+ * So the limit is estimated per recipient and this is only the lower bound.
+ */
+const GAS_FLOOR_NATIVE_TRANSFER = 21_000n;
+
+/**
+ * Upper bound on what a plain value transfer may be estimated at.
+ *
+ * Monad charges on the gas LIMIT with no refund, so an over-large limit is not
+ * free caution — it is money. This caps a nonsense estimate from turning one
+ * payout into an expensive one, while leaving ample room above a 7702 account.
+ */
+const GAS_CEILING_NATIVE_TRANSFER = 60_000n;
 
 /** Bounded on purpose: an unbounded wait is a process that never fails. */
 const DEFAULT_RECEIPT_TIMEOUT_MS = 120_000;
@@ -361,7 +382,13 @@ async function sendApprovedPayoutSerial(payoutId: string): Promise<SendResult> {
   // M4: the old balance check compared the balance against the transfer value
   // alone, so a treasury holding exactly the payout amount passed the check and
   // then failed to cover gas.
-  const gasReserve = GAS_LIMIT_NATIVE_TRANSFER * maxFeePerGas;
+  //
+  // The CEILING, not the floor, and deliberately so. This is a solvency check
+  // that runs before the per-recipient estimate below, so it has to hold for
+  // the most expensive limit that estimate could produce. Reserving the 21,000
+  // floor would let a treasury pass here and then be unable to cover the real
+  // limit for an EIP-7702 recipient.
+  const gasReserve = GAS_CEILING_NATIVE_TRANSFER * maxFeePerGas;
   let balance: bigint;
   try {
     balance = await pub.getBalance({ address: treasury });
@@ -440,13 +467,34 @@ async function sendApprovedPayoutSerial(payoutId: string): Promise<SendResult> {
 
   // --- past this line the money may move. No path returns to APPROVED. ----
 
+  // Estimated per recipient, never hardcoded. On Monad this number is both a
+  // correctness bound and the actual price: too low reverts and is charged the
+  // full limit anyway, too high simply overpays. A failed estimate falls back
+  // to the ceiling rather than the floor — overpaying a little beats a silent
+  // non-payment that still costs gas.
+  let gasLimit: bigint;
+  try {
+    const est = await pub.estimateGas({
+      account: wallet.account,
+      to: to as Hex,
+      value: amount,
+    });
+    gasLimit =
+      est < GAS_FLOOR_NATIVE_TRANSFER ? GAS_FLOOR_NATIVE_TRANSFER : est;
+    if (gasLimit > GAS_CEILING_NATIVE_TRANSFER) {
+      gasLimit = GAS_CEILING_NATIVE_TRANSFER;
+    }
+  } catch {
+    gasLimit = GAS_CEILING_NATIVE_TRANSFER;
+  }
+
   let hash: Hex;
   try {
     hash = await wallet.sendTransaction({
       to: to as Hex,
       value: amount,
       nonce,
-      gas: GAS_LIMIT_NATIVE_TRANSFER,
+      gas: gasLimit,
       maxFeePerGas,
       ...(maxPriorityFeePerGas === undefined ? {} : { maxPriorityFeePerGas }),
     });

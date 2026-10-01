@@ -27,6 +27,7 @@ vi.mock("viem/accounts", () => ({
 
 const chainMock = {
   getBalance: vi.fn(),
+  estimateGas: vi.fn(),
   getTransactionCount: vi.fn(),
   estimateFeesPerGas: vi.fn(),
   getGasPrice: vi.fn(),
@@ -104,6 +105,10 @@ beforeEach(() => {
   updateMany.mockResolvedValue({ count: 1 } as never);
 
   chainMock.getBalance.mockResolvedValue(ONE_MON);
+  // 21,047 is the real measured cost of a transfer to an EIP-7702 delegated
+  // account on Monad mainnet state. The default is deliberately NOT 21,000:
+  // the whole point of estimating is that the floor is not always the answer.
+  chainMock.estimateGas.mockResolvedValue(21_047n);
   chainMock.getTransactionCount.mockResolvedValue(7);
   chainMock.estimateFeesPerGas.mockResolvedValue({
     maxFeePerGas: 50_000_000_000n,
@@ -139,7 +144,9 @@ describe("sendApprovedPayout — the happy path", () => {
         to: RECIPIENT,
         value: SPAWN_AMOUNT,
         nonce: 7,
-        gas: 21_000n,
+        // The ESTIMATE, not a constant. A hardcoded 21,000 silently reverts
+        // for an EIP-7702 recipient while still being charged in full.
+        gas: 21_047n,
       }),
     );
     expect(statusesWritten()).toEqual(["SENDING", "SENT"]);
@@ -326,9 +333,49 @@ describe("M4 — gas, nonce and RPC configuration", () => {
     expect(statusesWritten()).toEqual([]);
   });
 
+  it("never sends the 21,000 floor when the recipient needs more", async () => {
+    // The bug this replaces: GAS_LIMIT_NATIVE_TRANSFER was hardcoded to 21,000
+    // with the comment "a native MON transfer to an EOA costs exactly this".
+    // An EIP-7702 delegated account is still an EOA and costs MORE — measured
+    // at 21,047 against real Monad mainnet state on a Tenderly fork. Sending
+    // 21,000 to one does not throw: the node accepts it, the receipt comes
+    // back status 0x0, and the player is never paid while gas is charged in
+    // full, because Monad charges on the limit and refunds nothing.
+    chainMock.estimateGas.mockResolvedValue(21_047n);
+    await sendApprovedPayout("payout_1");
+    const sent = walletMock.sendTransaction.mock.calls[0][0] as { gas: bigint };
+    expect(sent.gas).toBe(21_047n);
+    expect(sent.gas).toBeGreaterThan(21_000n);
+  });
+
+  it("floors a nonsensically low estimate at 21,000", async () => {
+    chainMock.estimateGas.mockResolvedValue(1n);
+    await sendApprovedPayout("payout_1");
+    const sent = walletMock.sendTransaction.mock.calls[0][0] as { gas: bigint };
+    expect(sent.gas).toBe(21_000n);
+  });
+
+  it("caps a runaway estimate, because on Monad the limit IS the price", async () => {
+    chainMock.estimateGas.mockResolvedValue(5_000_000n);
+    await sendApprovedPayout("payout_1");
+    const sent = walletMock.sendTransaction.mock.calls[0][0] as { gas: bigint };
+    expect(sent.gas).toBe(60_000n);
+  });
+
+  it("falls back to the ceiling when the estimate fails, not the floor", async () => {
+    // Overpaying slightly beats a silent non-payment that costs gas anyway.
+    chainMock.estimateGas.mockRejectedValue(new Error("rpc down"));
+    await sendApprovedPayout("payout_1");
+    const sent = walletMock.sendTransaction.mock.calls[0][0] as { gas: bigint };
+    expect(sent.gas).toBe(60_000n);
+  });
+
   it("sends when the balance covers value plus gas", async () => {
+    // The reserve is the CEILING (60,000), because the solvency check runs
+    // before the per-recipient estimate and has to hold for the priciest limit
+    // that estimate could return.
     chainMock.getBalance.mockResolvedValue(
-      SPAWN_AMOUNT + 21_000n * 50_000_000_000n,
+      SPAWN_AMOUNT + 60_000n * 50_000_000_000n,
     );
     const res = await sendApprovedPayout("payout_1");
     expect(res.ok).toBe(true);
