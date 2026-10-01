@@ -362,4 +362,26 @@ URLs are redacted by `components/analytics/route-name.ts` before they leave the
 browser: `/hunt/<id>` becomes `/hunt/:id`, and query strings are dropped
 entirely because some of this app's links carry single-use tokens.
 
+### Product events
+
+Emitted only through `components/analytics/track.ts`, which is a **closed API**:
+each function takes a value from a union and builds the properties itself, so a
+call site cannot pass a wallet address, a leash digest, a transaction hash, an
+amount or any free text. Adding an event means editing that one file.
+
+| Event              | Fires when                                    | Properties                                                    |
+| ------------------ | --------------------------------------------- | ------------------------------------------------------------- |
+| `signup_completed` | first sign-in on this browser                 | `source`                                                      |
+| `session_started`  | once per session, signed in                   | —                                                             |
+| `activation`       | first leash signed                            | `jtbd_name`                                                   |
+| `core_action`      | leash signed / order placed / position closed | `action_type`, `market`, `side`, `filled`, `anchored`, `full` |
+| `feature_engaged`  | autonomy granted, either swap                 | `feature_name`, `mode`                                        |
+
+Every event also carries the redacted `route`.
+
+`activation`, `signup_completed` and `session_started` are once-only, guarded by
+browser storage — so a second device counts twice and clearing storage counts
+again. `core_action` fires every time regardless, so first-touch can be
+recomputed from those if the guard proves too loose.
+
 On-chain metrics live in [docs/dune-queries.md](docs/dune-queries.md).
