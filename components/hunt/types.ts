@@ -104,6 +104,14 @@ export interface CacheReveal {
 export interface ClaimFound {
   found: true;
   findId: string;
+  /**
+   * Whether this is the player's FIRST find, decided server-side by a count
+   * against their own rows. Optional because a client talking to an older
+   * server will not get it, and the absence must read as "do not know" rather
+   * than "not first". Used only to emit the activation event once per person
+   * rather than once per browser.
+   */
+  isFirstFind?: boolean;
   cache: CacheReveal;
   /** TURBO credit awarded, WMON-wei as a decimal string. Never a number. */
   rewardCreditWei: string;

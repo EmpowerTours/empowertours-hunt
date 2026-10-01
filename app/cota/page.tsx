@@ -261,6 +261,9 @@ export default function CotaPage() {
       });
       const body = (await res.json()) as {
         cota?: { digest: string; anchorTxHash?: string | null };
+        // Decided by the server against this player's own rows — the browser
+        // cannot know whether a second device already signed one.
+        isFirstLeash?: boolean;
         error?: string;
       };
       if (!res.ok) throw new Error(body.error ?? String(res.status));
@@ -268,10 +271,11 @@ export default function CotaPage() {
       // Prefer the server-verified hash; fall back to what we anchored.
       setAnchorTx(body.cota?.anchorTxHash ?? anchorTxHash ?? null);
       // Signing a leash IS the core job this product exists for, so it is the
-      // activation event. `anchored` is a boolean, not the hash: whether the
+      // activation event — but only the FIRST one, and only the server knows
+      // which that is. `anchored` is a boolean, not the hash: whether the
       // on-chain record exists is the interesting fact, and the hash itself
       // would be a unique per-user identifier.
-      trackActivation("leash_signed");
+      if (body.isFirstLeash === true) trackActivation("leash_signed");
       trackCoreAction("leash_signed", {
         anchored: (body.cota?.anchorTxHash ?? anchorTxHash) !== null,
       });

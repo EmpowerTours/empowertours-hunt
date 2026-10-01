@@ -376,9 +376,20 @@ export async function POST(
       // actually costs rather than a constant that drifts.
       const turboMonthWei = await readTierPriceWei("EXPLORER");
 
+      // Whether this is the player's first find, decided HERE rather than from
+      // browser storage. The client used to guess with localStorage, which
+      // counts a second device twice and a cleared browser again — on a
+      // product with single-digit users that is the difference between a real
+      // activation number and a flattering one. One cheap count on a request
+      // that already wrote a row.
+      const findsSoFar = await prisma.find.count({
+        where: { playerId: player.id },
+      });
+
       return NextResponse.json({
         found: true,
         findId: committed.find.id,
+        isFirstFind: findsSoFar === 1,
         // The reveal — safe to send only because they are standing on it.
         cache: {
           label: cache.label,

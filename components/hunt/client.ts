@@ -295,6 +295,11 @@ export async function submitClaim(
   return {
     found: true,
     findId: str(body.findId) ?? "",
+    // Carried through explicitly. This parser rebuilds the object field by
+    // field, so anything not named here is silently dropped — and a dropped
+    // isFirstFind means the activation event never fires, with nothing
+    // looking broken.
+    isFirstFind: body.isFirstFind === true,
     cache: {
       label: str(cache.label),
       blurb: str(cache.blurb),

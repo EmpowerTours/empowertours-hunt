@@ -1,6 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import {
+  trackActivation,
+  trackCoreAction,
+  trackFeature,
+} from "@/components/analytics/track";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClaimSigner } from "@/app/providers";
 import { useGeolocation } from "@/components/hooks/useGeolocation";
@@ -293,6 +298,13 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         // A refused check-in is worth showing: it is almost always GPS
         // accuracy, which the player can fix by stepping outside.
         if (!r.ok && r.reason) setScanReason(r.reason);
+        // Position verification is the gate on everything else in the game, so
+        // how often it SUCCEEDS is the health metric for the whole Hunt side.
+        // No coordinates: `ok` and a fixed reason string, nothing more.
+        trackFeature("check_in", {
+          ok: r.ok === true,
+          ...(r.ok ? {} : { reason: String(r.reason ?? "unknown") }),
+        });
         // Scan NOW rather than at the next 30s tick. Until the check-in lands
         // the scan can only answer `no_verified_position`, so the first useful
         // scan is this one — waiting for the interval is the other half of the
@@ -409,8 +421,20 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         setFind(result);
         setCooldownUntil(Date.now() + cooldownSeconds * 1_000);
         hint.refresh();
+        // Finding a cache is the core job on the Hunt side, so the first one
+        // is an activation — and only the server knows which is first. The
+        // reward amount is deliberately not sent: it is the player's money.
+        if (result.isFirstFind === true) trackActivation("cache_found");
+        trackCoreAction("cache_found", { found: true });
       } else {
         setRefusal(result.reason);
+        // The refusal reason is one of a fixed set from the validator
+        // (too far, implausible speed, already found, budget exhausted), so it
+        // is safe to send and it is the only way to see WHY people fail.
+        trackCoreAction("cache_found", {
+          found: false,
+          reason: String(result.reason),
+        });
       }
     } catch (e: unknown) {
       if (controller.signal.aborted) return;
@@ -435,6 +459,12 @@ export function HuntScreen({ huntId }: { huntId: string }) {
       try {
         const result = await collectSpawn(huntId, spawnId, fix, signer);
         if (result.collected) {
+          // Whether the payout was released or held is the interesting fact.
+          // The amount is not sent — it is the player's money, and a funnel
+          // does not need it.
+          trackCoreAction("spawn_collected", {
+            held: result.payout.holdReason !== null,
+          });
           setSpawns((list) => list.filter((s) => s.id !== spawnId));
           setSelectedSpawnId(null);
           const amount = formatMon(weiOrZero(result.amountMonWei));

@@ -120,6 +120,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: verified.reason }, { status: 400 });
     }
 
+    // Decided on the server, not from browser storage: whether this is the
+    // hunter's first leash. localStorage counts a second device twice and a
+    // cleared browser again, which on a product with single-digit users is the
+    // difference between a real activation number and a flattering one. Read
+    // before the create, so "none yet" means none.
+    const priorLeashes = await prisma.cota.count({
+      where: { playerId: player.id },
+    });
+
     const row = await prisma.cota.create({
       data: {
         playerId: player.id,
@@ -168,7 +177,11 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { ok: true, cota: { ...row, anchorTxHash } },
+      {
+        ok: true,
+        cota: { ...row, anchorTxHash },
+        isFirstLeash: priorLeashes === 0,
+      },
       { status: 201 },
     );
   } catch (err) {

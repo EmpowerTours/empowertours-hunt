@@ -24,7 +24,14 @@
 import { client, KEY, currentRoute } from "./client";
 
 /** A repeat of the core loop. */
-export type CoreAction = "leash_signed" | "order_placed" | "position_closed";
+export type CoreAction =
+  | "leash_signed"
+  | "order_placed"
+  | "position_closed"
+  // The Hunt side of the product. Finding a cache is its core job; collecting
+  // a spawn is the only path where MON actually reaches a player.
+  | "cache_found"
+  | "spawn_collected";
 
 /** A named non-core feature. */
 export type Feature =
@@ -33,7 +40,8 @@ export type Feature =
   | "private_note"
   | "swap_mon_to_ausd"
   | "swap_usdc_to_ausd"
-  | "results_viewed";
+  | "results_viewed"
+  | "check_in";
 
 /** Values allowed as a property. Deliberately not `unknown`. */
 type Scalar = string | number | boolean;
@@ -50,24 +58,20 @@ function emit(event: string, props: Record<string, Scalar>): void {
 }
 
 /**
- * The first time this browser completes the core job — signing a leash.
+ * The first time this PERSON completes the core job — signing a leash, or
+ * finding their first cache.
  *
- * Guarded by localStorage, so it is once per BROWSER rather than once per
- * person: a hunter on a second device counts twice, and one who clears storage
- * counts again. Stated rather than hidden, because the alternative is asking
- * the server "is this their first?" on a path that must not block on a network
- * call. `core_action` is emitted every time regardless, so nothing is lost —
- * first-touch can always be recomputed from those if this proves too loose.
+ * The caller must only invoke this when the SERVER has said it is the first.
+ * `/api/cota` returns `isFirstLeash` and the hunt claim route returns
+ * `isFirstFind`, both decided by a count against the player's own rows on a
+ * request that was already writing to the database.
+ *
+ * It used to guard itself with localStorage, which counted a second device
+ * twice and a cleared browser again. On a product with single-digit users that
+ * is the difference between a real activation number and a flattering one, and
+ * the browser simply does not know the answer — only the server does.
  */
 export function trackActivation(jtbdName: string): void {
-  if (!KEY) return;
-  try {
-    if (window.localStorage.getItem("ph_activated") === "1") return;
-    window.localStorage.setItem("ph_activated", "1");
-  } catch {
-    // Private window, or storage blocked. Emitting a possibly-duplicate
-    // activation is better than emitting none.
-  }
   emit("activation", { jtbd_name: jtbdName });
 }
 

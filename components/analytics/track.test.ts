@@ -46,16 +46,33 @@ beforeEach(() => {
   };
 });
 
-describe("activation fires once per browser", () => {
-  it("emits the first time and never again", async () => {
-    trackActivation("leash_signed");
+describe("activation does NOT guard itself", () => {
+  it("emits whenever called — the SERVER decides what is first", async () => {
+    // It used to guard with localStorage, which counted a second device twice
+    // and a cleared browser again. The browser cannot know; only the server
+    // can. /api/cota returns isFirstLeash and the hunt claim route returns
+    // isFirstFind, each a count against that player's own rows.
+    //
+    // So this function is deliberately dumb, and the CALLER is responsible for
+    // only invoking it when the server said so. A self-guard here would mask a
+    // caller that got that wrong.
     trackActivation("leash_signed");
     trackActivation("leash_signed");
     await flush();
-    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledTimes(2);
     expect(capture.mock.calls[0]![0]).toBe("activation");
     expect(capture.mock.calls[0]![1]).toMatchObject({
       jtbd_name: "leash_signed",
+    });
+  });
+
+  it("carries the jtbd name it was given, Hunt or Cota", async () => {
+    // One activation event across two products, distinguished by jtbd_name —
+    // signing a leash on the Cota side, finding a cache on the Hunt side.
+    trackActivation("cache_found");
+    await flush();
+    expect(capture.mock.calls[0]![1]).toMatchObject({
+      jtbd_name: "cache_found",
     });
   });
 });
