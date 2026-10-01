@@ -1,16 +1,56 @@
-MIT License
+EmpowerTours Source-Available Licence
+Copyright (c) 2026 EmpowerTours S.A.S. de C.V. All rights reserved.
 
-Copyright (c) 2026 EmpowerTours
+WHY THIS SOURCE IS PUBLISHED
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This repository is published so that the people who use EmpowerTours Hunt and
+Cota can see exactly how it works. The product makes claims that are only worth
+anything if they can be checked: that a signed trading bound is enforced by a
+pure function that fails closed, that a private note is sealed in the browser
+with a key the server never holds, that analytics never receives a wallet
+address. Those are verifiable here, by reading the code.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Transparency is the entire purpose. This is NOT an open-source licence and
+grants no right to use this work in your own.
+
+WHAT YOU MAY DO
+
+  1. Read, study and audit this source code.
+  2. Quote short excerpts for commentary, review, teaching or security
+     reporting, with attribution.
+  3. Use the official EmpowerTours services at the domains EmpowerTours
+     operates, under their own terms.
+  4. Run the code locally for the sole purpose of verifying the claims above,
+     or of evaluating a submission to a hackathon or similar review.
+
+WHAT YOU MAY NOT DO
+
+Without prior written permission from EmpowerTours S.A.S. de C.V., you may not:
+
+  1. Copy, reproduce or redistribute this software or any substantial part of
+     it, in source or compiled form.
+  2. Modify it, or create derivative works from it.
+  3. Deploy, host, operate or offer it as a service, whether or not for a fee.
+  4. Use it, in whole or in part, in any other product, commercial or
+     otherwise.
+  5. Sublicense, sell, rent or lease it.
+  6. Remove or obscure this notice.
+
+No rights are granted to the EmpowerTours name, logo or other trade marks.
+
+SCOPE AND HONEST LIMITS
+
+This licence governs the contents of this repository. It does not cover
+third-party dependencies, which remain under their own licences, nor the
+deployed smart contracts, which are public on Monad by design and permissionless
+to read and to call.
+
+Earlier versions of this repository were published under the MIT licence. That
+grant cannot be withdrawn: anyone who obtained a copy while MIT applied keeps
+MIT rights to that copy. This licence governs this version and every version
+after it.
+
+NO WARRANTY
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -19,3 +59,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+This software is not financial advice and is not an offer of any financial
+product or service.
+
+Permission requests: admin@empowertours.xyz

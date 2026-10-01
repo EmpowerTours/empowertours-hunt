@@ -385,3 +385,17 @@ again. `core_action` fires every time regardless, so first-touch can be
 recomputed from those if the guard proves too loose.
 
 On-chain metrics live in [docs/dune-queries.md](docs/dune-queries.md).
+
+## Licence
+
+**Source-available, not open source.** Copyright © 2026 EmpowerTours S.A.S. de
+C.V., all rights reserved. See [LICENSE](LICENSE).
+
+The source is published so users can verify the claims the product makes —
+that the signed trading bound is enforced by a pure function that fails closed,
+that the private note is sealed with a key the server never holds, that
+analytics never receives a wallet address. You may read, audit and quote it.
+You may not copy, modify, redistribute, host or build on it.
+
+Earlier versions were MIT. That grant cannot be withdrawn for copies already
+obtained under it; this licence governs this version onward.
