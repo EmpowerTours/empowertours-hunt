@@ -429,6 +429,19 @@ export function resetPaymentTokenCache(): void {
 
 // One queue per process. See the note above about nonces.
 let relayerQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Run an operation on the relayer's serial queue.
+ *
+ * Exported so the stranded-licence sweeper shares this queue rather than
+ * keeping its own. Two queues would be no queue at all: a sweep transfer and a
+ * live claim would race onto the same nonce, which is the exact failure this
+ * exists to prevent.
+ */
+export function enqueueRelayerOp<T>(op: () => Promise<T>): Promise<T> {
+  return enqueue(op);
+}
+
 function enqueue<T>(op: () => Promise<T>): Promise<T> {
   const run = relayerQueue.then(op, op);
   // Swallow so one rejection does not wedge every later send.

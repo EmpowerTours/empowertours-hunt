@@ -42,14 +42,25 @@ export type AuditAction =
   | "admin.create"
   | "admin.update"
   | "admin.login"
-  | "admin.bootstrap";
+  | "admin.bootstrap"
+  // Delivering a licence the relayer already paid for and failed to send on.
+  // It moves an asset and spends gas, so it leaves the same trail as a payout.
+  | "editions.sweep.dry"
+  | "editions.sweep.execute";
 
 export interface AuditEntry {
   adminId: string;
   action: AuditAction;
   targetType:
-    "Payout" | "Player" | "Hunt" | "Cache" | "Zone" | "AdminUser" | "Session"
-    | "Redemption";
+    | "Payout"
+    | "Player"
+    | "Hunt"
+    | "Cache"
+    | "Zone"
+    | "AdminUser"
+    | "Session"
+    | "Redemption"
+    | "EditionClaim";
   targetId: string;
   detail?: string;
   ip?: string;
