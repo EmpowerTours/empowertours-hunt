@@ -126,7 +126,50 @@ HINT_GRID_SECRET=
 CRON_SECRET=
 
 NEXT_PUBLIC_TURBO_COHORT_ADDRESS=0x13a63A60b0E0104911e845a7e944646045C1558F
-NEXT_PUBLIC_TOURS_TOKEN_ADDRESS=0x45b76a127167fD7FC7Ed264ad490144300eCfcBF
+```
+
+The block above is the Hunt game alone. The repository also contains Cota (the
+trading side), the edition relayer and the admin console, and those read a
+further thirty-odd variables. They are grouped here rather than left for
+somebody to discover by watching the app fail to boot — an earlier revision of
+this section documented only the first set, which made it read as complete when
+it was not.
+
+```
+# Admin console
+ADMIN_SESSION_SECRET=            # required; separate from AUTH_SESSION_SECRET
+ADMIN_BOOTSTRAP_ADDRESS=         # seeds the first OWNER on an empty table
+
+# Passkeys and bot defence
+NEXT_PUBLIC_RP_ID=               # WebAuthn relying party; the WALLET derives
+                                 # from it, so changing it changes everyone's
+                                 # address — see lib/auth/rpId.ts
+TURNSTILE_SECRET_KEY=
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=
+
+# Cota — the trading side
+COTA_KEY_ENC_SECRET=             # AES-256-GCM for server-held venue keys
+COTA_AGENT_TOKEN=                # bearer the agent presents
+PERPL_API_URL=  PERPL_WS_URL=  PERPL_CONTEXT_URL=  PERPL_ORIGIN=
+KURU_API_URL=
+WMON_ADDRESS=  NEXT_PUBLIC_WMON_ADDRESS=
+MOONSHOT_API_KEY=  MOONSHOT_MODEL=     # the Kimi proposer
+ZERION_API_KEY=  ZERION_API_URL=       # balance reads
+COINGECKO_API_URL=                     # price history for the proposer
+AURORA_INTENTS_APP_KEY=  AURORA_INTENTS_API_URL=
+AURORA_INTENTS_CONNECT_URL=  AURORA_INTENTS_TOKENS_URL=
+
+# Editions and the /dime giveaway
+EDITION_RELAYER_PRIVATE_KEY=     # its balance IS the cap on free claims
+EDITION_SALES_CONTROLLER=  EDITION_LICENSE_REGISTRY=
+EDITION_LICENSE_URI=  EDITION_CATALOGUE_URL=  EDITION_GAS_RESERVE_WEI=
+DIME_GIVEAWAY_MASTER_ID=  DIME_GIVEAWAY_LICENSE_URI=  DIME_MAX_CLAIMS=
+
+# Treasury address, for reads that must not need the key
+HUNT_TREASURY_ADDRESS=
+
+# IPFS gateway for licence media
+NEXT_PUBLIC_IPFS_GATEWAY=
 ```
 
 ## Development
@@ -174,7 +217,7 @@ predate 1 September and are the foundation the submission builds on:
 
 `git log --until=2026-08-31` lists them exactly.
 
-### Built during the window (254 commits since 1 September)
+### Built during the window (303 commits since 1 September, as of 1 October)
 
 - **Cota** — an EIP-712 bound a hunter signs before software may trade for
   them. One enforcement path (`lib/cota/enforce.ts`) governs paper and live
@@ -188,8 +231,13 @@ predate 1 September and are the foundation the submission builds on:
   _before_ the transport — no code path reaches the venue without passing
   `mayOpen`.
 
-  **It trades.** Account 5273 holds a real position opened by this code, and the
-  ledger reconciles with the venue to the microdollar. Getting there meant
+  **It trades.** Account 5273 opened a real position through this code and
+  closed it: four fills, 14–18 September, 576 MON bought at a 0.022531 average
+  and sold at 0.023166, **+$0.354368 after fees**. The account is flat today —
+  an earlier revision of this line said it "holds a real position", which was
+  true when written and stopped being true on 18 September. The ledger
+  reconciles with the venue to the microdollar, and `/cota/history` shows the
+  hunter the same figures. Getting there meant
   finding four separate causes behind one symptom — "Accepted (not filled yet)"
   — and each is worth recording because three were ours.
 
@@ -312,23 +360,22 @@ convention — they record why a decision was made, not just what changed.
 
 ### Ownership and licence
 
-Copyright © 2026 **EmpowerTours**. Every commit in this repository is authored
-by EmpowerTours, and authorship and copyright stay with EmpowerTours.
+Copyright © 2026 **EmpowerTours S.A.S. de C.V.** Every commit is authored by
+EmpowerTours, and authorship and copyright stay with EmpowerTours.
 
-The code is released under the **MIT Licence** (see `LICENSE`). That is not a
-transfer of ownership — MIT keeps the copyright with the holder and grants
-others permission to use, copy and modify the work, on the condition that the
-copyright notice travels with it. Anyone reusing this code must carry the
-EmpowerTours notice.
+Licensed under **GNU AGPL-3.0** — see the Licence section at the end of this
+file, plus `LICENSE` and `NOTICE`. An earlier revision of this section said MIT,
+which was true until 2026-10-01 and is not any more.
 
-An OSI licence is not optional here: Metropolis §7.2 requires submissions to be
-open source under MIT, Apache 2.0, GPL or BSD, and to stay publicly accessible
-during and after the Hackathon. So the choice was which permissive licence to
-use, not whether to publish. MIT keeps the attribution requirement while asking
-the least of anyone building on it.
+Metropolis §7.2 requires submissions to be open source under an OSI-approved
+licence and to stay publicly accessible during and after the Hackathon, so the
+choice was which OSI licence, not whether to publish. AGPL rather than MIT
+because MIT lets anyone take this work, close it and sell it; AGPL section 13
+means a modified version run as a network service must publish its source. For a
+hosted web app that is the clause with teeth.
 
-The **EmpowerTours** name and marks are not licensed by MIT and remain
-EmpowerTours' own.
+The **EmpowerTours** name and marks are not licensed and remain EmpowerTours'
+own.
 
 ### External code
 
@@ -341,7 +388,7 @@ their own licences. Walkable-area data is imported from **OpenStreetMap**
 
 ```bash
 npm install
-./.claude/verify.sh   # typecheck, lint, 1245 tests, production build, secret scan
+./.claude/verify.sh   # typecheck, lint, 1453 tests, production build, secret scan
 ```
 
 ## Analytics (optional, off by default)
@@ -377,20 +424,30 @@ each function takes a value from a union and builds the properties itself, so a
 call site cannot pass a wallet address, a leash digest, a transaction hash, an
 amount or any free text. Adding an event means editing that one file.
 
-| Event              | Fires when                                    | Properties                                                    |
-| ------------------ | --------------------------------------------- | ------------------------------------------------------------- |
-| `signup_completed` | first sign-in on this browser                 | `source`                                                      |
-| `session_started`  | once per session, signed in                   | —                                                             |
-| `activation`       | first leash signed                            | `jtbd_name`                                                   |
-| `core_action`      | leash signed / order placed / position closed | `action_type`, `market`, `side`, `filled`, `anchored`, `full` |
-| `feature_engaged`  | autonomy granted, either swap                 | `feature_name`, `mode`                                        |
+| Event              | Fires when                                            | Properties                                                    |
+| ------------------ | ----------------------------------------------------- | ------------------------------------------------------------- |
+| `signup_completed` | first sign-in on this browser                         | `source`                                                      |
+| `session_started`  | once per session, signed in                           | —                                                             |
+| `activation`       | first leash signed (Cota) or first cache found (Hunt) | `jtbd_name`                                                   |
+| `core_action`      | leash signed, order placed, position closed           | `action_type`, `market`, `side`, `filled`, `anchored`, `full` |
+| `core_action`      | cache found **or refused**, spawn collected           | `action_type`, `found`, `reason`, `held`                      |
+| `feature_engaged`  | autonomy granted, either swap, check-in               | `feature_name`, `mode`, `ok`, `reason`                        |
 
 Every event also carries the redacted `route`.
 
-`activation`, `signup_completed` and `session_started` are once-only, guarded by
-browser storage — so a second device counts twice and clearing storage counts
-again. `core_action` fires every time regardless, so first-touch can be
-recomputed from those if the guard proves too loose.
+**`activation` is decided by the SERVER, not the browser.** `/api/cota` returns
+`isFirstLeash` and the hunt claim route returns `isFirstFind`, each a count
+against that player's own rows on a request that was already writing. An earlier
+revision guarded it with browser storage, which counted a second device twice
+and a cleared browser again — the browser cannot know the answer.
+
+`signup_completed` and `session_started` are still browser-scoped, and that is
+stated rather than hidden: there is no equally cheap server signal for either.
+
+Cache _refusals_ are captured as well as successes. The validator's reasons are
+a fixed set — too far, implausible speed, already found, budget exhausted — so
+they are safe to send, and they are the only way to see **why** people fail
+rather than merely that they did.
 
 On-chain metrics live in [docs/dune-queries.md](docs/dune-queries.md).
 
