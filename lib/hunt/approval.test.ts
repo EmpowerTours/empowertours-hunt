@@ -216,7 +216,10 @@ describe("the first payout, priced rather than walled", () => {
       }),
     );
     expect(d.autoApprove).toBe(false);
-    expect(d.reason).toBe("no_prior_position");
+    // `if` rather than only an expect: ApprovalDecision is a discriminated
+    // union and `reason` lives on the held branch alone, so this is what
+    // narrows it. The expect above still fails the test if it was approved.
+    if (!d.autoApprove) expect(d.reason).toBe("no_prior_position");
   });
 
   it("lets a small first payout through when a ceiling is set", () => {
@@ -243,7 +246,7 @@ describe("the first payout, priced rather than walled", () => {
       }),
     );
     expect(d.autoApprove).toBe(false);
-    expect(d.reason).toBe("no_prior_position");
+    if (!d.autoApprove) expect(d.reason).toBe("no_prior_position");
   });
 
   it("is a gate removed, NOT a bypass — every other ceiling still applies", () => {
@@ -259,7 +262,8 @@ describe("the first payout, priced rather than walled", () => {
       }),
     );
     expect(overCap.autoApprove).toBe(false);
-    expect(overCap.reason).toBe("amount_above_per_payout_cap");
+    if (!overCap.autoApprove)
+      expect(overCap.reason).toBe("amount_above_per_payout_cap");
 
     // Same for a flagged attempt and a suspended player.
     const flagged = decideAutoApproval(
@@ -273,7 +277,8 @@ describe("the first payout, priced rather than walled", () => {
       }),
     );
     expect(flagged.autoApprove).toBe(false);
-    expect(flagged.reason).not.toBe("no_prior_position");
+    if (!flagged.autoApprove)
+      expect(flagged.reason).not.toBe("no_prior_position");
   });
 });
 
