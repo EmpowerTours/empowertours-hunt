@@ -646,14 +646,20 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           signingAvailable={signer !== null}
         />
 
-        <BandReadout
-          band={hint.band}
-          complete={hint.complete}
-          cacheless={hint.cacheless}
-          remaining={hint.remaining}
-          status={hint.status}
-          error={hint.error}
-        />
+        {/* Caches pay TURBO credit — a discount on a cohort subscription. To a
+            player with no TURBO handle linked that is a reward they cannot
+            spend, so the band is hidden rather than advertised. Spawns, which
+            pay native MON, are unaffected and remain visible to everyone. */}
+        {hint.turboLinked ? (
+          <BandReadout
+            band={hint.band}
+            complete={hint.complete}
+            cacheless={hint.cacheless}
+            remaining={hint.remaining}
+            status={hint.status}
+            error={hint.error}
+          />
+        ) : null}
 
         {refusalText ? (
           <Note tone="warn" title={refusalText.title}>

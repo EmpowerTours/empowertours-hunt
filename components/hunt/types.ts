@@ -72,6 +72,15 @@ export interface HintResponse {
   cacheless?: boolean;
   band: HintBand | null;
   remaining: number;
+  /**
+   * Whether this player has a TURBO handle linked.
+   *
+   * Cache finds pay TURBO credit, which is a discount on a cohort
+   * subscription — worth nothing to somebody not in the cohort. The band
+   * readout hides itself when this is false rather than advertising a reward
+   * the player cannot spend.
+   */
+  turboLinked?: boolean;
 }
 
 /* --- Claim ---------------------------------------------------------------- */

@@ -731,6 +731,16 @@ export async function listPlayers(params: {
     creditBalanceWei: bigint;
     createdAt: Date;
     finds: number;
+    /** Spawns collected. A player can earn MON without ever finding a cache. */
+    spawns: number;
+    /** Native MON actually SENT to them, summed. The only column here that
+     *  corresponds to money leaving the treasury. */
+    monPaidWei: bigint;
+    /** Payouts sitting in PENDING or NEEDS_RECONCILIATION — i.e. waiting on
+     *  an operator. Every player's FIRST payout lands here by design
+     *  (approval.ts: no_prior_position), so a new player showing 1 is normal
+     *  and a new player showing 0 after collecting is not. */
+    payoutsWaiting: number;
   }>;
   total: number;
 }> {
@@ -764,7 +774,11 @@ export async function listPlayers(params: {
         suspendReason: true,
         creditBalanceWei: true,
         createdAt: true,
-        _count: { select: { finds: true } },
+        // finds alone made the table blind to the path that spends MON: a
+        // player who collects a spawn and is paid shows 0 finds and 0 credit,
+        // which is true and reads as "did nothing".
+        _count: { select: { finds: true, spawns: true } },
+        payouts: { select: { status: true, amountMonWei: true } },
       },
     }),
   ]);
@@ -782,6 +796,16 @@ export async function listPlayers(params: {
       creditBalanceWei: weiOf(p.creditBalanceWei),
       createdAt: p.createdAt,
       finds: p._count.finds,
+      spawns: p._count.spawns,
+      // SENT only. A PENDING payout is money promised, not money moved, and
+      // summing the two together is how an operator comes to believe a
+      // treasury is emptier than it is.
+      monPaidWei: p.payouts
+        .filter((x) => x.status === "SENT")
+        .reduce((sum, x) => sum + weiOf(x.amountMonWei), 0n),
+      payoutsWaiting: p.payouts.filter(
+        (x) => x.status === "PENDING" || x.status === "NEEDS_RECONCILIATION",
+      ).length,
     })),
   };
 }

@@ -182,6 +182,10 @@ export async function fetchHint(
     cacheless: body.cacheless === true,
     band: asBand(body.band),
     remaining: num(body.remaining) ?? 0,
+    // Named explicitly. This parser rebuilds the response field by field, so
+    // anything omitted here is dropped with nothing looking broken — the same
+    // trap that silently swallowed isFirstFind.
+    turboLinked: body.turboLinked === true,
   };
 }
 

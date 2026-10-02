@@ -156,7 +156,8 @@ export default function CotaPage() {
   // differed only in skipping the on-chain anchor. Nothing on the row recorded
   // which mode it came from, so the leash history correctly showed real
   // leashes to someone who believed they were practising. The paper-trading
-  // simulator at /cota/practice is the real sandbox and is still linked below.
+  // simulator at /cota/practice still exists but is no longer linked from
+  // anywhere in the product — see the note on the enrol button below.
 
   useEffect(() => {
     let live = true;
@@ -492,26 +493,22 @@ export default function CotaPage() {
           >
             {t("another")}
           </Button>
-          {/* One door now. The secondary link keeps the paper simulator
-              reachable -- it is the only honest "practice" in the product. */}
+          {/* One door. The paper simulator is deliberately NOT linked: offering
+              "try it with fake money" next to a real-money product taught
+              people the two were interchangeable, and a tester's wallet showed
+              "Práctica" while they were looking at live balances. The route
+              still exists for internal use; nothing in the product points at
+              it. */}
           <a
             href="/cota/enroll"
             className="bg-phosphor text-void flex min-h-14 w-full items-center justify-center rounded-2xl px-5 text-lg font-semibold"
           >
             {lang === "es" ? "Operar en vivo →" : "Trade live →"}
           </a>
-          <a
-            href="/cota/practice"
-            className="border-hull-line text-ink-dim flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm"
-          >
-            {lang === "es"
-              ? "O prueba con dinero de mentira"
-              : "Or try it with fake money"}
-          </a>
           <p className="text-ink-faint text-center text-xs">
             {lang === "es"
-              ? "En vivo es para cuentas ya fondeadas con AUSD en Perpl. ¿Nuevo? Usa práctica."
-              : "Live is for accounts already funded with AUSD on Perpl. New? Use practice."}
+              ? "Necesitas AUSD en tu cuenta de Perpl. Te guiamos para fondearla."
+              : "You need AUSD in your Perpl account. We walk you through funding it."}
           </p>
         </Panel>
       ) : (

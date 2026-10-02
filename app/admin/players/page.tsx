@@ -58,6 +58,9 @@ export default async function PlayersPage({
             <Th>State</Th>
             <Th align="right">Finds</Th>
             <Th align="right">Credit (WMON)</Th>
+            <Th align="right">Spawns</Th>
+            <Th align="right">MON paid</Th>
+            <Th align="right">Waiting</Th>
             <Th>Joined</Th>
             <Th>Action</Th>
           </tr>
@@ -103,6 +106,24 @@ export default async function PlayersPage({
               </Td>
               <Td align="right" mono>
                 {formatMon(p.creditBalanceWei)}
+              </Td>
+              {/* Finds and credit alone made this table blind to the path that
+                  actually spends MON. A player who collects a spawn and is paid
+                  showed 0 and 0, which is true and reads as "did nothing". */}
+              <Td align="right" mono>
+                {p.spawns}
+              </Td>
+              <Td align="right" mono>
+                {formatMon(p.monPaidWei)}
+              </Td>
+              <Td align="right" mono>
+                {p.payoutsWaiting > 0 ? (
+                  <Badge tone="warn" title="Every player's FIRST payout waits for review by design — see approval.ts no_prior_position">
+                    {p.payoutsWaiting}
+                  </Badge>
+                ) : (
+                  "—"
+                )}
               </Td>
               <Td mono>{timestamp(p.createdAt)}</Td>
               <Td>

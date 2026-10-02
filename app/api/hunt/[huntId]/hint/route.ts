@@ -32,6 +32,17 @@ export async function POST(
   try {
     const player = await requirePlayer(req);
 
+    // Caches pay TURBO credit, which is a discount on a cohort subscription.
+    // To a player with no TURBO handle linked it buys nothing, so the cache
+    // band is noise on their screen — see BandReadout. requirePlayer does not
+    // carry this, and widening SessionPlayer for one screen would put it on
+    // every auth path.
+    const linked = await prisma.player.findUnique({
+      where: { id: player.id },
+      select: { turboUsername: true },
+    });
+    const turboLinked = (linked?.turboUsername ?? null) !== null;
+
     // Before the eligibility check, before the body is parsed, and before any
     // cache is read. A suspended wallet probing the oracle is exactly the
     // caller who should meet the limiter first.
@@ -137,6 +148,7 @@ export async function POST(
         cacheless,
         remaining: 0,
         band: null,
+        turboLinked,
       });
     }
 
@@ -148,6 +160,7 @@ export async function POST(
       cacheless: false,
       band: hint.band,
       remaining: hint.remaining,
+      turboLinked,
     });
   } catch (e) {
     if (e instanceof AuthError) {

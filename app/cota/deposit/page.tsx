@@ -45,7 +45,12 @@ const T = {
     lede: "Deposita AUSD como colateral. Sin esto no puedes autorizar una clave ni operar. Mínimo 10 AUSD.",
     signIn: "Inicia sesión para depositar",
     wallet: "Tu billetera Cota",
-    ausdBal: "AUSD disponible",
+    ausdBal: "AUSD en tu cartera",
+    atPerpl: "Ya depositado en Perpl",
+    atPerplNone: "Aún no tienes cuenta en Perpl",
+    atPerplFail: "No se pudo leer Perpl ahora",
+    atPerplNote:
+      "Son dos saldos distintos. El de arriba es lo que puedes depositar; el de abajo ya es colateral y no aparece en tu cartera.",
     amount: "AUSD a depositar",
     min: "Mínimo 10 AUSD para abrir la cuenta.",
     notEnough: "No tienes suficiente AUSD. Cambia más MON primero.",
@@ -72,7 +77,12 @@ const T = {
     lede: "Deposit AUSD as collateral. Without this you can't authorize a key or trade. Minimum 10 AUSD.",
     signIn: "Sign in to deposit",
     wallet: "Your Cota wallet",
-    ausdBal: "AUSD available",
+    ausdBal: "AUSD in your wallet",
+    atPerpl: "Already deposited at Perpl",
+    atPerplNone: "No Perpl account yet",
+    atPerplFail: "Could not read Perpl just now",
+    atPerplNote:
+      "These are two different balances. The top one is what you can deposit; the bottom one is already collateral and does not show in your wallet.",
     amount: "AUSD to deposit",
     min: "Minimum 10 AUSD to open the account.",
     notEnough: "Not enough AUSD. Swap more MON first.",
@@ -103,6 +113,11 @@ export default function DepositPage() {
 
   const [ausdInput, setAusdInput] = useState("10");
   const [ausdBalance, setAusdBalance] = useState<bigint | null>(null);
+  // The OTHER balance. Showing only the wallet made "0 AUSD" read as "my money
+  // is gone" to anyone who had already deposited.
+  const [perpl, setPerpl] = useState<
+    { enrolled: boolean; balanceUsd: number | null } | "error" | null
+  >(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [action, setAction] = useState<"create" | "deposit" | null>(null);
@@ -147,6 +162,38 @@ export default function DepositPage() {
       clearInterval(id);
     };
   }, [refreshBalance]);
+
+  // Read once per visit, not polled: collateral only changes when the hunter
+  // deposits or trades, and both of those already refresh the page.
+  useEffect(() => {
+    if (auth.status !== "signed-in") return;
+    let live = true;
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch("/api/cota/account", { signal: ac.signal });
+        if (!live) return;
+        if (!res.ok) {
+          setPerpl("error");
+          return;
+        }
+        const b = (await res.json()) as {
+          enrolled: boolean;
+          account: { balanceUsd: number } | null;
+        };
+        setPerpl({
+          enrolled: b.enrolled,
+          balanceUsd: b.account?.balanceUsd ?? null,
+        });
+      } catch {
+        if (live) setPerpl("error");
+      }
+    })();
+    return () => {
+      live = false;
+      ac.abort();
+    };
+  }, [auth.status]);
 
   const amount = parseAusd(ausdInput);
   const belowMin = amount !== null && amount < MIN_DEPOSIT_6DP;
@@ -232,6 +279,26 @@ export default function DepositPage() {
                 {ausdBalance === null ? "…" : formatAusd(ausdBalance)} AUSD
               </span>
             </div>
+            {/* The second balance. Without it "0 AUSD" reads as "my money is
+                gone" to anyone who has already deposited — their AUSD is
+                collateral at Perpl and never appears in the wallet. */}
+            <div className="text-ink flex justify-between text-sm">
+              <span className="text-ink-dim">{t.atPerpl}</span>
+              <span className="font-mono">
+                {perpl === null
+                  ? "…"
+                  : perpl === "error"
+                    ? t.atPerplFail
+                    : !perpl.enrolled
+                      ? t.atPerplNone
+                      : perpl.balanceUsd === null
+                        ? t.atPerplFail
+                        : `${perpl.balanceUsd.toFixed(2)} AUSD`}
+              </span>
+            </div>
+            <p className="text-ink-faint pt-1 text-xs leading-snug">
+              {t.atPerplNote}
+            </p>
           </Panel>
 
           {phase === "done" && amountDone !== null ? (

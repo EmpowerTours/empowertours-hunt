@@ -20,15 +20,15 @@ const T = {
   es: {
     eyebrow: "Siguiente paso",
     title: "Pon tu MON a trabajar",
-    body: "Opera con una correa que tú pones: marcas el límite y un agente no lo puede cruzar. Practica gratis, sin arriesgar nada.",
-    note: "Práctica: gratis para todos. En vivo: necesitas AUSD.",
+    body: "Opera con una correa que tú pones: marcas el límite y un agente no lo puede cruzar.",
+    note: "Necesitas AUSD en tu cuenta de Perpl para operar.",
     cta: "Abrir Cota",
   },
   en: {
     eyebrow: "Next step",
     title: "Put your MON to work",
-    body: "Trade with a leash you set: you draw the limit and an agent can't cross it. Practice free, risk nothing.",
-    note: "Practice: free for everyone. Live: needs AUSD.",
+    body: "Trade with a leash you set: you draw the limit and an agent can't cross it.",
+    note: "You need AUSD in your Perpl account to trade.",
     cta: "Open Cota",
   },
 } as const;

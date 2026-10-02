@@ -27,6 +27,8 @@ export type HintStatus = "idle" | "loading" | "ok" | "throttled" | "error";
 export interface HintReading {
   band: HintBand | null;
   remaining: number;
+  /** TURBO handle linked. Cache credit is worthless without one. */
+  turboLinked: boolean;
   complete: boolean;
   cacheless: boolean;
   status: HintStatus;
@@ -45,6 +47,9 @@ export function useHint(
   const [remaining, setRemaining] = useState(0);
   const [complete, setComplete] = useState(false);
   const [cacheless, setCacheless] = useState(false);
+  // Undefined until the first reply. The readout stays hidden rather than
+  // flashing a cache band at somebody who may not be able to spend the credit.
+  const [turboLinked, setTurboLinked] = useState(false);
   const [status, setStatus] = useState<HintStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
@@ -139,6 +144,7 @@ export function useHint(
         setRemaining(hint.remaining);
         setComplete(hint.complete);
         setCacheless(hint.cacheless === true);
+        setTurboLinked(hint.turboLinked === true);
         setReadAt(Date.now());
         setStatus("ok");
         setError(null);
@@ -177,6 +183,7 @@ export function useHint(
   }, [enabled, hasFix, huntId, complete, tick]);
 
   return {
+    turboLinked,
     band,
     remaining,
     complete,
