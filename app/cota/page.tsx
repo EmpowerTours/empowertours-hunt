@@ -416,6 +416,16 @@ export default function CotaPage() {
         >
           {lang === "es" ? "Ver mis resultados →" : "See my results →"}
         </a>
+        {/* MON moved. Outside any leash condition for the same reason results
+            are: it counts spot trades too, which need no leash, no Perpl
+            account and no AUSD — so gating it behind the live block would hide
+            it from the hunters most likely to be on it. */}
+        <a
+          href="/cota/leaderboard"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {lang === "es" ? "MON movido esta semana →" : "MON moved this week →"}
+        </a>
       </div>
 
       {/* Spot sits apart from the Perpl ladder, deliberately.

@@ -1704,9 +1704,21 @@ model KuruSwap {
   gasWei   String
   valueWei String
 
-  /// "buy" | "sell". The one field the chain cannot supply — a native-MON buy
-  /// emits no Transfer to the wallet, so direction has to come from the
-  /// client. Treated as a label, never as evidence.
+  /// Native MON that reached the wallet, in wei, as a decimal string — the
+  /// output side of a buy, which emits no Transfer event and so was absent
+  /// from every buy row before this column existed. Decoded from the Kuru
+  /// entrypoint's own swap event; see lib/cota/kuru-history.ts.
+  ///
+  /// NULLABLE ON PURPOSE, and null is not zero. Null means the amount could
+  /// not be established; zero means it was established as nothing, which is
+  /// the ordinary case for a sell and for a revert. A total that cannot tell
+  /// those apart silently under-reports, so callers flag nulls rather than
+  /// adding them in as zero.
+  nativeInWei String?
+
+  /// "buy" | "sell". A LABEL, not evidence, and no longer the only thing that
+  /// knows the direction: nativeInWei above is read off the chain and says
+  /// which way the MON went regardless of what the client claimed.
   side String
 
   /// ERC-20 units that reached the wallet, { tokenAddress: "units" }. Empty on

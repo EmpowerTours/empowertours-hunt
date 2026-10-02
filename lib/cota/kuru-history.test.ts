@@ -1,14 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   KURU_ENTRYPOINT,
+  KURU_SWAP_EVENT,
   NotAKuruTrade,
   crossedOrderBook,
   gasChargedWei,
+  nativeReceived,
+  nativeReceivedFromTrace,
   toRecord,
   tokensReceived,
   type MinimalReceipt,
 } from "./kuru-history";
 import { KURU_MON_USDC_MARKET } from "./kuru";
+import {
+  BUY_ORDER_BOOK,
+  BUY_PAID_ELSEWHERE,
+  BUY_POOL,
+  REVERT,
+  SELL_ORDER_BOOK,
+  SELL_POOL,
+} from "./kuru-history.fixtures";
 
 // ---------------------------------------------------------------------------
 // The fixture is a REAL transaction, not a shape I invented:
@@ -206,5 +217,185 @@ describe("toRecord", () => {
 
   it("lowercases the hash so one trade cannot be stored twice", () => {
     expect(toRecord(HASH.toUpperCase(), WALLET, 0n, REAL).hash).toBe(HASH);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Native MON received — the number a buy never had.
+//
+// Each expected figure below was taken from TWO sources before it was written
+// here: the entrypoint's swap event (what the decoder reads) and a callTracer
+// trace of the same transaction (what it does not). They agreed to the wei in
+// every case. Where only one source could have been checked the test says so.
+// ---------------------------------------------------------------------------
+
+describe("nativeReceived — MON that actually reached the wallet", () => {
+  it("decodes a buy that crossed the order book", () => {
+    // 100.000000 USDC in. Trace of the same tx: 2938583602703400000000 wei to
+    // 0xfe8c49fc…, which is the figure below.
+    expect(
+      nativeReceived(BUY_ORDER_BOOK.receipt.logs, BUY_ORDER_BOOK.receipt.from),
+    ).toBe(2_938_583_602_703_400_000_000n);
+  });
+
+  it("decodes a buy routed to a pool, where the book event is absent", () => {
+    // The whole reason for reading the entrypoint rather than the market: this
+    // transaction never touched the book, so a book-event decoder would report
+    // nothing at all here.
+    expect(crossedOrderBook(BUY_POOL.receipt.logs)).toBe(false);
+    expect(nativeReceived(BUY_POOL.receipt.logs, BUY_POOL.receipt.from)).toBe(
+      95_635_194_247_000_693_887n,
+    );
+  });
+
+  it("credits the recipient in the event, not the sender, when they differ", () => {
+    // 0x23f3d831…9f11 was sent by 0xc066ac5d… and paid out to 0x5458b5ca…. A
+    // trace confirms the direction: the whole amount reached the address named
+    // in the event and nothing reached the sender. Had this been read off the
+    // sender instead, the figure would have been attributed to the wrong wallet.
+    const sender = BUY_PAID_ELSEWHERE.receipt.from;
+    const paid = "0x5458b5ca6a82660bd09924c5371bd379fb4e20cc";
+    expect(sender).not.toBe(paid);
+    expect(nativeReceived(BUY_PAID_ELSEWHERE.receipt.logs, paid)).toBe(
+      29_877_261_360_379_321_582_422n,
+    );
+    // And for the sender it is a KNOWN nought, not an unknown: the event was
+    // there and readable, it simply paid somebody else.
+    expect(nativeReceived(BUY_PAID_ELSEWHERE.receipt.logs, sender)).toBe(0n);
+  });
+
+  it("reports a known zero on a sell, because the output was an ERC-20", () => {
+    for (const f of [SELL_ORDER_BOOK, SELL_POOL]) {
+      expect(nativeReceived(f.receipt.logs, f.receipt.from)).toBe(0n);
+    }
+  });
+
+  it("reports null — not zero — when no swap event is present", () => {
+    // A revert emits nothing at all, so there is no evidence either way. This
+    // is the distinction the nullable column exists for: a zero here would
+    // claim the hunter received nothing, which is a claim, whereas null admits
+    // the amount is unestablished.
+    expect(REVERT.receipt.logs).toHaveLength(0);
+    expect(nativeReceived(REVERT.receipt.logs, REVERT.receipt.from)).toBeNull();
+  });
+
+  it("ignores the same event emitted by a contract that is not the entrypoint", () => {
+    // Anyone can emit any topic from any address. If this matched, a worthless
+    // token could mint MON into our leaderboard for the price of one log.
+    const real = BUY_ORDER_BOOK.receipt.logs.find(
+      (l) => l.address === KURU_ENTRYPOINT && l.topics[0] === KURU_SWAP_EVENT,
+    );
+    expect(real).toBeDefined();
+    const impostor = { ...real!, address: "0x" + "ba".repeat(20) };
+    expect(nativeReceived([impostor], BUY_ORDER_BOOK.receipt.from)).toBeNull();
+  });
+
+  it("is indifferent to the case of the wallet it is asked about", () => {
+    const w = BUY_POOL.receipt.from;
+    expect(
+      nativeReceived(
+        BUY_POOL.receipt.logs,
+        w.toUpperCase().replace("0X", "0x"),
+      ),
+    ).toBe(nativeReceived(BUY_POOL.receipt.logs, w.toLowerCase()));
+  });
+
+  it("refuses truncated event data rather than reading a short word as a small number", () => {
+    const real = BUY_ORDER_BOOK.receipt.logs.find(
+      (l) => l.address === KURU_ENTRYPOINT && l.topics[0] === KURU_SWAP_EVENT,
+    )!;
+    const cut = { ...real, data: real.data.slice(0, 2 + 64 * 3) };
+    expect(() => nativeReceived([cut], BUY_ORDER_BOOK.receipt.from)).toThrow(
+      NotAKuruTrade,
+    );
+  });
+
+  it("sums several legs that each paid the same wallet", () => {
+    const real = BUY_ORDER_BOOK.receipt.logs.find(
+      (l) => l.address === KURU_ENTRYPOINT && l.topics[0] === KURU_SWAP_EVENT,
+    )!;
+    expect(nativeReceived([real, real], BUY_ORDER_BOOK.receipt.from)).toBe(
+      2_938_583_602_703_400_000_000n * 2n,
+    );
+  });
+});
+
+describe("toRecord — the stored row carries the MON figure", () => {
+  it("stores the decoded amount on a buy and leaves the ERC-20 map empty", () => {
+    const r = toRecord(
+      BUY_ORDER_BOOK.hash,
+      BUY_ORDER_BOOK.receipt.from,
+      BUY_ORDER_BOOK.value,
+      BUY_ORDER_BOOK.receipt,
+    );
+    expect(r.nativeInWei).toBe(2_938_583_602_703_400_000_000n);
+    // The old behaviour, unchanged and still the reason this column was needed:
+    // the buy's output is native, so nothing lands in tokensIn.
+    expect(
+      r.tokensIn["0x0000000000000000000000000000000000000000"],
+    ).toBeUndefined();
+  });
+
+  it("stores zero on a revert, which is known rather than unknown", () => {
+    const r = toRecord(
+      REVERT.hash,
+      REVERT.receipt.from,
+      REVERT.value,
+      REVERT.receipt,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.nativeInWei).toBe(0n);
+    // And the row is still worth keeping: it cost the whole gas limit.
+    expect(r.gasWei).toBe(
+      REVERT.receipt.gasUsed * REVERT.receipt.effectiveGasPrice,
+    );
+  });
+
+  it("stores zero on a sell while the USDC still arrives in tokensIn", () => {
+    const r = toRecord(
+      SELL_ORDER_BOOK.hash,
+      SELL_ORDER_BOOK.receipt.from,
+      SELL_ORDER_BOOK.value,
+      SELL_ORDER_BOOK.receipt,
+    );
+    expect(r.nativeInWei).toBe(0n);
+    expect(r.tokensIn[USDC]).toBe(198_992n);
+    expect(r.valueWei).toBe(8_000_000_000_000_000_000n);
+    expect(r.crossedOrderBook).toBe(true);
+  });
+});
+
+describe("nativeReceivedFromTrace — the fallback", () => {
+  it("sums value delivered to the wallet across nested frames", () => {
+    const frame = {
+      to: "0xb3e6778480b2e488385e8205ea05e20060b813cb",
+      value: "0x0",
+      calls: [
+        { to: "0xAAaa".padEnd(42, "0"), value: "0x1" },
+        { to: "0xabc", value: "0xa", calls: [{ to: "0xABC", value: "0x6" }] },
+      ],
+    };
+    expect(nativeReceivedFromTrace(frame, "0xabc")).toBe(16n);
+  });
+
+  it("skips a reverted frame and everything under it", () => {
+    // A frame that threw moved no value, and neither did its children. Counting
+    // them would report MON the wallet never got.
+    const frame = {
+      to: "0x0",
+      calls: [
+        { to: "0xabc", value: "0x5" },
+        {
+          to: "0x0",
+          error: "execution reverted",
+          calls: [{ to: "0xabc", value: "0x63" }],
+        },
+      ],
+    };
+    expect(nativeReceivedFromTrace(frame, "0xabc")).toBe(5n);
+  });
+
+  it("returns zero rather than throwing on a frame with no value or calls", () => {
+    expect(nativeReceivedFromTrace({ to: "0xabc" }, "0xabc")).toBe(0n);
   });
 });

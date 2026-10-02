@@ -46,7 +46,9 @@ export type AuditAction =
   // Delivering a licence the relayer already paid for and failed to send on.
   // It moves an asset and spends gas, so it leaves the same trail as a payout.
   | "editions.sweep.dry"
-  | "editions.sweep.execute";
+  | "editions.sweep.execute"
+  | "cota.kuruBackfill.dry"
+  | "cota.kuruBackfill.execute";
 
 export interface AuditEntry {
   adminId: string;
@@ -59,6 +61,7 @@ export interface AuditEntry {
     | "Zone"
     | "AdminUser"
     | "Session"
+    | "KuruSwap"
     | "Redemption"
     | "EditionClaim";
   targetId: string;

@@ -4,8 +4,10 @@ import { prisma } from "@/lib/db/prisma";
 import { publicClient } from "@/lib/cota/swap";
 import {
   NotAKuruTrade,
+  nativeReceivedFromTrace,
   toRecord,
   type MinimalReceipt,
+  type TraceFrame,
 } from "@/lib/cota/kuru-history";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +30,36 @@ import {
 // ---------------------------------------------------------------------------
 
 const MAX = 50;
+
+/**
+ * Native MON delivered to `wallet`, from a trace, or null if we cannot tell.
+ *
+ * Only reached when the swap event was unreadable, which on current evidence is
+ * never — 865 of 865 successful Kuru transactions in the week to 2 October
+ * carried the event. It exists because "never so far" is not "cannot", and the
+ * alternative to a fallback is writing a zero that reads as "you received
+ * nothing".
+ *
+ * Returns null rather than throwing on ANY failure: an RPC without debug
+ * namespace, a timeout, a shape that is not a callTracer frame. Losing this
+ * number must not lose the row, which still holds the hash, the gas and the
+ * revert flag.
+ */
+async function tracedNativeIn(
+  hash: string,
+  wallet: string,
+): Promise<bigint | null> {
+  try {
+    const frame = (await publicClient().request({
+      method: "debug_traceTransaction",
+      params: [hash, { tracer: "callTracer" }],
+    } as never)) as TraceFrame | null;
+    if (!frame || typeof frame !== "object") return null;
+    return nativeReceivedFromTrace(frame, wallet);
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(req: Request) {
   let body: unknown;
@@ -87,6 +119,12 @@ export async function POST(req: Request) {
     throw err;
   }
 
+  // The event is the source; the trace is only consulted when it said nothing,
+  // because it is a far heavier call. Still null afterwards is stored as null —
+  // unknown, which the reader can flag — and never coerced to zero.
+  const nativeInWei =
+    record.nativeInWei ?? (await tracedNativeIn(record.hash, record.wallet));
+
   try {
     await prisma.kuruSwap.create({
       data: {
@@ -98,6 +136,7 @@ export async function POST(req: Request) {
         // Postgres BIGINT, and JSON cannot carry a bigint at all.
         gasWei: record.gasWei.toString(),
         valueWei: record.valueWei.toString(),
+        nativeInWei: nativeInWei === null ? null : nativeInWei.toString(),
         side,
         tokensIn: Object.fromEntries(
           Object.entries(record.tokensIn).map(([t, u]) => [t, u.toString()]),
@@ -136,6 +175,7 @@ export async function GET(req: Request) {
       side: true,
       gasWei: true,
       valueWei: true,
+      nativeInWei: true,
       tokensIn: true,
       crossedOrderBook: true,
       at: true,
