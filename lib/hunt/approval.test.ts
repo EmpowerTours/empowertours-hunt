@@ -21,6 +21,9 @@ function ctx(over: Partial<AutoApprovalContext> = {}): AutoApprovalContext {
   return {
     amountWei: SPAWN,
     autoApproveMaxWei: 2n * SPAWN,
+    // 0 = the strict gate every existing hunt starts with, so the suite keeps
+    // asserting the old behaviour unless a test opts in.
+    firstPayoutAutoApproveMaxWei: 0n,
     autoApproveDailyCapWei: 100n * SPAWN,
     autoApprovedLast24hWei: 0n,
     attemptFlagged: false,
@@ -66,9 +69,9 @@ describe("decideAutoApproval", () => {
   });
 
   it("releases once a prior position anchors the player", () => {
-    expect(
-      decideAutoApproval(ctx({ hasPriorAcceptedPosition: true })),
-    ).toEqual({ autoApprove: true });
+    expect(decideAutoApproval(ctx({ hasPriorAcceptedPosition: true }))).toEqual(
+      { autoApprove: true },
+    );
   });
 
   it("holds a flagged attempt at any amount", () => {
@@ -198,11 +201,88 @@ describe("sumAutoApprovedLast24hWei", () => {
   });
 });
 
+describe("the first payout, priced rather than walled", () => {
+  // It used to be absolute: every player's first reward waited for an
+  // operator. That is defensible — a first position has no earlier fix to
+  // check movement plausibility against — but the cost landed on every honest
+  // newcomer, and a real tester hit it on a 1 MON spawn.
+
+  it("still holds a first payout when the ceiling is 0", () => {
+    // 0 is the default, so no existing hunt changes by upgrading.
+    const d = decideAutoApproval(
+      ctx({
+        hasPriorAcceptedPosition: false,
+        firstPayoutAutoApproveMaxWei: 0n,
+      }),
+    );
+    expect(d.autoApprove).toBe(false);
+    expect(d.reason).toBe("no_prior_position");
+  });
+
+  it("lets a small first payout through when a ceiling is set", () => {
+    const d = decideAutoApproval(
+      ctx({
+        hasPriorAcceptedPosition: false,
+        amountWei: MON,
+        autoApproveMaxWei: 2n * MON,
+        autoApproveDailyCapWei: 100n * MON,
+        firstPayoutAutoApproveMaxWei: MON,
+      }),
+    );
+    expect(d.autoApprove).toBe(true);
+  });
+
+  it("holds a first payout ABOVE the ceiling, and says why", () => {
+    const d = decideAutoApproval(
+      ctx({
+        hasPriorAcceptedPosition: false,
+        amountWei: MON + 1n,
+        autoApproveMaxWei: 100n * MON,
+        autoApproveDailyCapWei: 1000n * MON,
+        firstPayoutAutoApproveMaxWei: MON,
+      }),
+    );
+    expect(d.autoApprove).toBe(false);
+    expect(d.reason).toBe("no_prior_position");
+  });
+
+  it("is a gate removed, NOT a bypass — every other ceiling still applies", () => {
+    // The danger in relaxing a first-payout rule is that it becomes a hole
+    // somebody walks a large amount through. A first payout under its own
+    // ceiling but over the per-payout cap must still be held.
+    const overCap = decideAutoApproval(
+      ctx({
+        hasPriorAcceptedPosition: false,
+        amountWei: MON,
+        autoApproveMaxWei: MON / 2n,
+        firstPayoutAutoApproveMaxWei: 10n * MON,
+      }),
+    );
+    expect(overCap.autoApprove).toBe(false);
+    expect(overCap.reason).toBe("amount_above_per_payout_cap");
+
+    // Same for a flagged attempt and a suspended player.
+    const flagged = decideAutoApproval(
+      ctx({
+        hasPriorAcceptedPosition: false,
+        amountWei: MON,
+        autoApproveMaxWei: 2n * MON,
+        autoApproveDailyCapWei: 100n * MON,
+        firstPayoutAutoApproveMaxWei: MON,
+        attemptFlagged: true,
+      }),
+    );
+    expect(flagged.autoApprove).toBe(false);
+    expect(flagged.reason).not.toBe("no_prior_position");
+  });
+});
+
 describe("the account-age gate", () => {
   function aged(over: Partial<AutoApprovalContext> = {}): AutoApprovalContext {
     return {
       amountWei: 1n,
       autoApproveMaxWei: 10n,
+      firstPayoutAutoApproveMaxWei: 0n,
       autoApproveDailyCapWei: 100n,
       autoApprovedLast24hWei: 0n,
       attemptFlagged: false,
@@ -245,7 +325,11 @@ describe("the account-age gate", () => {
   it("ranks a flagged attempt above account age", () => {
     // A flagged spoof is the more serious signal and the one worth recording.
     const d = decideAutoApproval(
-      aged({ accountAgeSeconds: 1, minAccountAgeSeconds: 3600, attemptFlagged: true }),
+      aged({
+        accountAgeSeconds: 1,
+        minAccountAgeSeconds: 3600,
+        attemptFlagged: true,
+      }),
     );
     expect(d.autoApprove).toBe(false);
     if (!d.autoApprove) expect(d.reason).toBe("attempt_flagged");

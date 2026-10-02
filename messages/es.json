@@ -256,6 +256,7 @@
   "radar": {
     "ariaComplete": "Radar: se encontraron todos los cachés de esta búsqueda.",
     "ariaNoReading": "Radar: todavía sin lectura de proximidad.",
-    "ariaReading": "Radar: lectura de proximidad {label}. {count, plural, one {# premio} other {# premios}} a la vista."
+    "ariaReading": "Radar: lectura de proximidad {label}. {count, plural, one {# premio} other {# premios}} a la vista.",
+    "ariaInReach": "Radar: estás parado sobre un premio. Recógelo."
   }
 }

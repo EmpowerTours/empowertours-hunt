@@ -502,6 +502,18 @@ model Hunt {
   spawnMinWei Decimal @default(0) @db.Decimal(78, 0)
   spawnMaxWei Decimal @default(0) @db.Decimal(78, 0)
 
+  /// Ceiling under which a player's FIRST payout may auto-approve.
+  ///
+  /// A first position has no earlier fix to check movement plausibility
+  /// against, so it is the cheapest to fake — which is why it used to wait for
+  /// a human unconditionally. The cost of that was paid by every honest new
+  /// player: their first reward, typically one MON, sat until an operator was
+  /// awake. A tester hit exactly that.
+  ///
+  /// So the gate is now priced rather than absolute. 0 keeps the old strict
+  /// behaviour and is the default, so an unconfigured hunt is unchanged.
+  firstPayoutAutoApproveMaxWei Decimal @default(0) @db.Decimal(78, 0)
+
   // Spawns are placed in an annulus around a player's last VERIFIED position,
   // so collecting one always requires real movement.
   spawnMinRadiusM Int @default(80)

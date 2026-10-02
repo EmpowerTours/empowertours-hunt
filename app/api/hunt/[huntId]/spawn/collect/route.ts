@@ -409,7 +409,9 @@ export async function POST(
               });
               const accountAgeSeconds = Math.max(
                 0,
-                Math.floor((now.getTime() - playerRow.createdAt.getTime()) / 1000),
+                Math.floor(
+                  (now.getTime() - playerRow.createdAt.getTime()) / 1000,
+                ),
               );
 
               // Has any position of this player's ever been accepted before
@@ -435,6 +437,9 @@ export async function POST(
                 accountAgeSeconds,
                 minAccountAgeSeconds: hunt.minAccountAgeSeconds,
                 hasPriorAcceptedPosition: priorAccepted > 0,
+                firstPayoutAutoApproveMaxWei: toWei(
+                  hunt.firstPayoutAutoApproveMaxWei,
+                ),
               });
 
               // One payout per spawn — @unique on spawnId is what makes paying the
@@ -488,7 +493,7 @@ export async function POST(
         },
       );
 
-            // Ask for a sweep, do not wait for one. An auto-approved payout is
+      // Ask for a sweep, do not wait for one. An auto-approved payout is
       // APPROVED the moment the transaction above commits, so the send can
       // start now rather than on the next five-minute keeper tick — seconds
       // instead of minutes, which is the difference between a game and a form.
@@ -501,7 +506,7 @@ export async function POST(
         nudgeSweep(MAX_NUDGE_BATCH);
       }
 
-return NextResponse.json({
+      return NextResponse.json({
         collected: true,
         spawnId: spawn.id,
         amountMonWei: amountParam,

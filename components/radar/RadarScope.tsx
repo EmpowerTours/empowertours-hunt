@@ -111,6 +111,32 @@ export function RadarScope({
   const tBand = useTranslations("band");
   const style = bandStyle(complete ? null : band);
   const reducedMotion = usePrefersReducedMotion();
+
+  // STANDING ON COLLECTABLE MON.
+  //
+  // The cache band already drives the whole instrument — at `burning` the
+  // sweep quickens, the rim flutters and everything turns red, which is the
+  // single clearest signal this screen produces. A spawn in reach got a static
+  // ring around one blip and nothing else, so the moment a player is standing
+  // on real money looked quieter than the moment they are near a cache.
+  //
+  // It matters more now that the cache band is hidden from players with no
+  // TURBO handle linked: without this they have no proximity feedback at all.
+  //
+  // The MOTION is borrowed from burning; the COLOUR is not. Red means cache
+  // and green means spawn throughout this product, and swapping that at the
+  // one moment the player must act would teach the wrong thing.
+  const spawnInReach = useMemo(
+    () =>
+      spawns.some(
+        (m) => m.inReach && new Date(m.spawn.expiresAt).getTime() - now > 0,
+      ),
+    [spawns, now],
+  );
+  const SPAWN_REACH_COLOR = "#46ffbe";
+  const URGENT_SWEEP = 1.15;
+  const URGENT_PULSE = 1.2;
+  const URGENT_BREATHE = 1.6;
   // Damped, never stopped. The CSS comment on .scope-sweep says why: a parked
   // scope reads as a crashed app.
   const sweepSeconds = reducedMotion ? 24 : style.sweepSeconds;
@@ -152,21 +178,35 @@ export function RadarScope({
       ? Math.min((fix.accuracyM / rangeMeters) * RIM, RIM)
       : 0;
 
+  // Whichever reading is more urgent wins the motion. Math.min rather than an
+  // override, so a player standing on a spawn AND burning on a cache still
+  // gets the faster of the two rather than the spawn slowing the scope down.
   const vars: CssVars = {
-    "--band": style.color,
-    "--sweep-dur": `${style.sweepSeconds}s`,
-    "--pulse-dur": `${style.pulseSeconds}s`,
-    "--breathe-dur": `${style.breatheSeconds}s`,
+    "--band": spawnInReach ? SPAWN_REACH_COLOR : style.color,
+    "--sweep-dur": `${spawnInReach ? Math.min(style.sweepSeconds, URGENT_SWEEP) : style.sweepSeconds}s`,
+    "--pulse-dur": `${
+      spawnInReach
+        ? style.pulseSeconds > 0
+          ? Math.min(style.pulseSeconds, URGENT_PULSE)
+          : URGENT_PULSE
+        : style.pulseSeconds
+    }s`,
+    "--breathe-dur": `${spawnInReach ? Math.min(style.breatheSeconds, URGENT_BREATHE) : style.breatheSeconds}s`,
   };
 
-  const ariaLabel = complete
-    ? tRadar("ariaComplete")
-    : band === null
-      ? tRadar("ariaNoReading")
-      : tRadar("ariaReading", {
-          label: tBand(BAND_LABEL_KEY[band]),
-          count: spawns.length,
-        });
+  // Said first, because it is the only reading that asks the player to DO
+  // something right now. A screen reader user got the cache band and a spawn
+  // count while standing on collectable MON.
+  const ariaLabel = spawnInReach
+    ? tRadar("ariaInReach")
+    : complete
+      ? tRadar("ariaComplete")
+      : band === null
+        ? tRadar("ariaNoReading")
+        : tRadar("ariaReading", {
+            label: tBand(BAND_LABEL_KEY[band]),
+            count: spawns.length,
+          });
 
   return (
     <svg
@@ -452,13 +492,13 @@ export function RadarScope({
         strokeWidth="1"
         opacity="0.55"
       />
-      {style.alarm && (
+      {(style.alarm || spawnInReach) && (
         <circle
           cx="0"
           cy="0"
           r={RIM + 4}
           fill="none"
-          stroke="#ff3b30"
+          stroke={spawnInReach ? SPAWN_REACH_COLOR : "#ff3b30"}
           strokeWidth="1.6"
           strokeDasharray="6 4"
           className="scope-alarm"
@@ -604,6 +644,7 @@ function SpawnBlip({
           stroke="#46ffbe"
           strokeWidth="1.2"
           opacity="0.95"
+          className="scope-alarm"
         />
       )}
 

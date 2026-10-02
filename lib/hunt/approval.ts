@@ -35,6 +35,11 @@ export interface AutoApprovalContext {
   amountWei: bigint;
   /** Hunt.autoApproveMaxWei — 0 disables auto-approval entirely. */
   autoApproveMaxWei: bigint;
+  /**
+   * Hunt.firstPayoutAutoApproveMaxWei — ceiling under which a player's FIRST
+   * payout may auto-approve. 0 keeps the strict human gate.
+   */
+  firstPayoutAutoApproveMaxWei: bigint;
   /** Hunt.autoApproveDailyCapWei — 0 disables auto-approval entirely. */
   autoApproveDailyCapWei: bigint;
   /** Sum of auto-approved payouts across this hunt in the rolling 24h,
@@ -128,15 +133,35 @@ export function decideAutoApproval(ctx: AutoApprovalContext): ApprovalDecision {
     );
   }
 
-  // First accepted position ever. Unlike the age gate this cannot be waited
-  // out, because it demands a second fix at plausible speed from the first.
-  // Deliberately not configurable: there is no hunt for which paying an
-  // unanchored first position without review is correct.
+  // First accepted position ever. It has no earlier fix to check movement
+  // plausibility against, so it is the cheapest claim to fake.
+  //
+  // This used to be absolute and said so: "deliberately not configurable".
+  // The reasoning was sound and the cost was real — every honest new player's
+  // first reward, typically one MON, waited until an operator was awake, and
+  // a tester hit exactly that wall. So the gate is priced rather than
+  // absolute: small enough and it goes through, anything meaningful still
+  // waits for a human.
+  //
+  // The ceiling is PER HUNT and defaults to 0, which reproduces the old
+  // behaviour exactly, so no existing hunt changes by upgrading.
   if (!ctx.hasPriorAcceptedPosition) {
-    return hold(
-      "no_prior_position",
-      "first accepted position for this player; nothing anchors it, so the payout waits for review",
-    );
+    if (!(ctx.firstPayoutAutoApproveMaxWei > 0n)) {
+      return hold(
+        "no_prior_position",
+        "first accepted position for this player; nothing anchors it, so the payout waits for review",
+      );
+    }
+    if (!(ctx.amountWei <= ctx.firstPayoutAutoApproveMaxWei)) {
+      return hold(
+        "no_prior_position",
+        `first accepted position for this player and ${ctx.amountWei} exceeds the first-payout ceiling ${ctx.firstPayoutAutoApproveMaxWei}`,
+      );
+    }
+    // Falls through to every OTHER ceiling below. A first payout is held to
+    // the same per-payout cap, daily cap, account age and flag checks as any
+    // other — this clause only stops being a wall, it does not become a
+    // bypass.
   }
 
   if (!(ctx.amountWei > 0n)) {

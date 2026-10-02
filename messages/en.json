@@ -256,6 +256,7 @@
   "radar": {
     "ariaComplete": "Radar scope: every cache in this hunt has been found.",
     "ariaNoReading": "Radar scope: no proximity reading yet.",
-    "ariaReading": "Radar scope: proximity reading {label}. {count, plural, one {# spawn} other {# spawns}} in view."
+    "ariaReading": "Radar scope: proximity reading {label}. {count, plural, one {# spawn} other {# spawns}} in view.",
+    "ariaInReach": "Radar scope: you are standing on a reward. Collect it."
   }
 }
