@@ -45,13 +45,13 @@ add TOURS code without being asked.
 
 ## File ownership — do not edit outside your lane
 
-| Lane | Owns |
-|---|---|
-| verifier | `lib/geo/**`, `lib/hunt/validator.ts`, `lib/hunt/proximity.ts`, `lib/hunt/credit.ts`, `app/api/hunt/[huntId]/claim/**`, `app/api/hunt/[huntId]/hint/**` |
-| payout | `lib/hunt/payout.ts`, `lib/hunt/spawn.ts`, `lib/hunt/approval.ts`, `lib/wei.ts`, `app/api/hunt/[huntId]/spawn/**`, `app/api/cron/**` |
-| auth | `lib/auth/**`, `lib/ratelimit.ts`, `proxy.ts`, `app/api/auth/**`, `app/api/register/**` |
-| ui | `app/page.tsx`, `app/layout.tsx`, `app/globals.css`, `app/providers.tsx`, `app/hunt/**` (pages), `components/**`, `next.config.ts`, `postcss.config.mjs`, `app/manifest.ts` |
-| admin | `app/admin/**`, `app/api/admin/**`, `lib/admin/**` |
+| Lane     | Owns                                                                                                                                                                        |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| verifier | `lib/geo/**`, `lib/hunt/validator.ts`, `lib/hunt/proximity.ts`, `lib/hunt/credit.ts`, `app/api/hunt/[huntId]/claim/**`, `app/api/hunt/[huntId]/hint/**`                     |
+| payout   | `lib/hunt/payout.ts`, `lib/hunt/spawn.ts`, `lib/hunt/approval.ts`, `lib/wei.ts`, `app/api/hunt/[huntId]/spawn/**`, `app/api/cron/**`                                        |
+| auth     | `lib/auth/**`, `lib/ratelimit.ts`, `proxy.ts`, `app/api/auth/**`, `app/api/register/**`                                                                                     |
+| ui       | `app/page.tsx`, `app/layout.tsx`, `app/globals.css`, `app/providers.tsx`, `app/hunt/**` (pages), `components/**`, `next.config.ts`, `postcss.config.mjs`, `app/manifest.ts` |
+| admin    | `app/admin/**`, `app/api/admin/**`, `lib/admin/**`                                                                                                                          |
 
 Shared, owned by nobody — propose a change, do not just make one:
 `prisma/schema.prisma`, `package.json`, `AGENTS.md`.
@@ -81,7 +81,11 @@ O(n^2) CPU amplifier). Fail **closed** on a Redis error for money paths.
 
 ```ts
 export type LimitName = "claim" | "hint" | "spawn" | "register" | "admin";
-export interface LimitResult { ok: boolean; remaining: number; resetAt: number; }
+export interface LimitResult {
+  ok: boolean;
+  remaining: number;
+  resetAt: number;
+}
 /** Keyed on both playerId and ip; caller passes both. */
 export function checkLimit(
   name: LimitName,
@@ -93,7 +97,12 @@ export function checkLimit(
 
 ```ts
 export class AuthError extends Error {}
-export interface SessionPlayer { id: string; walletAddress: string; active: boolean; suspendedAt: Date | null; }
+export interface SessionPlayer {
+  id: string;
+  walletAddress: string;
+  active: boolean;
+  suspendedAt: Date | null;
+}
 /** Throws AuthError. Never returns an anonymous-but-allowed caller. */
 export function requirePlayer(req: Request): Promise<SessionPlayer>;
 /** Verifies an EIP-712 signed claim. Returns the recovered lowercased address. */
@@ -145,7 +154,11 @@ ALLOWED_ORIGINS=                # optional but recommended; without it the
 CRON_SECRET=                    # bearer for /api/cron/*
 
 # Editions — findable fcempowertours works. All three or none: a relayer that
-# can buy but not transfer strands licences in the hot wallet.
+# can buy but not transfer strands licences in the hot wallet. That stranding
+# is now RECOVERABLE — see lib/editions/sweep.ts and the admin route
+# /api/admin/editions/sweep, which finds claims that were paid for and never
+# delivered and sends the licence on. Dry by default; it refuses to act on an
+# unknown owner.
 EDITION_RELAYER_PRIVATE_KEY=    # funded hot wallet. Its balance IS the ceiling
 EDITION_SALES_CONTROLLER=       # v3 SalesController
 EDITION_LICENSE_REGISTRY=       # v3 LicenseRegistry; an Edition row naming a

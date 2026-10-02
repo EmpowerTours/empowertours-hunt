@@ -55,23 +55,25 @@ EDITION_CATALOGUE_URL=        # https://art.empowertours.xyz/api/catalogue
 EDITION_GAS_RESERVE_WEI=      # optional; default 1e17 (0.1 MON)
 
 # --- Origins ---
-NEXT_PUBLIC_APP_URL=https://hunt.empowertours.xyz   # no trailing slash
+# NEXT_PUBLIC_APP_URL was here and is read by nothing — removed 2026-10-02.
+# The app derives its origin from the request host (lib/host.ts), which is what
+# makes one deployment serve hunt. and cota. correctly.
 ALLOWED_ORIGINS=              # optional; authoritative when set
 NEXT_PUBLIC_IPFS_GATEWAY=     # optional; has a default
 ```
 
 ### Notes on the ones that bite
 
-| Variable | Why it matters |
-|---|---|
-| `AUTH_SESSION_SECRET` | Under 32 chars, no session can be minted **or** verified. Fails closed both ways. |
-| `ADMIN_SESSION_SECRET` | Unset disables admin auth entirely — nobody can log in. |
+| Variable                  | Why it matters                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AUTH_SESSION_SECRET`     | Under 32 chars, no session can be minted **or** verified. Fails closed both ways.                                                                                                                                                                                                                                                                                                                                                          |
+| `ADMIN_SESSION_SECRET`    | Unset disables admin auth entirely — nobody can log in.                                                                                                                                                                                                                                                                                                                                                                                    |
 | `ADMIN_BOOTSTRAP_ADDRESS` | Promotes exactly one wallet to OWNER so there's a way into a fresh database. It **is** a one-time coupon: `resolveAdmin` creates the row only when `adminUser.count()` is 0, checked inside the same transaction, so once any admin exists this variable can never mint another. It is armed only while the table is EMPTY — which is exactly when removing it locks you out for good. Log in once, confirm the OWNER row, then remove it. |
-| `SPAWN_SEED_SECRET` | Spawn seeds are `HMAC-SHA256(secret, spawnId)`. Unset means the route 503s rather than draw money from a predictable source. **Changing it invalidates the reveal for existing spawns.** |
-| `CRON_SECRET` | Under 16 chars, `/api/cron/*` refuse to run. Must match `secrets.CRON_SECRET` in GitHub. |
-| `EDITION_*` | `relayerConfig()` returns null unless the key, the controller and the registry are all present and well-formed, and the placement route then offers no works rather than crashing. The relayer wallet's balance is the hard ceiling on the whole giveaway, on chain, independent of any app bug. |
-| `EDITION_CATALOGUE_URL` | Read by `readCatalogue()`, and **not** part of `relayerConfig()`, so a deployment can have all three above and still place nothing. Unset means `catalogue_unavailable` — distinct from an empty catalogue on purpose. Point it at `art.empowertours.xyz`: `music.empowertours.xyz` is **NXDOMAIN** as of 2026-09-20 and the host in the comments of `lib/editions/catalogue.ts` is stale. |
-| `EDITION_GAS_RESERVE_WEI` | MON the relayer keeps back from wrapping, so it can still pay for the purchase it just funded. Monad charges the **full gas limit** with no refund — a relayer that wraps its whole balance strands itself. Measured 2026-09-20 at 102 gwei: approve 60k + deposit 60k + purchase 400k + transferFrom 120k ≈ **0.065 MON per sale**, so the 0.1 MON default is one sale of headroom. |
+| `SPAWN_SEED_SECRET`       | Spawn seeds are `HMAC-SHA256(secret, spawnId)`. Unset means the route 503s rather than draw money from a predictable source. **Changing it invalidates the reveal for existing spawns.**                                                                                                                                                                                                                                                   |
+| `CRON_SECRET`             | Under 16 chars, `/api/cron/*` refuse to run. Must match `secrets.CRON_SECRET` in GitHub.                                                                                                                                                                                                                                                                                                                                                   |
+| `EDITION_*`               | `relayerConfig()` returns null unless the key, the controller and the registry are all present and well-formed, and the placement route then offers no works rather than crashing. The relayer wallet's balance is the hard ceiling on the whole giveaway, on chain, independent of any app bug.                                                                                                                                           |
+| `EDITION_CATALOGUE_URL`   | Read by `readCatalogue()`, and **not** part of `relayerConfig()`, so a deployment can have all three above and still place nothing. Unset means `catalogue_unavailable` — distinct from an empty catalogue on purpose. Point it at `art.empowertours.xyz`: `music.empowertours.xyz` is **NXDOMAIN** as of 2026-09-20 and the host in the comments of `lib/editions/catalogue.ts` is stale.                                                 |
+| `EDITION_GAS_RESERVE_WEI` | MON the relayer keeps back from wrapping, so it can still pay for the purchase it just funded. Monad charges the **full gas limit** with no refund — a relayer that wraps its whole balance strands itself. Measured 2026-09-20 at 102 gwei: approve 60k + deposit 60k + purchase 400k + transferFrom 120k ≈ **0.065 MON per sale**, so the 0.1 MON default is one sale of headroom.                                                       |
 
 ### What the relayer wallet has to hold
 
@@ -161,7 +163,7 @@ Go to **`/admin/hunts/<id>/zones`** on a phone, in the village, and walk it:
    Drop a corner at each turn, standing still until the fix settles.
 2. Trace **exclusions** for the river, the highway, private land.
 3. **Leave a margin.** Fixes are accepted down to 60m accuracy. Trace the hull a
-   few paces *inside* the safe edge and hazards a few paces *outside* them.
+   few paces _inside_ the safe edge and hazards a few paces _outside_ them.
    Being generous costs nothing; being exact sends somebody to the riverbank.
 
 The tool refuses a self-intersecting outline, anything under 200 m² (inside GPS
