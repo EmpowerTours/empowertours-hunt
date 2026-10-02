@@ -48,12 +48,12 @@ agent decisions, thirteen orders, four fills, one funded trading account, a
 small group of real players. Small, and every number is real.
 
 **How it sustains itself.** We are a Perpl builder (code 9). The Cota a user
-signs authorises a small, disclosed builder fee of at most 10 bps of volume,
-which Perpl settles to us. We profit from volume we route and never hold a peso
-of anyone's funds.
+signs authorises a small, disclosed builder fee of at most **2 bps** of volume
+(20 per-100k, `lib/cota/enroll.ts`), which Perpl settles to us. We profit from
+volume we route and never hold a peso of anyone's funds.
 
-**Judges:** start at /judge. Seven items work on an empty wallet, including the
-one that matters.
+**Judges:** start at /judge. Eight of its eleven steps work on an empty wallet,
+including the one that matters. Only anchoring, swapping and trading need funds.
 
 ---
 
@@ -75,5 +75,18 @@ one that matters.
 ## Before pasting
 
 Re-read the live numbers first — `/judge/record` is generated from production,
-so leashes, decisions, orders and fills all move. The four figures quoted above
-were true on 2026-09-27.
+so leashes, decisions, orders and fills all move.
+
+**Re-verified against production 2026-10-01 and all four are unchanged:** 18
+leashes signed (9 of them anchored on chain), 354 agent decisions, 13 orders, 4
+fills. 22 players. Twelve EVM chains and 61 distinct assets are offered on the
+deposit address, so "twelve EVM chains and dozens of assets" is exact. The
+judge walkthrough has 11 steps, 8 of which are ungated — an earlier revision
+said seven.
+
+One figure was NOT right and is now corrected: the builder fee ceiling is **2
+bps**, not the 10 bps an earlier revision claimed. `DEFAULT_BUILDER_FEE_PER_100K
+= 20` and the code's own comment reads "20 per_100k = 2 bps". In a description
+whose whole thesis is that the signature is the agent's entire authority,
+overstating the fee that signature authorises is the worst available place to be
+loose — and it is checkable by any judge who opens the file.
