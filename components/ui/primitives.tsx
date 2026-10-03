@@ -167,3 +167,51 @@ export function Note({
 export function SrOnly({ children }: { children: React.ReactNode }) {
   return <span className="sr-only">{children}</span>;
 }
+
+/**
+ * A collapsed section, for detail that must be reachable but must not be the
+ * first thing a newcomer meets.
+ *
+ * Built on <details>, not on a useState toggle, so it works before hydration
+ * and so a screen reader gets the expand/collapse semantics for free. The
+ * summary marker is hidden and replaced with a caret that rotates, because the
+ * platform triangle is tiny and inconsistent across the browsers hunters use.
+ *
+ * NOT for anything that changes what the product may do on your behalf. Hiding
+ * a control behind a disclosure is fine for a market picker or a price book; it
+ * is not fine for a permission, because someone who never opens it cannot know
+ * what they granted.
+ */
+export function Disclosure({
+  title,
+  sub,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  sub?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details
+      className="border-hull-line bg-hull-2/20 group rounded-2xl border"
+      open={defaultOpen}
+    >
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+        <span>
+          <span className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
+            {title}
+          </span>
+          {sub ? (
+            <span className="text-ink-faint mt-0.5 block text-xs">{sub}</span>
+          ) : null}
+        </span>
+        <span className="text-ink-faint font-mono text-xs transition-transform group-open:rotate-90">
+          ▸
+        </span>
+      </summary>
+      <div className="space-y-3 px-4 pt-1 pb-4">{children}</div>
+    </details>
+  );
+}

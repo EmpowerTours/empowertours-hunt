@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
-import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
+import {
+  Button,
+  Disclosure,
+  Note,
+  Panel,
+  Pill,
+} from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { signInAccount, unlockNoteVault } from "@/lib/auth/passkey";
@@ -55,10 +61,8 @@ const T = {
     goSign: "Firmar una correa →",
     leash: "Tu correa",
     market: "Mercado",
-    side: "Lado",
     long: "Largo",
     short: "Corto",
-    notional: "Tamaño (USD)",
     leverage: "Apalancamiento",
     priceTitle: "Precio ahora",
     bid: "Compran a",
@@ -95,7 +99,6 @@ const T = {
     feeNote:
       "Se cobran comisiones de los dos lados (8.9 pb cada uno, medidos en llenados reales). Si la casa cobra menos, te queda más.",
     allowed: "Dentro de tu correa ✓",
-    verdict: "Veredicto de la correa",
     maxN: "Tamaño máx.",
     maxL: "Apalanc. máx.",
     dayLoss: "Pérdida diaria máx.",
@@ -135,6 +138,21 @@ const T = {
     closeDone: "Cerrada ✓",
     closeAccepted: "Aceptada — se anota en la próxima lectura.",
     closeFailed: "No se pudo cerrar",
+    investTitle: "¿Cuánto quieres invertir?",
+    investLede:
+      "Elige hacia dónde crees que va el precio y cuánto quieres poner. Abajo verás qué pasaría si sube o si baja.",
+    dirUp: "Creo que SUBE",
+    dirDown: "Creo que BAJA",
+    custom: "Otra cantidad",
+    capNote: "Tu correa permite hasta",
+    agentSimple: "Que el agente me cuide",
+    agentSimpleOff: "Apagado. Nada se mueve sin ti.",
+    agentSimpleOn: "Encendido:",
+    agentSimpleNote:
+      "Encendido, el agente puede CERRAR una posición abierta por ti — nunca abrir una nueva. Para darle más o menos permiso, abre los ajustes avanzados.",
+    advanced: "Ajustes avanzados",
+    advancedSub:
+      "Mercado, apalancamiento, precio, permisos del agente, notas privadas",
     autoTitle: "Agente autónomo",
     autoLede:
       "Permite que el agente actúe sin ti, dentro de esta misma correa. Firmas el permiso; caduca solo.",
@@ -198,10 +216,8 @@ const T = {
     goSign: "Sign a leash →",
     leash: "Your leash",
     market: "Market",
-    side: "Side",
     long: "Long",
     short: "Short",
-    notional: "Size (USD)",
     leverage: "Leverage",
     priceTitle: "Price now",
     bid: "Buyers at",
@@ -238,7 +254,6 @@ const T = {
     feeNote:
       "Fees are charged on both sides (8.9 bps each, measured off real fills). If the venue charges less, you keep more.",
     allowed: "Within your leash ✓",
-    verdict: "Leash verdict",
     maxN: "Max size",
     maxL: "Max leverage",
     dayLoss: "Max daily loss",
@@ -278,6 +293,20 @@ const T = {
     closeDone: "Closed ✓",
     closeAccepted: "Accepted — it lands in your ledger on the next read.",
     closeFailed: "Could not close",
+    investTitle: "How much do you want to invest?",
+    investLede:
+      "Pick which way you think the price is going and how much to put in. Below you will see what happens if it rises or falls.",
+    dirUp: "I think it RISES",
+    dirDown: "I think it FALLS",
+    custom: "Another amount",
+    capNote: "Your leash allows up to",
+    agentSimple: "Let the agent look after me",
+    agentSimpleOff: "Off. Nothing moves without you.",
+    agentSimpleOn: "On:",
+    agentSimpleNote:
+      "On, the agent may CLOSE an open position for you — never open a new one. To give it more or less than that, open the advanced settings.",
+    advanced: "Advanced settings",
+    advancedSub: "Market, leverage, price, agent permissions, private notes",
     autoTitle: "Autonomous agent",
     autoLede:
       "Let the agent act without you, inside this same leash. You sign the permission; it expires on its own.",
@@ -353,6 +382,22 @@ const FRESH_DAY: DayState = {
  * points. Renders nothing at all rather than a flat line when there is no
  * series — an absent history must never look like a still market.
  */
+/**
+ * The name of each autonomy mode, for the one-line summary under the switch.
+ *
+ * Reads from the same strings the four-mode picker uses, so a mode cannot end
+ * up described one way in the summary and another in the control that sets it.
+ */
+const AUTONOMY_LABEL: Record<
+  "off" | "observe" | "exit_only" | "full",
+  (t: (typeof T)["es"] | (typeof T)["en"]) => string
+> = {
+  off: (t) => t.autoOff,
+  observe: (t) => t.autoObserve,
+  exit_only: (t) => t.autoExit,
+  full: (t) => t.autoFull,
+};
+
 function Sparkline({ closes }: { closes: number[] }) {
   if (closes.length < 2) return null;
   const lo = Math.min(...closes);
@@ -520,6 +565,24 @@ export default function TradePage() {
   }, [bound, market, notional, lev, now]);
 
   const human = (e6: string) => (Number(e6) / 1e6).toString();
+
+  /**
+   * Amounts offered as one-tap chips.
+   *
+   * Filtered to what the signed leash would actually allow, so a chip never
+   * produces a refusal: offering $50 to someone whose leash caps at $25 teaches
+   * them only that the buttons lie. When the cap is below the smallest step the
+   * cap itself is the single chip, which is both the largest and the only
+   * legal amount.
+   */
+  const presets = useMemo(() => {
+    if (!cota) return [];
+    const cap = Number(cota.maxNotionalUsdE6) / 1e6;
+    const under = [1, 5, 10, 25, 50, 100].filter((a) => a <= cap);
+    // Math.floor, not round: rounding up would hand back the refusal this
+    // whole function exists to avoid.
+    return under.length > 0 ? under : [Math.floor(cap * 100) / 100];
+  }, [cota]);
 
   // Kimi proposes; the SAME leash gate judges it. Fills the form from the
   // suggestion — the verdict re-computes from the filled inputs.
@@ -1120,176 +1183,81 @@ export default function TradePage() {
         </Panel>
       ) : (
         <>
-          <Panel className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-ink-dim text-xs tracking-wide uppercase">
-                {t.leash}
-              </p>
-              {cota.anchorTxHash ? (
-                <a
-                  href={`https://monadscan.com/tx/${cota.anchorTxHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] text-[#4ade80] underline"
-                >
-                  {t.anchored} ✓
-                </a>
-              ) : (
-                <Pill color="#a1a1aa">{t.notAnchored}</Pill>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-1 text-sm">
-              <span className="text-ink-dim">{t.market}</span>
-              <span className="text-right font-mono">
-                {cota.markets.join(", ")}
-              </span>
-              <span className="text-ink-dim">{t.maxN}</span>
-              <span className="text-right font-mono">
-                ${human(cota.maxNotionalUsdE6)}
-              </span>
-              <span className="text-ink-dim">{t.maxL}</span>
-              <span className="text-right font-mono">
-                {Number(cota.maxLeverageX100) / 100}×
-              </span>
-              <span className="text-ink-dim">{t.dayLoss}</span>
-              <span className="text-right font-mono">
-                ${human(cota.maxDailyLossUsdE6)}
-              </span>
-              <span className="text-ink-dim">{t.trades}</span>
-              <span className="text-right font-mono">
-                {cota.maxTradesPerDay}
-              </span>
-            </div>
-          </Panel>
+          {/* AMOUNT FIRST, IN PLAIN WORDS.
+              A tester opened the old version of this screen and wrote "y aquí
+              le doy en firmar o qué hago? no sé que significa nada" — and they
+              were right. What they met was a market picker, an order book, a
+              leverage field and ten panels, with the one button that actually
+              does something below all of it, so the only button they could see
+              was the one that revokes their leash.
 
+              So this asks the only two questions a newcomer can answer — which
+              way, and how much — and everything that needs a trader's
+              vocabulary moved into the disclosure at the bottom. Long and short
+              are still named underneath the plain phrasing: the point is to be
+              learnable, not to hide the words they will meet everywhere else. */}
           <Panel className="space-y-3">
-            <label className="text-ink-dim block text-xs tracking-wide uppercase">
-              {t.market}
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {cota.markets.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMarket(m)}
-                  className="rounded-lg border px-3 py-1.5 text-sm font-semibold"
-                  style={{
-                    borderColor: market === m ? "#06b6d4" : "rgba(63,63,70,.4)",
-                    color: market === m ? "#06b6d4" : "#a1a1aa",
-                  }}
-                >
-                  {m}
-                </button>
-              ))}
+            <div>
+              <p className="text-ink font-semibold">{t.investTitle}</p>
+              <p className="text-ink-faint mt-1 text-xs">{t.investLede}</p>
             </div>
 
-            {/* The price. Absent from this form until now, which meant sizing
-                a position in dollars with nothing on screen saying what the
-                thing cost or what spread the round trip would cross. */}
-            <div className="border-hull-line bg-hull-2/40 rounded-xl border p-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
-                  {t.priceTitle}
-                </span>
-                {quote?.history?.changePct != null && (
-                  <span
-                    className={`font-mono text-xs ${
-                      quote.history.changePct >= 0
-                        ? "text-phosphor"
-                        : "text-alert"
-                    }`}
-                  >
-                    {quote.history.changePct >= 0 ? "+" : ""}
-                    {quote.history.changePct.toFixed(2)}% {t.h24}
-                  </span>
-                )}
-              </div>
-
-              {quote === null ? (
-                <p className="text-ink-faint mt-2 text-xs">
-                  {quoteFailed ? t.priceUnknown : "…"}
-                </p>
-              ) : (
-                <>
-                  <Sparkline closes={quote.history?.closes ?? []} />
-                  <dl className="text-ink-dim mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-xs">
-                    <div className="flex justify-between">
-                      <dt>{t.bid}</dt>
-                      <dd className="text-ink">${quote.bidUsd.toFixed(6)}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt>{t.ask}</dt>
-                      <dd className="text-ink">${quote.askUsd.toFixed(6)}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt>{t.mark}</dt>
-                      <dd className="text-ink-faint">
-                        ${quote.markUsd.toFixed(6)}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt>{t.spread}</dt>
-                      <dd className="text-ink">
-                        {quote.spreadBps === null
-                          ? "—"
-                          : `${quote.spreadBps.toFixed(1)} bps`}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p className="text-ink-faint mt-2 text-[11px] leading-snug">
-                    {t.markNote}
-                  </p>
-                </>
-              )}
-            </div>
-
-            <label className="text-ink-dim block text-xs tracking-wide uppercase">
-              {t.side}
-            </label>
             <div className="grid grid-cols-2 gap-2">
               {(["long", "short"] as const).map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => setSide(s)}
-                  className="min-h-11 rounded-xl border-2 text-sm font-semibold"
-                  style={{
-                    borderColor: side === s ? "#06b6d4" : "rgba(63,63,70,.4)",
-                    color: side === s ? "#06b6d4" : "#a1a1aa",
-                  }}
+                  className={`min-h-14 rounded-xl border-2 px-2 text-sm font-semibold ${
+                    side === s
+                      ? "border-phosphor text-phosphor"
+                      : "border-hull-line text-ink-dim"
+                  }`}
                 >
-                  {s === "long" ? t.long : t.short}
+                  {s === "long" ? t.dirUp : t.dirDown}
+                  <span className="mt-0.5 block text-[11px] font-normal opacity-70">
+                    {s === "long" ? t.long : t.short}
+                  </span>
                 </button>
               ))}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-ink-dim block text-xs tracking-wide uppercase">
-                  {t.notional}
-                </label>
-                <input
-                  inputMode="decimal"
-                  value={notional}
-                  onChange={(e) =>
-                    setNotional(e.target.value.replace(/[^0-9.]/g, ""))
-                  }
-                  className="border-hull-line text-ink mt-1 w-full rounded-xl border-2 bg-transparent px-3 py-2 font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-ink-dim block text-xs tracking-wide uppercase">
-                  {t.leverage}
-                </label>
-                <input
-                  inputMode="decimal"
-                  value={lev}
-                  onChange={(e) =>
-                    setLev(e.target.value.replace(/[^0-9.]/g, ""))
-                  }
-                  className="border-hull-line text-ink mt-1 w-full rounded-xl border-2 bg-transparent px-3 py-2 font-mono"
-                />
-              </div>
+            {/* Preset amounts, capped by the leash the hunter already signed.
+                An amount the leash would refuse is not offered as a chip —
+                a tap that produces a refusal teaches nothing except that the
+                product is broken. */}
+            <div className="flex flex-wrap gap-2">
+              {presets.map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => setNotional(String(amt))}
+                  className={`min-h-11 min-w-16 rounded-xl border-2 px-3 font-mono text-sm ${
+                    Number(notional) === amt
+                      ? "border-phosphor text-phosphor"
+                      : "border-hull-line text-ink-dim"
+                  }`}
+                >
+                  ${amt}
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <label className="text-ink-faint block text-[11px] tracking-wide uppercase">
+                {t.custom}
+              </label>
+              <input
+                inputMode="decimal"
+                value={notional}
+                onChange={(e) =>
+                  setNotional(e.target.value.replace(/[^0-9.]/g, ""))
+                }
+                className="border-hull-line text-ink mt-1 w-full rounded-xl border-2 bg-transparent px-3 py-2 font-mono"
+              />
+              <p className="text-ink-faint mt-1 text-[11px]">
+                {t.capNote} ${human(cota.maxNotionalUsdE6)}
+              </p>
             </div>
           </Panel>
 
@@ -1442,204 +1410,39 @@ export default function TradePage() {
             )}
           </Panel>
 
-          <Button
-            tone="ghost"
-            onClick={() => void suggest()}
-            disabled={kimiBusy}
-          >
-            {kimiBusy ? t.suggesting : `✨ ${t.suggest}`}
-          </Button>
-          {kimiNote && (
-            <p className="text-ink-dim text-[12px] italic">“{kimiNote}”</p>
-          )}
-
+          {/* The action, directly under the outcomes it refers to.
+              It used to be the last element on the page, below the leash, the
+              book, the scenarios, the AI suggestion, the agent's four
+              permission modes, the note vault and the open position. The
+              verdict sits inside it rather than in a panel of its own, because
+              "allowed" and "place the order" are one thought. */}
           <Panel className="space-y-2">
-            <p className="text-ink-dim text-xs tracking-wide uppercase">
-              {t.verdict}
-            </p>
-            {decision === null ? (
-              <p className="text-ink-faint text-sm">—</p>
-            ) : decision.ok ? (
+            {decision === null ? null : decision.ok ? (
               <Pill color="#4ade80">{t.allowed}</Pill>
             ) : (
               <Note tone="stop">{refusalText(decision.reason, lang)}</Note>
             )}
-            <p className="text-ink-faint text-[11px]">{t.freshNote}</p>
-          </Panel>
-
-          <Panel className="space-y-3">
-            <div>
-              <p className="text-ink-dim text-xs tracking-wide uppercase">
-                {t.autoTitle}
-              </p>
-              <p className="text-ink-faint mt-1 text-xs">{t.autoLede}</p>
-            </div>
-            {/* Every option carries its own description, because the previous
-                version showed only the description of the mode you were
-                already on — so the only way to learn what "exit only" meant was
-                to SELECT it, and selecting it signs a permission grant.
-                Reading a menu must not change what your agent may do. */}
-            <div className="flex flex-col gap-2">
-              {(
-                [
-                  ["off", t.autoOff, t.autoOffNote],
-                  ["observe", t.autoObserve, t.autoObserveNote],
-                  ["exit_only", t.autoExit, t.autoExitNote],
-                  ["full", t.autoFull, t.autoFullNote],
-                ] as const
-              ).map(([mode, label, note]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  disabled={autoBusy}
-                  onClick={() => void setAutonomyMode(mode)}
-                  className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-2 text-left ${
-                    autonomy === mode ? "border-phosphor" : "border-hull-line"
-                  } disabled:opacity-50`}
-                >
-                  <span
-                    className={`text-sm font-semibold ${
-                      autonomy === mode ? "text-phosphor" : "text-ink-dim"
-                    }`}
-                  >
-                    {label}
-                    {autonomy === mode ? " ·\u00a0on" : ""}
-                  </span>
-                  <span className="text-ink-faint text-xs leading-snug">
-                    {note}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {autonomy !== "off" && autonomyUntil && (
-              <p className="text-ink-faint text-xs">
-                {t.autoExpires}{" "}
-                {new Date(autonomyUntil).toLocaleDateString(
-                  lang === "es" ? "es-MX" : "en-GB",
-                )}
-              </p>
-            )}
-            {autoMsg && (
-              <p className="text-ink-dim text-center text-[12px]">{autoMsg}</p>
-            )}
-
-            <div className="border-hull-line space-y-1 border-t pt-3">
-              <p className="text-ink-dim text-xs tracking-wide uppercase">
-                {t.histTitle}
-              </p>
-              {history.length === 0 ? (
-                <p className="text-ink-faint text-xs">{t.histNone}</p>
-              ) : (
-                <ul className="space-y-1">
-                  {history.map((h) => (
-                    <li
-                      key={h.id}
-                      className="text-ink-dim flex items-baseline justify-between gap-2 font-mono text-[11px]"
-                    >
-                      <span className="text-ink-faint shrink-0">
-                        {new Date(h.at).toLocaleTimeString(
-                          lang === "es" ? "es-MX" : "en-GB",
-                          { hour: "2-digit", minute: "2-digit" },
-                        )}
-                      </span>
-                      <span
-                        className={
-                          h.act === "close"
-                            ? "text-[#4ade80]"
-                            : h.act === "open"
-                              ? "text-phosphor"
-                              : "text-ink-dim"
-                        }
-                      >
-                        {h.act}
-                      </span>
-                      <span className="text-ink-faint grow truncate text-right">
-                        {/* The amount first, because it is the thing worth
-                            reading. A log of "close · take_profit" repeated
-                            forty times is not evidence; a column of figures is
-                            what a hunter can actually judge before deciding to
-                            let the agent press the button. */}
-                        {typeof h.detail?.netUsd === "number" && (
-                          <span
-                            className={
-                              h.detail.netUsd >= 0
-                                ? "text-[#4ade80] mr-2"
-                                : "text-alert mr-2"
-                            }
-                          >
-                            {h.detail.netUsd >= 0 ? "+" : ""}
-                            {h.detail.netUsd.toFixed(4)}
-                            {typeof h.detail.netBps === "number"
-                              ? ` (${h.detail.netBps.toFixed(0)}bps)`
-                              : ""}
-                          </span>
-                        )}
-                        {h.why}
-                        {h.detail?.observed
-                          ? ` · ${t.histObserved}`
-                          : h.dryRun
-                            ? ` · ${t.histDry}`
-                            : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {/* This list is DECISIONS. A decision that opened a position is
-                  not a result, and reading one as the other is the confusion
-                  that left a real closed trade invisible for two weeks. */}
-              <a
-                href="/cota/history"
-                className="text-phosphor block pt-1 text-xs hover:underline"
+            <Button
+              onClick={() => void place()}
+              disabled={
+                placePhase === "placing" ||
+                decision === null ||
+                !decision.ok ||
+                !market
+              }
+            >
+              {placePhase === "placing" ? t.placing : t.place}
+            </Button>
+            {placeMsg && (
+              <p
+                className={`text-center text-[12px] ${
+                  placePhase === "done" ? "text-[#4ade80]" : "text-alert"
+                }`}
               >
-                {t.histResults}
-              </a>
-            </div>
-          </Panel>
-
-          <Panel className="space-y-2">
-            <p className="text-ink-dim text-xs tracking-wide uppercase">
-              {t.noteTitle}
-            </p>
-            <p className="text-ink-faint text-xs">{t.noteLede}</p>
-            {noteKey === null ? (
-              <Button onClick={() => void unlockNotes()} disabled={noteBusy}>
-                {noteBusy ? t.noteUnlocking : t.noteUnlock}
-              </Button>
-            ) : (
-              <>
-                <textarea
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  placeholder={t.notePlaceholder}
-                  rows={4}
-                  className="border-hull-line text-ink w-full rounded-xl border-2 bg-transparent px-3 py-2 text-sm outline-none"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => void saveNote()}
-                    disabled={noteBusy}
-                    className="flex-1"
-                  >
-                    {noteBusy ? t.noteSaving : t.noteSave}
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setNoteText("");
-                    }}
-                    disabled={noteBusy}
-                    className="flex-1"
-                  >
-                    {t.noteClear}
-                  </Button>
-                </div>
-                <Note tone="warn">{t.noteNoRecovery}</Note>
-              </>
+                {placeMsg}
+              </p>
             )}
-            {noteMsg && (
-              <p className="text-ink-dim text-center text-[12px]">{noteMsg}</p>
-            )}
+            <p className="text-ink-faint text-[11px]">{t.freshNote}</p>
           </Panel>
 
           <Panel className="space-y-2">
@@ -1713,39 +1516,400 @@ export default function TradePage() {
             )}
           </Panel>
 
-          <Button
-            onClick={() => void place()}
-            disabled={
-              placePhase === "placing" ||
-              decision === null ||
-              !decision.ok ||
-              !market
-            }
-          >
-            {placePhase === "placing" ? t.placing : t.place}
-          </Button>
-          {placeMsg && (
-            <p
-              className={`text-center text-[12px] ${
-                placePhase === "done" ? "text-[#4ade80]" : "text-alert"
-              }`}
-            >
-              {placeMsg}
+          {/* The agent, as one switch.
+              The four modes still exist and are still reachable, in the
+              disclosure below — but a permission does NOT get hidden behind a
+              disclosure, so the sentence under the switch says in full what
+              turning it on allows: close an open position, never open a new
+              one. Someone who never opens the advanced section still knows
+              exactly what they granted. */}
+          <Panel className="space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-ink text-sm font-semibold">
+                  {t.agentSimple}
+                </p>
+                <p className="text-ink-faint mt-0.5 text-xs">
+                  {autonomy === "off"
+                    ? t.agentSimpleOff
+                    : `${t.agentSimpleOn} ${AUTONOMY_LABEL[autonomy](t)}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autonomy !== "off"}
+                aria-label={t.agentSimple}
+                disabled={autoBusy}
+                onClick={() =>
+                  void setAutonomyMode(autonomy === "off" ? "exit_only" : "off")
+                }
+                className={`relative h-7 w-12 shrink-0 rounded-full border-2 transition-colors disabled:opacity-50 ${
+                  autonomy === "off"
+                    ? "border-hull-line bg-transparent"
+                    : "border-phosphor bg-phosphor/20"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full transition-all ${
+                    autonomy === "off"
+                      ? "bg-ink-faint left-0.5"
+                      : "bg-phosphor left-[1.375rem]"
+                  }`}
+                />
+              </button>
+            </div>
+            <p className="text-ink-faint text-[11px] leading-snug">
+              {t.agentSimpleNote}
             </p>
-          )}
-          {unreconciled && (
-            <>
-              <p className="text-ink-dim text-[12px]">{t.reconcileNote}</p>
-              <Button onClick={() => void reconcile()} disabled={reconBusy}>
-                {reconBusy ? t.reconciling : t.reconcile}
-              </Button>
-            </>
-          )}
-          {forwardingOff && (
-            <Button onClick={() => void enableForwarding()} disabled={fwdBusy}>
-              {fwdBusy ? t.fwdFixing : t.fwdFix}
+            {autoMsg && (
+              <p className="text-ink-dim text-center text-[12px]">{autoMsg}</p>
+            )}
+          </Panel>
+
+          <Disclosure title={t.advanced} sub={t.advancedSub}>
+            <Panel className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-ink-dim text-xs tracking-wide uppercase">
+                  {t.leash}
+                </p>
+                {cota.anchorTxHash ? (
+                  <a
+                    href={`https://monadscan.com/tx/${cota.anchorTxHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-[#4ade80] underline"
+                  >
+                    {t.anchored} ✓
+                  </a>
+                ) : (
+                  <Pill color="#a1a1aa">{t.notAnchored}</Pill>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1 text-sm">
+                <span className="text-ink-dim">{t.market}</span>
+                <span className="text-right font-mono">
+                  {cota.markets.join(", ")}
+                </span>
+                <span className="text-ink-dim">{t.maxN}</span>
+                <span className="text-right font-mono">
+                  ${human(cota.maxNotionalUsdE6)}
+                </span>
+                <span className="text-ink-dim">{t.maxL}</span>
+                <span className="text-right font-mono">
+                  {Number(cota.maxLeverageX100) / 100}×
+                </span>
+                <span className="text-ink-dim">{t.dayLoss}</span>
+                <span className="text-right font-mono">
+                  ${human(cota.maxDailyLossUsdE6)}
+                </span>
+                <span className="text-ink-dim">{t.trades}</span>
+                <span className="text-right font-mono">
+                  {cota.maxTradesPerDay}
+                </span>
+              </div>
+            </Panel>
+
+            <label className="text-ink-dim block text-xs tracking-wide uppercase">
+              {t.market}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {cota.markets.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMarket(m)}
+                  className="rounded-lg border px-3 py-1.5 text-sm font-semibold"
+                  style={{
+                    borderColor: market === m ? "#06b6d4" : "rgba(63,63,70,.4)",
+                    color: market === m ? "#06b6d4" : "#a1a1aa",
+                  }}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+
+            {/* The price. Absent from this form until now, which meant sizing
+                  a position in dollars with nothing on screen saying what the
+                  thing cost or what spread the round trip would cross. */}
+            <div className="border-hull-line bg-hull-2/40 rounded-xl border p-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
+                  {t.priceTitle}
+                </span>
+                {quote?.history?.changePct != null && (
+                  <span
+                    className={`font-mono text-xs ${
+                      quote.history.changePct >= 0
+                        ? "text-phosphor"
+                        : "text-alert"
+                    }`}
+                  >
+                    {quote.history.changePct >= 0 ? "+" : ""}
+                    {quote.history.changePct.toFixed(2)}% {t.h24}
+                  </span>
+                )}
+              </div>
+
+              {quote === null ? (
+                <p className="text-ink-faint mt-2 text-xs">
+                  {quoteFailed ? t.priceUnknown : "…"}
+                </p>
+              ) : (
+                <>
+                  <Sparkline closes={quote.history?.closes ?? []} />
+                  <dl className="text-ink-dim mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-xs">
+                    <div className="flex justify-between">
+                      <dt>{t.bid}</dt>
+                      <dd className="text-ink">${quote.bidUsd.toFixed(6)}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>{t.ask}</dt>
+                      <dd className="text-ink">${quote.askUsd.toFixed(6)}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>{t.mark}</dt>
+                      <dd className="text-ink-faint">
+                        ${quote.markUsd.toFixed(6)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>{t.spread}</dt>
+                      <dd className="text-ink">
+                        {quote.spreadBps === null
+                          ? "—"
+                          : `${quote.spreadBps.toFixed(1)} bps`}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="text-ink-faint mt-2 text-[11px] leading-snug">
+                    {t.markNote}
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div>
+              <label className="text-ink-dim block text-xs tracking-wide uppercase">
+                {t.leverage}
+              </label>
+              <input
+                inputMode="decimal"
+                value={lev}
+                onChange={(e) => setLev(e.target.value.replace(/[^0-9.]/g, ""))}
+                className="border-hull-line text-ink mt-1 w-full rounded-xl border-2 bg-transparent px-3 py-2 font-mono"
+              />
+            </div>
+
+            <Button
+              tone="ghost"
+              onClick={() => void suggest()}
+              disabled={kimiBusy}
+            >
+              {kimiBusy ? t.suggesting : `✨ ${t.suggest}`}
             </Button>
-          )}
+            {kimiNote && (
+              <p className="text-ink-dim text-[12px] italic">“{kimiNote}”</p>
+            )}
+
+            <Panel className="space-y-3">
+              <div>
+                <p className="text-ink-dim text-xs tracking-wide uppercase">
+                  {t.autoTitle}
+                </p>
+                <p className="text-ink-faint mt-1 text-xs">{t.autoLede}</p>
+              </div>
+              {/* Every option carries its own description, because the previous
+                  version showed only the description of the mode you were
+                  already on — so the only way to learn what "exit only" meant was
+                  to SELECT it, and selecting it signs a permission grant.
+                  Reading a menu must not change what your agent may do. */}
+              <div className="flex flex-col gap-2">
+                {(
+                  [
+                    ["off", t.autoOff, t.autoOffNote],
+                    ["observe", t.autoObserve, t.autoObserveNote],
+                    ["exit_only", t.autoExit, t.autoExitNote],
+                    ["full", t.autoFull, t.autoFullNote],
+                  ] as const
+                ).map(([mode, label, note]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={autoBusy}
+                    onClick={() => void setAutonomyMode(mode)}
+                    className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-2 text-left ${
+                      autonomy === mode ? "border-phosphor" : "border-hull-line"
+                    } disabled:opacity-50`}
+                  >
+                    <span
+                      className={`text-sm font-semibold ${
+                        autonomy === mode ? "text-phosphor" : "text-ink-dim"
+                      }`}
+                    >
+                      {label}
+                      {autonomy === mode ? " ·\u00a0on" : ""}
+                    </span>
+                    <span className="text-ink-faint text-xs leading-snug">
+                      {note}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {autonomy !== "off" && autonomyUntil && (
+                <p className="text-ink-faint text-xs">
+                  {t.autoExpires}{" "}
+                  {new Date(autonomyUntil).toLocaleDateString(
+                    lang === "es" ? "es-MX" : "en-GB",
+                  )}
+                </p>
+              )}
+              {autoMsg && (
+                <p className="text-ink-dim text-center text-[12px]">
+                  {autoMsg}
+                </p>
+              )}
+
+              <div className="border-hull-line space-y-1 border-t pt-3">
+                <p className="text-ink-dim text-xs tracking-wide uppercase">
+                  {t.histTitle}
+                </p>
+                {history.length === 0 ? (
+                  <p className="text-ink-faint text-xs">{t.histNone}</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {history.map((h) => (
+                      <li
+                        key={h.id}
+                        className="text-ink-dim flex items-baseline justify-between gap-2 font-mono text-[11px]"
+                      >
+                        <span className="text-ink-faint shrink-0">
+                          {new Date(h.at).toLocaleTimeString(
+                            lang === "es" ? "es-MX" : "en-GB",
+                            { hour: "2-digit", minute: "2-digit" },
+                          )}
+                        </span>
+                        <span
+                          className={
+                            h.act === "close"
+                              ? "text-[#4ade80]"
+                              : h.act === "open"
+                                ? "text-phosphor"
+                                : "text-ink-dim"
+                          }
+                        >
+                          {h.act}
+                        </span>
+                        <span className="text-ink-faint grow truncate text-right">
+                          {/* The amount first, because it is the thing worth
+                              reading. A log of "close · take_profit" repeated
+                              forty times is not evidence; a column of figures is
+                              what a hunter can actually judge before deciding to
+                              let the agent press the button. */}
+                          {typeof h.detail?.netUsd === "number" && (
+                            <span
+                              className={
+                                h.detail.netUsd >= 0
+                                  ? "text-[#4ade80] mr-2"
+                                  : "text-alert mr-2"
+                              }
+                            >
+                              {h.detail.netUsd >= 0 ? "+" : ""}
+                              {h.detail.netUsd.toFixed(4)}
+                              {typeof h.detail.netBps === "number"
+                                ? ` (${h.detail.netBps.toFixed(0)}bps)`
+                                : ""}
+                            </span>
+                          )}
+                          {h.why}
+                          {h.detail?.observed
+                            ? ` · ${t.histObserved}`
+                            : h.dryRun
+                              ? ` · ${t.histDry}`
+                              : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {/* This list is DECISIONS. A decision that opened a position is
+                    not a result, and reading one as the other is the confusion
+                    that left a real closed trade invisible for two weeks. */}
+                <a
+                  href="/cota/history"
+                  className="text-phosphor block pt-1 text-xs hover:underline"
+                >
+                  {t.histResults}
+                </a>
+              </div>
+            </Panel>
+
+            <Panel className="space-y-2">
+              <p className="text-ink-dim text-xs tracking-wide uppercase">
+                {t.noteTitle}
+              </p>
+              <p className="text-ink-faint text-xs">{t.noteLede}</p>
+              {noteKey === null ? (
+                <Button onClick={() => void unlockNotes()} disabled={noteBusy}>
+                  {noteBusy ? t.noteUnlocking : t.noteUnlock}
+                </Button>
+              ) : (
+                <>
+                  <textarea
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder={t.notePlaceholder}
+                    rows={4}
+                    className="border-hull-line text-ink w-full rounded-xl border-2 bg-transparent px-3 py-2 text-sm outline-none"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => void saveNote()}
+                      disabled={noteBusy}
+                      className="flex-1"
+                    >
+                      {noteBusy ? t.noteSaving : t.noteSave}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setNoteText("");
+                      }}
+                      disabled={noteBusy}
+                      className="flex-1"
+                    >
+                      {t.noteClear}
+                    </Button>
+                  </div>
+                  <Note tone="warn">{t.noteNoRecovery}</Note>
+                </>
+              )}
+              {noteMsg && (
+                <p className="text-ink-dim text-center text-[12px]">
+                  {noteMsg}
+                </p>
+              )}
+            </Panel>
+
+            {unreconciled && (
+              <>
+                <p className="text-ink-dim text-[12px]">{t.reconcileNote}</p>
+                <Button onClick={() => void reconcile()} disabled={reconBusy}>
+                  {reconBusy ? t.reconciling : t.reconcile}
+                </Button>
+              </>
+            )}
+            {forwardingOff && (
+              <Button
+                onClick={() => void enableForwarding()}
+                disabled={fwdBusy}
+              >
+                {fwdBusy ? t.fwdFixing : t.fwdFix}
+              </Button>
+            )}
+          </Disclosure>
+
           {/* Withdrawing the leash. Two taps, because it cannot be undone. */}
           {cota && (
             <div className="mt-6 border-t border-white/10 pt-4">
