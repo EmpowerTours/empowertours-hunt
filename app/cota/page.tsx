@@ -681,11 +681,24 @@ export default function CotaPage() {
         </>
       )}
 
+      {/* Past leashes, folded. Worth keeping — a hunter checking what they
+          authorised, and a judge checking the same, both need it — but it is a
+          record, not a next action, and it was rendering in full on the front
+          of the page under the one button that replaced the need to read it. */}
       {auth.status === "signed-in" && (
-        <LeashHistory
-          lang={lang === "es" ? "es" : "en"}
-          refreshKey={signedDigest}
-        />
+        <Disclosure
+          title={lang === "es" ? "Tus correas" : "Your leashes"}
+          sub={
+            lang === "es"
+              ? "Lo que has firmado, y lo que cada una permite"
+              : "What you have signed, and what each one allows"
+          }
+        >
+          <LeashHistory
+            lang={lang === "es" ? "es" : "en"}
+            refreshKey={signedDigest}
+          />
+        </Disclosure>
       )}
 
       {/* Always here, not only after a failure.
