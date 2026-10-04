@@ -123,14 +123,20 @@ export function strandedAfter(
       : "The swap did go through, so you are holding AUSD in your wallet. It was the deposit to Perpl that failed — your money is safe, try the deposit again.";
   }
   if (result.failedAt === "swap") {
-    // Does NOT claim the gas was spent. Kuru's send path simulates with
-    // eth_call before signing anything, so most failures here cost nothing at
-    // all — and telling someone they paid for a failure they did not pay for is
-    // its own small dishonesty. It cannot know which happened, so it says what
-    // is certain: the MON did not move.
+    // THE SWAP IS TWO LEGS AND THE FIRST ONE MAY HAVE LANDED.
+    //
+    // This used to say "nothing was swapped, your MON is all still in your
+    // wallet". It said that to someone whose first leg had just sold 1,414 MON
+    // — eighty per cent of everything they held — for USDC, and only the
+    // second leg failed. The step reports as "swap" either way, so the message
+    // asserted something it had no way to know and happened to be as wrong as
+    // it could be, on the subject of their money.
+    //
+    // It now describes both possibilities and names the screen that settles it,
+    // because a wallet balance is the one source that cannot be mistaken.
     return es
-      ? "No se cambió nada: tu MON sigue completo en tu cartera. Si la operación llegó a enviarse, sólo se gastó su gas."
-      : "Nothing was swapped — your MON is all still in your wallet. If a transaction was actually sent, only its gas was spent.";
+      ? "El cambio se hace en dos pasos. Si el primero alcanzó a ejecutarse, tu MON ya se vendió y ahora tienes USDC; si no, tu MON sigue intacto. Revisa tu saldo en Contado antes de volver a intentar."
+      : "The swap runs in two legs. If the first one went through, your MON has already been sold and you are holding USDC; if it did not, your MON is untouched. Check your balance on the Spot screen before trying again.";
   }
   if (result.failedAt === "leash" || result.failedAt === "trade") {
     return es

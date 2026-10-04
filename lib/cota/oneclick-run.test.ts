@@ -115,7 +115,13 @@ describe("strandedAfter — where the money actually is", () => {
       }),
       explain,
     );
-    expect(strandedAfter(out, "en")).toMatch(/still in your wallet/i);
+    // Must NOT assert the MON is safe: the swap is two legs and the first may
+    // have landed. It said "nothing was swapped" to someone who had just sold
+    // 1,414 MON in leg 1.
+    const msg = strandedAfter(out, "en") ?? "";
+    expect(msg).toMatch(/two legs/i);
+    expect(msg).not.toMatch(/nothing was swapped/i);
+    expect(msg).toMatch(/check your balance/i);
   });
 
   it("says the collateral is already at Perpl when only the trade failed", async () => {

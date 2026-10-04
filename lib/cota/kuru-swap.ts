@@ -138,12 +138,28 @@ async function quoteThatExecutes(args: {
   const attempts = args.attempts ?? 4;
   let last: unknown;
   for (let i = 0; i < attempts; i++) {
+    // EACH RETRY ASKS FOR SLIGHTLY LESS, which the previous version did not —
+    // it re-sent the identical amount four times, so the one failure it could
+    // never recover from was the one that actually happened.
+    //
+    // Kuru can return a transaction that spends MORE than the amount quoted
+    // for. Asked to swap 47.337660 USDC — the exact balance, measured from the
+    // chain after leg 1 — it built calldata spending 47.403196, about 0.138%
+    // over. The wallet did not hold that, so the simulation reverted, four
+    // identical retries reverted the same way, and someone was left holding
+    // USDC after selling 1,414 MON for it.
+    //
+    // Shrinking by half a percent per attempt costs the hunter a few cents of
+    // unconverted dust in the worst case and is the difference between the
+    // swap completing and not. The leftover stays theirs.
+    const amount =
+      i === 0 ? args.amount : (args.amount * BigInt(1000 - i * 5)) / 1000n;
     const q = await kuruQuote({
       token: args.token,
       userAddress: args.account.address,
       tokenIn: args.tokenIn,
       tokenOut: args.tokenOut,
-      amount: args.amount,
+      amount,
     });
     try {
       // The simulation IS the check. Monad charges the full gas limit on a
