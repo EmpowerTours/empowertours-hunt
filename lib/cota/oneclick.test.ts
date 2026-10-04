@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ausdLabel,
+  monToYieldAusd,
   monForAusd,
   monLabel,
   planOneClick,
@@ -118,9 +119,13 @@ describe("planOneClick — the hunter who just collected one spawn", () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.steps).toEqual(["swap", "deposit", "leash", "trade"]);
-      expect(r.depositAusd6).toBe(TEN_DOLLARS);
-      expect(r.tradeAusd6).toBe(TEN_DOLLARS);
-      expect(r.swapMonWei).toBeGreaterThan(0n);
+      // The WHOLE wallet goes in, not just enough to clear Perpl's floor.
+      // "Put my MON to work" means the MON, so 300 MON becomes ~$10.12 of
+      // collateral rather than exactly $10 with the rest left behind.
+      expect(r.depositAusd6).toBeGreaterThan(TEN_DOLLARS);
+      expect(r.tradeAusd6).toBe(r.depositAusd6);
+      // Everything except the gas it had to keep back.
+      expect(r.swapMonWei).toBe(300n * WEI - GAS);
     }
   });
 });
@@ -133,10 +138,11 @@ describe("planOneClick — skipping what is already done", () => {
     );
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.steps).toEqual(["deposit", "leash", "trade"]);
-      expect(r.swapMonWei).toBe(0n);
-      // Only gas is needed in MON now, so 1 MON is plenty.
-      expect(r.depositAusd6).toBe(TEN_DOLLARS);
+      // The spare MON is sold too — it is worth 2.9 cents against half a cent
+      // of gas, so selling it leaves the hunter better off, which is the test
+      // that decides. Only MON worth LESS than the gas is left alone.
+      expect(r.steps).toEqual(["swap", "deposit", "leash", "trade"]);
+      expect(r.depositAusd6).toBeGreaterThan(TEN_DOLLARS);
     }
   });
 
@@ -192,23 +198,28 @@ describe("planOneClick — Perpl's floor is not a suggestion", () => {
     );
     expect(funded.ok).toBe(true);
     if (funded.ok) {
-      expect(funded.depositAusd6).toBe(TEN_DOLLARS);
-      expect(funded.tradeAusd6).toBe(18_000_000n);
+      // At least the floor, and in fact the whole 400 MON wallet.
+      expect(funded.depositAusd6).toBeGreaterThanOrEqual(TEN_DOLLARS);
+      expect(funded.tradeAusd6).toBe(8_000_000n + funded.depositAusd6);
     }
   });
 });
 
 describe("planOneClick — gas is reserved, not borrowed from the swap", () => {
   it("adds the reserve on top of the swap rather than hoping for change", () => {
-    const need = monForAusd(TEN_DOLLARS, MON_USD, 100n);
+    // The inverse of the conversion the planner checks against, not
+    // monForAusd — the two round opposite ways and a round trip lands short.
+    const need = monToYieldAusd(TEN_DOLLARS, MON_USD, 100n);
     // Exactly the swap amount and not a wei more: there is nothing left to pay
     // gas with, so the plan must refuse rather than strand them mid-sequence.
     const justSwap = planOneClick({ ...empty, walletMonWei: need }, base);
+    // Exactly the swap amount leaves nothing for gas, so after the reserve is
+    // taken off there is no longer enough to reach Perpl's floor.
     expect(justSwap.ok).toBe(false);
-    if (!justSwap.ok) expect(justSwap.shortfallMonWei).toBe(GAS);
 
     const withGas = planOneClick({ ...empty, walletMonWei: need + GAS }, base);
     expect(withGas.ok).toBe(true);
+    if (withGas.ok) expect(withGas.swapMonWei).toBe(need);
   });
 
   it("still demands gas when no swap is needed, because deposit costs gas too", () => {
@@ -297,7 +308,9 @@ describe("planOneClick — the order must fit under the leash governing it", () 
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.tradeAusd6).toBe(50_000_000n);
+      // The wallet is deployed on top of the $50 already at the venue, so the
+      // collateral grows — and the ORDER is still pinned to the $20 ceiling.
+      expect(r.tradeAusd6).toBeGreaterThan(50_000_000n);
       expect(r.orderNotional6).toBe(20_000_000n);
     }
   });
@@ -309,8 +322,12 @@ describe("planOneClick — the order must fit under the leash governing it", () 
       leashMaxNotional6: 20_000_000n,
     });
     expect(r.ok).toBe(true);
-    // The real case: $10.98 at Perpl under a $20 leash goes out whole.
-    if (r.ok) expect(r.orderNotional6).toBe(10_980_000n);
+    if (r.ok) {
+      // 400 MON on top of $10.98 clears the $20 ceiling, so the order is
+      // clamped to it rather than to the collateral.
+      expect(r.tradeAusd6).toBeGreaterThan(20_000_000n);
+      expect(r.orderNotional6).toBe(20_000_000n);
+    }
   });
 
   it("sizes against the leash the press is ABOUT to sign when none is live", () => {
@@ -335,5 +352,68 @@ describe("planOneClick — the order must fit under the leash governing it", () 
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("below_min_order");
+  });
+});
+
+describe("the shortfall must be a number that actually works", () => {
+  it("lets a hunter through who comes back with exactly what they were told", () => {
+    // The bug this guards: the shortfall was computed with monForAusd, which
+    // ADDS the slippage allowance, while the sufficiency check uses ausdForMon,
+    // which SUBTRACTS it. A hunter told "you need 295 MON" would return with
+    // 295 and be refused again, for a reason nothing on screen could explain.
+    const start = { ...empty, walletMonWei: 5n * WEI };
+    const first = planOneClick(start, base);
+    expect(first.ok).toBe(false);
+    if (first.ok) return;
+
+    // Exactly what they were asked for, and not a wei more.
+    const after = planOneClick(
+      { ...start, walletMonWei: start.walletMonWei + first.shortfallMonWei },
+      base,
+    );
+    expect(after.ok).toBe(true);
+  });
+
+  it("holds for a range of starting balances and prices", () => {
+    for (const price of [0.034098, 0.02, 0.1, 1.5]) {
+      for (const start of [0n, WEI, 50n * WEI, 200n * WEI]) {
+        const c = { ...base, monUsd: price };
+        const r = planOneClick({ ...empty, walletMonWei: start }, c);
+        if (r.ok) continue;
+        if (r.reason !== "short") continue;
+        const again = planOneClick(
+          { ...empty, walletMonWei: start + r.shortfallMonWei },
+          c,
+        );
+        expect(
+          again.ok,
+          `price ${price}, start ${start}: told to add ${r.shortfallMonWei} and still refused`,
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+describe("planOneClick — dust is left alone", () => {
+  it("does not sell MON worth less than the gas it costs to sell", () => {
+    // Enough AUSD to deposit without touching the MON, and MON worth less than
+    // the reserve. Selling it would make the hunter poorer in exchange for a
+    // larger number on a screen — on Monad especially, where the whole gas
+    // limit is charged whether the call needed it or not.
+    const r = planOneClick(
+      {
+        // Enough to cover the gas, plus a sliver of MON worth less than it.
+        walletMonWei: GAS + GAS / 4n,
+        walletAusd6: 12_000_000n,
+        perplAusd6: 0n,
+      },
+      base,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.steps).not.toContain("swap");
+      expect(r.swapMonWei).toBe(0n);
+      expect(r.depositAusd6).toBe(12_000_000n);
+    }
   });
 });

@@ -153,6 +153,58 @@ export function monForAusd(
 }
 
 /**
+ * AUSD a given amount of MON is worth, 6dp, after the slippage allowance.
+ *
+ * The inverse of monForAusd and rounded the OTHER way — down. That asymmetry is
+ * deliberate: monForAusd decides how much to spend and must not come up short,
+ * while this one estimates what will arrive and must not promise more than it
+ * delivers. Rounding both up would let the plan deposit a figure the swap never
+ * produced.
+ */
+export function ausdForMon(
+  monWei: bigint,
+  monUsd: number,
+  slippageBps: bigint,
+): bigint {
+  if (!(monUsd > 0) || !Number.isFinite(monUsd)) {
+    throw new RangeError("monUsd must be a positive finite price");
+  }
+  const priceE6 = BigInt(Math.floor(monUsd * 1e6));
+  if (priceE6 <= 0n) return 0n;
+  const gross = (monWei * priceE6) / WEI;
+  return (gross * (10_000n - slippageBps)) / 10_000n;
+}
+
+/**
+ * The MON that must be SPENDABLE for ausdForMon to yield at least `ausd6`.
+ *
+ * The exact inverse of ausdForMon, rounded up — and it has to be, because the
+ * figure it produces is what a hunter is told to go and earn. monForAusd is NOT
+ * interchangeable here: it adds the slippage allowance where ausdForMon
+ * subtracts it, so a round trip through the two lands under the target. Using
+ * it to report a shortfall would tell someone they needed 295 MON, and when
+ * they came back with exactly 295 the button would refuse them again, for a
+ * reason no part of the screen could explain.
+ */
+export function monToYieldAusd(
+  ausd6: bigint,
+  monUsd: number,
+  slippageBps: bigint,
+): bigint {
+  if (!(monUsd > 0) || !Number.isFinite(monUsd)) {
+    throw new RangeError("monUsd must be a positive finite price");
+  }
+  const priceE6 = BigInt(Math.floor(monUsd * 1e6));
+  if (priceE6 <= 0n) throw new RangeError("monUsd rounds to zero");
+  const bps = 10_000n - slippageBps;
+  if (bps <= 0n) throw new RangeError("slippage cannot be 100% or more");
+  // Undo the slippage haircut, then the price, ceiling at every division so the
+  // answer is never a wei short of sufficient.
+  const gross = (ausd6 * 10_000n + bps - 1n) / bps;
+  return (gross * WEI + priceE6 - 1n) / priceE6;
+}
+
+/**
  * What one press should do.
  *
  * Order is fixed and each step is skipped only when it is already satisfied:
@@ -177,26 +229,82 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
   // Already-posted collateral counts first: a hunter who funded last week
   // should not be asked to swap again.
   const haveAtVenue = b.perplAusd6;
-  const needAtVenue =
-    c.minTrade6 > haveAtVenue ? c.minTrade6 - haveAtVenue : 0n;
+
+  // EVERYTHING THE WALLET CAN CONTRIBUTE, not merely enough to clear the floor.
+  //
+  // The first version topped up to Perpl's $10 minimum and stopped, so a hunter
+  // holding $10.98 of collateral and a wallet full of MON got a button labelled
+  // "put my MON to work" that did not touch their MON. The label was not
+  // overselling it; the plan was underdoing it. A hunter pressing this is
+  // saying "deploy what I have", so the whole spendable balance goes in.
+  //
+  // Gas comes off first. What is left after it is the only MON that can
+  // actually be sold, and sizing a swap off the full balance would leave
+  // nothing to pay for the swap itself.
+  const spendableMonWei =
+    b.walletMonWei > c.gasReserveWei ? b.walletMonWei - c.gasReserveWei : 0n;
+
+  // DUST IS NOT WORTH A TRANSACTION. Selling MON worth less than the gas it
+  // costs to sell makes the hunter poorer in exchange for a bigger number on a
+  // screen. A hunter holding $10 of AUSD and 0.85 MON would otherwise have
+  // three cents of MON swapped, on Monad, where the whole gas limit is charged
+  // whether the call needs it or not.
+  const monValue6 = ausdForMon(spendableMonWei, c.monUsd, c.slippageBps);
+  const gasValue6 = ausdForMon(c.gasReserveWei, c.monUsd, c.slippageBps);
+  const worthSelling = monValue6 > gasValue6;
+
+  const deployable6 = b.walletAusd6 + (worthSelling ? monValue6 : 0n);
+
+  // What must reach the venue before a trade is possible at all. Zero when the
+  // account is already funded past the trading minimum.
+  const required6 =
+    haveAtVenue >= c.minTrade6
+      ? 0n
+      : c.minTrade6 - haveAtVenue > c.minDeposit6
+        ? c.minTrade6 - haveAtVenue
+        : c.minDeposit6;
 
   let depositAusd6 = 0n;
   let swapMonWei = 0n;
 
-  if (needAtVenue > 0n) {
-    // Perpl refuses anything under its floor, so a $2 shortfall still means a
-    // $10 deposit. Topping up by the difference is not an option they offer.
-    depositAusd6 = needAtVenue > c.minDeposit6 ? needAtVenue : c.minDeposit6;
-
-    const fromWallet =
-      b.walletAusd6 >= depositAusd6 ? depositAusd6 : b.walletAusd6;
-    const toBuy = depositAusd6 - fromWallet;
-
+  // Perpl refuses anything under its floor, so a wallet holding less than that
+  // cannot be deployed AT ALL — not partially, not as a top-up. For a funded
+  // hunter that is fine and the trade proceeds on what is already there; for an
+  // unfunded one it is the shortfall reported below.
+  if (deployable6 >= c.minDeposit6 && deployable6 >= required6) {
+    depositAusd6 = deployable6;
+    const toBuy =
+      depositAusd6 > b.walletAusd6 ? depositAusd6 - b.walletAusd6 : 0n;
     if (toBuy > 0n) {
-      swapMonWei = monForAusd(toBuy, c.monUsd, c.slippageBps);
+      // The whole spendable balance, not a figure converted back from AUSD:
+      // round-tripping through two opposite roundings can ask for more MON than
+      // the wallet holds.
+      swapMonWei = spendableMonWei;
       steps.push("swap");
     }
     steps.push("deposit");
+  } else if (required6 > 0n) {
+    // Cannot reach the floor. Report the gap in MON, which is the unit the
+    // hunter actually earns.
+    // The wallet has to hold enough to SELL and enough to pay the gas, because
+    // the gas comes off before anything is sellable. Deriving this from the
+    // missing AUSD alone — as a first version did — produced a figure that was
+    // short by exactly the reserve: a hunter told to add 296.08 MON would add
+    // it, find spendable had only risen to 295.93, and be refused again.
+    const fromWallet =
+      c.minTrade6 > 0n && b.walletAusd6 < required6
+        ? required6 - b.walletAusd6
+        : 0n;
+    const needMonWei =
+      monToYieldAusd(fromWallet, c.monUsd, c.slippageBps) + c.gasReserveWei;
+    return {
+      ok: false,
+      reason: "short",
+      shortfallMonWei:
+        needMonWei > b.walletMonWei ? needMonWei - b.walletMonWei : 0n,
+      haveMonWei: b.walletMonWei,
+      needMonWei,
+    };
   }
 
   // Gas is needed only for the steps that actually touch the chain.

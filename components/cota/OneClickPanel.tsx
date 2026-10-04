@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, Note, Panel } from "@/components/ui/primitives";
+import { Button, Disclosure, Note, Panel } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { useAuthSlot } from "@/app/providers";
 import { signInAccount } from "@/lib/auth/passkey";
@@ -72,6 +72,10 @@ const T = {
     reqTitle: "Lo que necesitas para empezar",
     reqNote:
       "Perpl no acepta depósitos menores a 10 USD. Hoy eso son unos {mon} MON en tu cartera. No es nuestra regla, es la suya — y es lo mismo para cualquier cazador nuevo.",
+    riskShort:
+      "Dinero real, con apalancamiento. Puedes perder lo que depositas.",
+    monIdle:
+      "Tu MON se queda en tu cartera: Perpl no acepta depósitos menores a 10 USD y lo tuyo vale menos que eso.",
     riskTitle: "Esto es dinero real y puedes perderlo",
     riskBody:
       "Operas con apalancamiento en Perpl. Si el precio se mueve fuerte en tu contra, Perpl liquida la posición y pierdes el colateral que depositaste.",
@@ -111,6 +115,9 @@ const T = {
     reqTitle: "What you need to start",
     reqNote:
       "Perpl refuses deposits under $10. Today that is about {mon} MON in your wallet. That is their rule, not ours — and it is the same for every new hunter.",
+    riskShort: "Real money, with leverage. You can lose what you deposit.",
+    monIdle:
+      "Your MON stays in your wallet: Perpl refuses deposits under $10 and yours is worth less than that.",
     riskTitle: "This is real money and you can lose it",
     riskBody:
       "You are trading with leverage on Perpl. If the price moves hard against you, Perpl liquidates the position and the collateral you deposited is gone.",
@@ -378,18 +385,22 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
         </ol>
       </div>
 
-      {/* Said BEFORE the button, not after, and not behind a disclosure.
-          A permission or a loss that a hunter only discovers by pressing is one
-          they never agreed to. The leash is the product's whole claim, so it is
-          worth being exact about what it does not do: it bounds the agent, and
-          the market is not the agent. */}
-      <Note tone="warn" title={t.riskTitle}>
-        <span className="block">{t.riskBody}</span>
-        <span className="mt-1 block">{t.riskLeash}</span>
-        <span className="text-ink-faint mt-1 block text-[11px]">
-          {t.riskNoLiq}
-        </span>
-      </Note>
+      {/* ONE LINE STAYS VISIBLE; the rest folds away.
+          The screen was too busy and the detail was pushing the button down the
+          page. But the material fact does not move behind a disclosure: a loss
+          someone discovers by pressing is one they never agreed to. So the
+          sentence that could change their mind is always on screen, and the
+          reasoning behind it is one tap away for anyone who wants it. */}
+      {/* Why the MON is staying put, when it is.
+          The button says "put my MON to work" and a hunter holding MON that it
+          is not touching deserves the reason unprompted — otherwise the label
+          looks like a lie. It is Perpl's floor: below ten dollars there is no
+          deposit to make, not a smaller one. */}
+      {balances.walletMonWei > 0n && plan.swapMonWei === 0n && (
+        <p className="text-ink-faint text-[11px] leading-snug">{t.monIdle}</p>
+      )}
+
+      <p className="text-alert text-xs leading-snug">{t.riskShort}</p>
 
       <Button
         onClick={async () => {
@@ -456,6 +467,12 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           {t.doneBody}
         </Note>
       )}
+
+      <Disclosure title={t.riskTitle}>
+        <p className="text-ink-dim text-xs leading-snug">{t.riskBody}</p>
+        <p className="text-ink-dim text-xs leading-snug">{t.riskLeash}</p>
+        <p className="text-ink-faint text-[11px] leading-snug">{t.riskNoLiq}</p>
+      </Disclosure>
 
       {failed && <Note tone="warn">{`${t.failed}: ${failed}`}</Note>}
     </Panel>
