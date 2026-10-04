@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Note, Panel } from "@/components/ui/primitives";
+import { Disclosure, Note, Panel } from "@/components/ui/primitives";
 
 // ---------------------------------------------------------------------------
 // The judge's walkthrough — a guide, not a checklist.
@@ -264,102 +264,180 @@ export default function JudgePage() {
         </Note>
       ) : null}
 
-      <ol className="flex flex-col gap-2">
-        {STEPS.map((step, n) => {
-          const done = doneOf(step);
-          const isCurrent = current?.id === step.id;
-          const expanded = isCurrent || open === step.id;
-          const blocked = step.gated?.(progress) === true && !done;
-          const external = step.href.startsWith("http");
-          return (
-            <li key={step.id}>
-              <Panel
-                className={
-                  isCurrent
-                    ? "border-phosphor/50"
-                    : done
-                      ? "opacity-50"
-                      : "opacity-80"
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() => setOpen(open === step.id ? null : step.id)}
-                  className="flex w-full items-center gap-3 text-left"
-                >
-                  <span
-                    className={
-                      done
-                        ? "text-phosphor font-mono text-sm"
-                        : "text-ink/40 font-mono text-sm"
-                    }
-                  >
-                    {done ? "✓" : String(n + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-ink flex-1 text-sm font-medium">
-                    {step.title}
-                  </span>
-                </button>
+      {/* THE CURRENT STEP, AND ONLY IT.
+          This page used to render all eleven at once with an expander each,
+          which is a checklist however faithfully it tracks real state: it asks
+          a judge to choose where to start and to carry the whole list in their
+          head while they do. One step, one reason, one button — the rest is
+          below for anyone who wants to audit the route rather than walk it. */}
+      {current ? (
+        <Panel className="space-y-3">
+          <div>
+            <p className="text-ink/50 font-mono text-[11px] tracking-[0.18em] uppercase">
+              Step {completed + 1} of {STEPS.length} · {current.bounty}
+            </p>
+            <h2 className="text-ink mt-1 text-xl font-semibold">
+              {current.title}
+            </h2>
+          </div>
+          <p className="text-ink/80 text-sm leading-snug">{current.why}</p>
+          <p className="text-ink/60 text-sm leading-snug">{current.action}</p>
 
-                {expanded ? (
-                  <div className="mt-3 pl-7">
-                    <p className="text-ink/50 text-xs">{step.bounty}</p>
-                    <p className="text-ink/80 mt-2 text-sm leading-snug">
-                      {step.why}
-                    </p>
-                    <p className="text-ink/60 mt-2 text-sm leading-snug">
-                      {step.action}
-                    </p>
-                    {blocked ? (
-                      <p className="text-ink/50 mt-2 text-xs">
-                        Waiting on your deposit — step 8.
+          {current.gated?.(progress) ? (
+            <Note tone="warn">
+              This one waits on the previous step&rsquo;s money arriving. The
+              page notices by itself when it does.
+            </Note>
+          ) : null}
+
+          <a
+            href={current.href}
+            target={current.href.startsWith("http") ? "_blank" : undefined}
+            rel={current.href.startsWith("http") ? "noreferrer" : undefined}
+            className="bg-phosphor text-hull flex min-h-12 w-full items-center justify-center rounded-2xl px-5 text-sm font-semibold"
+          >
+            {current.href.startsWith("http")
+              ? "Open on GitHub →"
+              : "Take me there →"}
+          </a>
+
+          {/* Only for the steps nothing can observe. A step with isDone has no
+              button here on purpose: a judge marking their own homework is the
+              one thing this page exists not to do. */}
+          {!current.isDone ? (
+            <button
+              type="button"
+              onClick={() => markDone(current.id)}
+              className="text-ink/60 w-full text-center text-xs underline underline-offset-2"
+            >
+              I&rsquo;ve read this — next step
+            </button>
+          ) : (
+            <p className="text-ink/40 text-center text-[11px]">
+              This advances on its own when you do it. Nothing to tick.
+            </p>
+          )}
+        </Panel>
+      ) : (
+        <Panel className="space-y-2">
+          <h2 className="text-ink text-xl font-semibold">
+            That is all eleven.
+          </h2>
+          <p className="text-ink/70 text-sm leading-snug">
+            Every number on this walkthrough came from production while you
+            walked it. The record at /judge/record is the same table the
+            executor writes to.
+          </p>
+          <a
+            href="/judge/record"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            Read the refusals →
+          </a>
+        </Panel>
+      )}
+
+      <Disclosure
+        title="All eleven steps"
+        sub="The whole route, and what each one is for"
+      >
+        <ol className="flex flex-col gap-2">
+          {STEPS.map((step, n) => {
+            const done = doneOf(step);
+            const isCurrent = current?.id === step.id;
+            const expanded = isCurrent || open === step.id;
+            const blocked = step.gated?.(progress) === true && !done;
+            const external = step.href.startsWith("http");
+            return (
+              <li key={step.id}>
+                <Panel
+                  className={
+                    isCurrent
+                      ? "border-phosphor/50"
+                      : done
+                        ? "opacity-50"
+                        : "opacity-80"
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => setOpen(open === step.id ? null : step.id)}
+                    className="flex w-full items-center gap-3 text-left"
+                  >
+                    <span
+                      className={
+                        done
+                          ? "text-phosphor font-mono text-sm"
+                          : "text-ink/40 font-mono text-sm"
+                      }
+                    >
+                      {done ? "✓" : String(n + 1).padStart(2, "0")}
+                    </span>
+                    <span className="text-ink flex-1 text-sm font-medium">
+                      {step.title}
+                    </span>
+                  </button>
+
+                  {expanded ? (
+                    <div className="mt-3 pl-7">
+                      <p className="text-ink/50 text-xs">{step.bounty}</p>
+                      <p className="text-ink/80 mt-2 text-sm leading-snug">
+                        {step.why}
                       </p>
-                    ) : null}
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      <a
-                        href={step.href}
-                        target={external ? "_blank" : undefined}
-                        rel={external ? "noreferrer" : undefined}
-                        className={
-                          isCurrent
-                            ? "bg-phosphor/10 border-phosphor/40 text-ink inline-flex min-h-10 items-center rounded-xl border px-4 text-sm"
-                            : "border-hull-line text-ink inline-flex min-h-10 items-center rounded-xl border px-4 text-sm"
-                        }
-                      >
-                        {external ? "Open in GitHub →" : "Take me there →"}
-                      </a>
-                      {step.isDone === undefined && !done ? (
-                        <button
-                          type="button"
-                          onClick={() => markDone(step.id)}
-                          className="text-ink/60 text-xs underline"
-                        >
-                          I&apos;ve done this
-                        </button>
+                      <p className="text-ink/60 mt-2 text-sm leading-snug">
+                        {step.action}
+                      </p>
+                      {blocked ? (
+                        <p className="text-ink/50 mt-2 text-xs">
+                          Waiting on your deposit — step 8.
+                        </p>
                       ) : null}
-                      {step.isDone !== undefined && !done ? (
-                        <span className="text-ink/40 text-xs">
-                          ticks itself when you do it
-                        </span>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <a
+                          href={step.href}
+                          target={external ? "_blank" : undefined}
+                          rel={external ? "noreferrer" : undefined}
+                          className={
+                            isCurrent
+                              ? "bg-phosphor/10 border-phosphor/40 text-ink inline-flex min-h-10 items-center rounded-xl border px-4 text-sm"
+                              : "border-hull-line text-ink inline-flex min-h-10 items-center rounded-xl border px-4 text-sm"
+                          }
+                        >
+                          {external ? "Open in GitHub →" : "Take me there →"}
+                        </a>
+                        {step.isDone === undefined && !done ? (
+                          <button
+                            type="button"
+                            onClick={() => markDone(step.id)}
+                            className="text-ink/60 text-xs underline"
+                          >
+                            I&apos;ve done this
+                          </button>
+                        ) : null}
+                        {step.isDone !== undefined && !done ? (
+                          <span className="text-ink/40 text-xs">
+                            ticks itself when you do it
+                          </span>
+                        ) : null}
+                      </div>
+                      {step.id === "anchor" && progress.anchorTxHash ? (
+                        <a
+                          href={`https://monadscan.com/tx/${progress.anchorTxHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-ink/50 mt-3 block font-mono text-xs break-all"
+                        >
+                          {progress.anchorTxHash}
+                        </a>
                       ) : null}
                     </div>
-                    {step.id === "anchor" && progress.anchorTxHash ? (
-                      <a
-                        href={`https://monadscan.com/tx/${progress.anchorTxHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-ink/50 mt-3 block font-mono text-xs break-all"
-                      >
-                        {progress.anchorTxHash}
-                      </a>
-                    ) : null}
-                  </div>
-                ) : null}
-              </Panel>
-            </li>
-          );
-        })}
-      </ol>
+                  ) : null}
+                </Panel>
+              </li>
+            );
+          })}
+        </ol>
+      </Disclosure>
 
       <Note title="If you would rather not spend anything">
         The first seven steps are the argument and cost nothing. The funding
