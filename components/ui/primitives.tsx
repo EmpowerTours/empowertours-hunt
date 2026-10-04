@@ -59,12 +59,30 @@ export function LinkButton({
 export function Panel({
   className = "",
   children,
+  noTranslate = false,
 }: {
   className?: string;
   children: React.ReactNode;
+  /**
+   * Opt this panel out of machine translation.
+   *
+   * For money screens. The app already translates itself — there is a Spanish
+   * and English toggle on every page — so a browser translating ON TOP of that
+   * adds no language anyone lacks and takes something real away: it replaces
+   * the text nodes React owns, React's later updates do not reach them, and the
+   * content goes stale from whatever was rendered before.
+   *
+   * It showed up twice in one session. A Buy tab reading "You pay MON" when the
+   * code said USDC, because the ticker was left over from the Sell tab. Then a
+   * description that changed on Short and would not change back on Long. Both
+   * on screens where being wrong costs money, and neither visible from the
+   * source, where the text is correct.
+   */
+  noTranslate?: boolean;
 }) {
   return (
     <section
+      translate={noTranslate ? "no" : undefined}
       className={`border-hull-line bg-hull rounded-2xl border p-4 ${className}`}
     >
       {children}

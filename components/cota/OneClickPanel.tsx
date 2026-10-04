@@ -330,7 +330,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
 
   if (auth.status !== "signed-in") {
     return (
-      <Panel className="space-y-3">
+      <Panel className="space-y-3" noTranslate>
         <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
         <p className="text-ink-dim text-sm">{t.lede}</p>
         <SignInPrompt label={t.signIn} />
@@ -340,7 +340,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
 
   if (plan === null || balances === null) {
     return (
-      <Panel className="space-y-3">
+      <Panel className="space-y-3" noTranslate>
         <p className="text-ink-dim text-sm">
           {failed ? t.loadFailed : t.checking}
         </p>
@@ -363,7 +363,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
 
   if (!plan.ok && plan.reason === "not_enrolled") {
     return (
-      <Panel className="space-y-3">
+      <Panel className="space-y-3" noTranslate>
         <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
         <p className="text-ink-dim text-sm">{t.notEnrolled}</p>
         <a
@@ -378,7 +378,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
 
   if (!plan.ok && plan.reason === "below_min_order") {
     return (
-      <Panel className="space-y-3">
+      <Panel className="space-y-3" noTranslate>
         <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
         <Note tone="warn" title={t.tooSmallTitle}>
           {t.tooSmallBody}
@@ -393,7 +393,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
         ? Number((plan.haveMonWei * 100n) / plan.needMonWei)
         : 0;
     return (
-      <Panel className="space-y-3">
+      <Panel className="space-y-3" noTranslate>
         <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
         <div>
           <p className="text-ink text-sm font-semibold">{t.short}</p>
@@ -445,7 +445,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
   };
 
   return (
-    <Panel className="space-y-3">
+    <Panel className="space-y-3" noTranslate>
       <div>
         <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
         <p className="text-ink-faint mt-1 text-xs">{t.lede}</p>
