@@ -363,11 +363,15 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
         <div className="border-hull-line bg-hull-2/40 rounded-xl border p-3">
           <div className="text-ink-dim flex justify-between font-mono text-xs">
             <span>{t.have}</span>
-            <span className="text-ink">{monLabel(plan.haveMonWei)} MON</span>
+            <span className="text-ink" translate="no">
+              {monLabel(plan.haveMonWei)} MON
+            </span>
           </div>
           <div className="text-ink-dim mt-1 flex justify-between font-mono text-xs">
             <span>{t.need}</span>
-            <span className="text-spawn">{monLabel(plan.needMonWei)} MON</span>
+            <span className="text-spawn" translate="no">
+              {monLabel(plan.needMonWei)} MON
+            </span>
           </div>
           <div className="bg-hull-line mt-2 h-1.5 w-full overflow-hidden rounded-full">
             <div

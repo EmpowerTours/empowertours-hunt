@@ -64,21 +64,18 @@ export function buildRunners(args: {
       const r = await swapMonToAusdViaKuru({
         account,
         monWei: plan.swapMonWei,
+        // Recorded as soon as the book trade lands, so a failure in leg 2
+        // cannot erase the fact that leg 1 spent real MON.
+        onBookTx: (hash) => {
+          void fetch("/api/cota/kuru/history", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ hash, side: "sell" }),
+          }).catch(() => {});
+        },
       });
       carry.wentThroughOrderBook = r.wentThroughOrderBook;
 
-      // Record the book trade so it reaches the MON-moved leaderboard. A
-      // failure to RECORD must not fail the swap: the money already moved, and
-      // throwing here would tell the hunter their swap failed when it did not.
-      try {
-        await fetch("/api/cota/kuru/history", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ hash: r.bookTxHash, side: "sell" }),
-        });
-      } catch {
-        // Recoverable later from the hash, which is on chain either way.
-      }
       return r.bookTxHash;
     },
 

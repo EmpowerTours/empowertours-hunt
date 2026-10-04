@@ -177,6 +177,19 @@ export async function swapMonToAusdViaKuru(args: {
   account: LocalAccount;
   monWei: bigint;
   onStep?: (step: KuruStep) => void;
+  /**
+   * Called the moment leg 1 lands, before leg 2 is attempted.
+   *
+   * Leg 1 is a real order-book trade that has already moved real MON. If leg 2
+   * then fails, the whole call throws and anything waiting for a return value
+   * records nothing — which is how 1,629 MON left a wallet on 4 October and
+   * appeared in no history at all. The trade existed; only our account of it
+   * did not.
+   *
+   * Deliberately fire-and-forget from the caller's side: a failure to RECORD
+   * must never fail a swap that has already happened.
+   */
+  onBookTx?: (hash: `0x${string}`) => void;
 }): Promise<KuruSwapResult> {
   const { account, monWei } = args;
   const step = args.onStep ?? (() => {});
@@ -210,6 +223,8 @@ export async function swapMonToAusdViaKuru(args: {
 
   step("trading-on-book");
   const bookTxHash = await sendQuoted(account, leg1);
+  // Before leg 2, not after both. See onBookTx.
+  args.onBookTx?.(bookTxHash);
 
   const usdcAfter = (await pc.readContract({
     address: USDC,

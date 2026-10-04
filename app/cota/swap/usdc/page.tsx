@@ -274,7 +274,9 @@ export default function SwapUsdcPage() {
         <div className="flex items-center justify-between">
           <span className="text-ink/60 text-xs uppercase">{t.bal}</span>
           <span className="text-ink font-mono text-sm">
-            {usdcBalance === null ? "…" : formatAusd(usdcBalance)} USDC
+            <span translate="no">
+              {usdcBalance === null ? "…" : formatAusd(usdcBalance)} USDC
+            </span>
           </span>
         </div>
         {/* A balance that will not load is not a balance of zero, and it is not

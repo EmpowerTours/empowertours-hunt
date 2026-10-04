@@ -702,7 +702,8 @@ export default function SpotPage() {
             <Panel className="space-y-3">
               <div className="flex items-baseline justify-between">
                 <span className="text-ink-dim text-sm">
-                  {t.youPay} {side === "sell" ? "MON" : "USDC"}
+                  {t.youPay}{" "}
+                  <span translate="no">{side === "sell" ? "MON" : "USDC"}</span>
                 </span>
                 <button
                   type="button"
@@ -720,7 +721,9 @@ export default function SpotPage() {
                   }
                   className="text-phosphor font-mono text-xs underline"
                 >
-                  {side === "sell" ? fmt(maxMon, 18) : fmt(usdcBal, 6)}
+                  <span translate="no">
+                    {side === "sell" ? fmt(maxMon, 18) : fmt(usdcBal, 6)}
+                  </span>
                 </button>
               </div>
               <input
@@ -734,10 +737,17 @@ export default function SpotPage() {
               />
               <div className="flex items-baseline justify-between">
                 <span className="text-ink-dim text-sm">
-                  {t.youGet} {side === "sell" ? "USDC" : "MON"}
+                  {t.youGet}{" "}
+                  <span translate="no">
+                    <span translate="no">
+                      {side === "sell" ? "USDC" : "MON"}
+                    </span>
+                  </span>
                 </span>
                 <span className="text-ink font-mono text-lg">
-                  {out === null ? "—" : fmt(out, side === "sell" ? 6 : 18)}
+                  <span translate="no">
+                    {out === null ? "—" : fmt(out, side === "sell" ? 6 : 18)}
+                  </span>
                 </span>
               </div>
               {/* The guaranteed floor. The estimate is what the book says now;
