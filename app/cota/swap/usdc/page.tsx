@@ -65,6 +65,8 @@ const COPY = {
     lede: "Perpl opera en AUSD. Si fondeaste desde otra red, tu saldo llegó como USDC — conviértelo aquí.",
     back: "← Cota",
     bal: "USDC disponible",
+    balFailed: "No se pudo leer tu saldo.",
+    balRetry: "Reintentar",
     amount: "USDC a cambiar",
     max: "Máx",
     get: "Recibes",
@@ -90,6 +92,8 @@ const COPY = {
     lede: "Perpl settles in AUSD. If you funded from another chain your balance arrived as USDC — convert it here.",
     back: "← Cota",
     bal: "USDC available",
+    balFailed: "Could not read your balance.",
+    balRetry: "Try again",
     amount: "USDC to swap",
     max: "Max",
     get: "You get",
@@ -120,6 +124,8 @@ export default function SwapUsdcPage() {
   const wallet = auth.walletAddress;
 
   const [usdcBalance, setUsdcBalance] = useState<bigint | null>(null);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [monBalance, setMonBalance] = useState<bigint | null>(null);
   const [gasPrice, setGasPrice] = useState<bigint | null>(null);
   const [input, setInput] = useState("");
@@ -150,15 +156,24 @@ export default function SwapUsdcPage() {
         setUsdcBalance(usdc);
         setMonBalance(mon);
         setGasPrice(gas);
-      } catch {
-        // Leaves both null, which renders as "…" rather than as zero. A zero
-        // here would read as "you have nothing" and send a hunter away.
+        setBalanceError(null);
+      } catch (err) {
+        // Still not zero — a zero would read as "you have nothing" and send a
+        // hunter away from money they actually hold. But not silent either:
+        // swallowing this left the page showing "…" for as long as it stayed
+        // open, which is indistinguishable from the app being broken, and it
+        // happened to someone trying to reach 58 USDC they could see on a
+        // block explorer. Now it says so and offers to try again.
+        if (live)
+          setBalanceError(
+            String((err as { message?: string })?.message ?? err),
+          );
       }
     })();
     return () => {
       live = false;
     };
-  }, [signedIn, wallet, phase]);
+  }, [signedIn, wallet, phase, reloadKey]);
 
   const units = (() => {
     const n = Number(input);
@@ -262,6 +277,28 @@ export default function SwapUsdcPage() {
             {usdcBalance === null ? "…" : formatAusd(usdcBalance)} USDC
           </span>
         </div>
+        {/* A balance that will not load is not a balance of zero, and it is not
+            a spinner either. Saying which, and offering to try again, is the
+            difference between a page that is loading and a page that is stuck
+            — and from the outside those look identical. */}
+        {balanceError && usdcBalance === null ? (
+          <div className="mt-2 space-y-2">
+            <p className="text-alert text-xs">{t.balFailed}</p>
+            <p className="text-ink/40 text-[11px] break-words">
+              {balanceError}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setBalanceError(null);
+                setReloadKey((k) => k + 1);
+              }}
+              className="text-ink/60 text-xs underline underline-offset-2"
+            >
+              {t.balRetry}
+            </button>
+          </div>
+        ) : null}
       </Panel>
 
       {noGas ? <Note tone="warn">{t.noGas}</Note> : null}

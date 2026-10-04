@@ -230,33 +230,24 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
   // should not be asked to swap again.
   const haveAtVenue = b.perplAusd6;
 
-  // EVERYTHING THE WALLET CAN CONTRIBUTE, not merely enough to clear the floor.
+  // ONLY WHAT IS NEEDED. NEVER THE WHOLE WALLET.
   //
-  // The first version topped up to Perpl's $10 minimum and stopped, so a hunter
-  // holding $10.98 of collateral and a wallet full of MON got a button labelled
-  // "put my MON to work" that did not touch their MON. The label was not
-  // overselling it; the plan was underdoing it. A hunter pressing this is
-  // saying "deploy what I have", so the whole spendable balance goes in.
+  // This deployed the entire spendable balance for about eight hours, and in
+  // that window someone transferred 1,604 MON in and pressed the button. It
+  // sold all of it — 1,629.33 MON, every MON they owned bar the gas — because
+  // that is literally what it was written to do. Nothing was lost and nothing
+  // malfunctioned; the instruction was wrong.
   //
-  // Gas comes off first. What is left after it is the only MON that can
-  // actually be sold, and sizing a swap off the full balance would leave
-  // nothing to pay for the swap itself.
+  // "Put my MON to work" does not mean "sell every MON I own". A control that
+  // spends an unbounded balance needs a cap or a confirmation naming the
+  // figure, and this had neither. It takes what the venue's floor requires and
+  // leaves the rest alone.
   const spendableMonWei =
     b.walletMonWei > c.gasReserveWei ? b.walletMonWei - c.gasReserveWei : 0n;
 
-  // DUST IS NOT WORTH A TRANSACTION. Selling MON worth less than the gas it
-  // costs to sell makes the hunter poorer in exchange for a bigger number on a
-  // screen. A hunter holding $10 of AUSD and 0.85 MON would otherwise have
-  // three cents of MON swapped, on Monad, where the whole gas limit is charged
-  // whether the call needs it or not.
-  const monValue6 = ausdForMon(spendableMonWei, c.monUsd, c.slippageBps);
-  const gasValue6 = ausdForMon(c.gasReserveWei, c.monUsd, c.slippageBps);
-  const worthSelling = monValue6 > gasValue6;
-
-  const deployable6 = b.walletAusd6 + (worthSelling ? monValue6 : 0n);
-
   // What must reach the venue before a trade is possible at all. Zero when the
-  // account is already funded past the trading minimum.
+  // account is already funded past the trading minimum — in which case nothing
+  // is sold at all, which is the common case and now the quiet one.
   const required6 =
     haveAtVenue >= c.minTrade6
       ? 0n
@@ -267,72 +258,36 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
   let depositAusd6 = 0n;
   let swapMonWei = 0n;
 
-  // Perpl refuses anything under its floor, so a wallet holding less than that
-  // cannot be deployed AT ALL — not partially, not as a top-up. For a funded
-  // hunter that is fine and the trade proceeds on what is already there; for an
-  // unfunded one it is the shortfall reported below.
-  if (deployable6 >= c.minDeposit6 && deployable6 >= required6) {
-    depositAusd6 = deployable6;
-    const toBuy =
-      depositAusd6 > b.walletAusd6 ? depositAusd6 - b.walletAusd6 : 0n;
+  if (required6 > 0n) {
+    depositAusd6 = required6;
+    const fromWallet =
+      b.walletAusd6 >= depositAusd6 ? depositAusd6 : b.walletAusd6;
+    const toBuy = depositAusd6 - fromWallet;
+
     if (toBuy > 0n) {
-      // The whole spendable balance, not a figure converted back from AUSD:
-      // round-tripping through two opposite roundings can ask for more MON than
-      // the wallet holds.
-      swapMonWei = spendableMonWei;
+      // Exactly enough to buy the shortfall, not the balance. monForAusd rounds
+      // up and carries the slippage allowance, so the swap still clears the
+      // floor without reaching for anything else the hunter owns.
+      swapMonWei = monForAusd(toBuy, c.monUsd, c.slippageBps);
+      if (swapMonWei > spendableMonWei) {
+        const needMonWei =
+          monToYieldAusd(toBuy, c.monUsd, c.slippageBps) + c.gasReserveWei;
+        return {
+          ok: false,
+          reason: "short",
+          shortfallMonWei:
+            needMonWei > b.walletMonWei ? needMonWei - b.walletMonWei : 0n,
+          haveMonWei: b.walletMonWei,
+          needMonWei,
+        };
+      }
       steps.push("swap");
     }
     steps.push("deposit");
-  } else if (required6 > 0n) {
-    // Cannot reach the floor. Report the gap in MON, which is the unit the
-    // hunter actually earns.
-    // The wallet has to hold enough to SELL and enough to pay the gas, because
-    // the gas comes off before anything is sellable. Deriving this from the
-    // missing AUSD alone — as a first version did — produced a figure that was
-    // short by exactly the reserve: a hunter told to add 296.08 MON would add
-    // it, find spendable had only risen to 295.93, and be refused again.
-    const fromWallet =
-      c.minTrade6 > 0n && b.walletAusd6 < required6
-        ? required6 - b.walletAusd6
-        : 0n;
-    const needMonWei =
-      monToYieldAusd(fromWallet, c.monUsd, c.slippageBps) + c.gasReserveWei;
-    return {
-      ok: false,
-      reason: "short",
-      shortfallMonWei:
-        needMonWei > b.walletMonWei ? needMonWei - b.walletMonWei : 0n,
-      haveMonWei: b.walletMonWei,
-      needMonWei,
-    };
   }
 
-  // Gas is needed only for the steps that actually touch the chain.
-  //
-  // THE LEASH IS ONE OF THEM, which is not obvious from its name.
-  // signAndAnchorCota signs the EIP-712 message and then anchors the digest on
-  // Monad, so a leash costs a transaction like the other two. Leaving it out —
-  // as a first version of this did, reasoning that a signature is free — would
-  // have let a hunter through with just enough MON for the swap and the
-  // deposit, and then produced a leash whose anchor silently failed. The anchor
-  // is tolerated as best-effort in sign.ts precisely so a bad moment does not
-  // lose the signature, and that tolerance is exactly what would have hidden it.
-  //
-  // Only placing the order is free: it goes over the enrolled trading key.
-  //
-  // Charging a reserve when NOTHING touches the chain would strand the hunter
-  // who funded Perpl last week and has since spent their MON — holding
-  // collateral at the venue, perfectly able to trade it, and told they were
-  // short. The same shape as the travel lockout: a requirement that cannot be
-  // met and does not need to be.
-  //
-  // Added to the requirement rather than checked against what is left after the
-  // swap, because the swap spends the same balance: needing 296 MON of input
-  // and 0.15 of gas means needing 296.15, not 296.
-  // Read from willSignLeash, NOT from steps.includes("leash"): the leash is
-  // pushed below, after this check, so asking the array here would always say
-  // no. That ordering is what made the first attempt at this fix pass its own
-  // test while changing nothing.
+  // The leash anchors on chain, so signing one costs gas like the other two
+  // steps. Only placing the order is free — it goes over the enrolled key.
   const willSignLeash = !c.hasLeash;
   const touchesChain =
     steps.includes("swap") || steps.includes("deposit") || willSignLeash;
