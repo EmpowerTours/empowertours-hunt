@@ -405,6 +405,9 @@ function collect(over: Partial<SpawnCollectContext> = {}): SpawnCollectContext {
       maxSpeedKmh: 60,
       cooldownSeconds: 60,
       maxClockSkewSeconds: 120,
+      // Generous by default so existing cases exercise the speed check
+      // rather than skipping it; the stale-fix cases set it explicitly.
+      maxFixAgeSeconds: 86_400,
     },
     ...over,
   };

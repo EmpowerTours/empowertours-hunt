@@ -159,6 +159,7 @@ export async function POST(
         maxSpeedKmh: hunt.maxSpeedKmh,
         cooldownSeconds: hunt.cooldownSeconds,
         maxClockSkewSeconds: hunt.maxClockSkewSeconds,
+        maxFixAgeSeconds: hunt.maxVerifiedFixAgeSeconds,
       },
     });
 

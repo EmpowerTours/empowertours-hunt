@@ -297,7 +297,14 @@ export function HuntScreen({ huntId }: { huntId: string }) {
         lastCheckInRef.current = Date.now();
         // A refused check-in is worth showing: it is almost always GPS
         // accuracy, which the player can fix by stepping outside.
-        if (!r.ok && r.reason) setScanReason(r.reason);
+        //
+        // CLEARED ON SUCCESS, which it was not before. The reason was only ever
+        // set, never unset, so one refusal while the fix was still settling sat
+        // on screen indefinitely — a player watching their accuracy improve to
+        // inside the limit was still being told it was too coarse. A message
+        // that outlives the condition it describes is worse than no message,
+        // because it sends them off fixing something that is already fine.
+        setScanReason(!r.ok && r.reason ? r.reason : null);
         // Position verification is the gate on everything else in the game, so
         // how often it SUCCEEDS is the health metric for the whole Hunt side.
         // No coordinates: `ok` and a fixed reason string, nothing more.

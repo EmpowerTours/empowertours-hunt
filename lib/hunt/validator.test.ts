@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validateClaim,
+  validatePosition,
   clientRejectBody,
   isRejectReason,
   OPAQUE_CLIENT_REASON,
@@ -15,6 +16,9 @@ const RULES: HuntRules = {
   maxSpeedKmh: 60,
   cooldownSeconds: 60,
   maxClockSkewSeconds: 120,
+  // Generous by default so the existing cases still exercise the speed check
+  // rather than skipping it; the stale-fix cases below set it explicitly.
+  maxFixAgeSeconds: 86_400,
 };
 
 // 1 WMON in wei — the unit TURBO credit is denominated in.
@@ -472,5 +476,127 @@ describe("reject reason vocabulary (H5)", () => {
 
   it("has no duplicate codes", () => {
     expect(new Set(REJECT_REASONS).size).toBe(REJECT_REASONS.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Travel must not lock a player out.
+//
+// These use the real positions and times from the incident: a player whose last
+// accepted fix was Tlaltizapán, Mexico (18.75763731753771, -99.23715132867494)
+// at 2026-10-02T04:50Z opened the app in Shunyi, Beijing (40.07537989802361,
+// 116.5885430200216) on 2026-10-03T23:59Z. 12,494 km in 43.1 hours — an implied
+// 289.5 km/h against a 60 km/h limit.
+//
+// The refusal itself was working as designed. What made it a defect is that
+// check-in is the ONLY writer of a verified fix, so the refusal preserved the
+// very fix that caused it, and no sequence of player actions could ever clear
+// it. A rule that cannot be satisfied is not a rule, it is a wall.
+// ---------------------------------------------------------------------------
+
+const MEXICO = { lat: 18.75763731753771, lng: -99.23715132867494 };
+const BEIJING = { lat: 40.07537989802361, lng: 116.5885430200216 };
+const DEPARTED = new Date("2026-10-02T04:50:00Z");
+const ARRIVED = new Date("2026-10-03T23:59:00Z");
+
+const position = (over: Partial<Parameters<typeof validatePosition>[0]> = {}) =>
+  validatePosition({
+    attempt: {
+      ...BEIJING,
+      accuracyM: 23,
+      clientTs: ARRIVED,
+    },
+    serverNow: ARRIVED,
+    playerActive: true,
+    huntActive: true,
+    huntStartsAt: null,
+    huntEndsAt: null,
+    lastFix: { ...MEXICO, foundAt: DEPARTED },
+    rules: { ...RULES, maxFixAgeSeconds: 1800 },
+    ...over,
+  });
+
+describe("validatePosition — a flight does not strand the player", () => {
+  it("accepts the Beijing check-in and reports the reference was dropped", () => {
+    const r = position();
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // No speed, because there was nothing credible to measure against.
+      expect(r.speedKmh).toBeNull();
+      expect(r.fixReset).toBe(true);
+      expect(r.accuracyM).toBe(23);
+    }
+  });
+
+  it("would have refused under the old rule, which is the bug", () => {
+    // Same inputs, with the fix age set long enough that the stale reference is
+    // still trusted — exactly the behaviour before this change. If this ever
+    // stops rejecting, the speed check has quietly stopped working.
+    const r = position({ rules: { ...RULES, maxFixAgeSeconds: 86_400 * 7 } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("implausible_speed");
+  });
+
+  it("still refuses a teleport INSIDE an outing", () => {
+    // Four minutes after the last fix, 12,494 km away. Nothing has expired, so
+    // the reference stands and the refusal stands with it. This is the case the
+    // check exists for and it must not have been weakened.
+    const justNow = new Date(ARRIVED.getTime() - 4 * 60_000);
+    const r = position({ lastFix: { ...MEXICO, foundAt: justNow } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("implausible_speed");
+  });
+
+  it("still refuses a short local hop that is too fast", () => {
+    // 2 km in 90 seconds is 80 km/h — over the 60 limit, and well inside the
+    // fix-age window, so it is still caught.
+    const recent = new Date(ARRIVED.getTime() - 90_000);
+    const r = position({
+      attempt: {
+        lat: BEIJING.lat + 0.018,
+        lng: BEIJING.lng,
+        accuracyM: 10,
+        clientTs: ARRIVED,
+      },
+      lastFix: { ...BEIJING, foundAt: recent },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("implausible_speed");
+  });
+
+  it("still enforces the cooldown on a fresh fix", () => {
+    const recent = new Date(ARRIVED.getTime() - 10_000);
+    const r = position({ lastFix: { ...BEIJING, foundAt: recent } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("cooldown");
+  });
+
+  it("does not weaken accuracy, which is what actually proves presence", () => {
+    // The stale-fix path must not become a way around the signal-quality floor:
+    // being newly arrived says nothing about whether the phone knows where it is.
+    const r = position({
+      attempt: { ...BEIJING, accuracyM: 90, clientTs: ARRIVED },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("gps_accuracy_too_low");
+  });
+
+  it("reports no reset when the reference was fresh and the move was fine", () => {
+    const recent = new Date(ARRIVED.getTime() - 300_000);
+    const r = position({ lastFix: { ...BEIJING, foundAt: recent } });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.fixReset).toBe(false);
+      expect(r.speedKmh).toBeCloseTo(0, 3);
+    }
+  });
+
+  it("treats a player with no prior fix as it always did", () => {
+    const r = position({ lastFix: null });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.fixReset).toBe(false);
+      expect(r.speedKmh).toBeNull();
+    }
   });
 });

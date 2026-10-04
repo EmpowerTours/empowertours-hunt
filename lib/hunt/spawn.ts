@@ -700,7 +700,19 @@ export function validateSpawnCollect(
   // reading elapsed time from the device's clock lets a player widen the window
   // and make a teleport look like a walk.
   let speedKmh: number | null = null;
-  if (ctx.lastAccepted) {
+  // Stale fixes are not a reference here either — see validatePosition for the
+  // full reasoning. In practice a collect always has a fresh fix, because the
+  // spawn could not have been placed without one; this keeps the two paths from
+  // disagreeing if that ever stops being true.
+  const acceptedAgeSeconds = ctx.lastAccepted
+    ? (serverNow.getTime() - ctx.lastAccepted.at.getTime()) / 1000
+    : null;
+  if (
+    ctx.lastAccepted &&
+    !(
+      acceptedAgeSeconds !== null && acceptedAgeSeconds > rules.maxFixAgeSeconds
+    )
+  ) {
     const elapsedSeconds =
       (serverNow.getTime() - ctx.lastAccepted.at.getTime()) / 1000;
 

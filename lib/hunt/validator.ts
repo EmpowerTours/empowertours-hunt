@@ -109,6 +109,15 @@ export interface HuntRules {
   cooldownSeconds: number;
   /** Tolerated disagreement between device clock and server clock. */
   maxClockSkewSeconds: number;
+  /**
+   * How long an accepted fix still describes where the player is.
+   *
+   * Past this, the fix is not used as the anti-teleport reference — see the
+   * movement section of validatePosition for why. Required rather than
+   * defaulted: a caller that forgets it would silently restore the deadlock
+   * this field exists to end.
+   */
+  maxFixAgeSeconds: number;
 }
 
 export interface ClaimContext {
@@ -202,7 +211,13 @@ export interface PositionContext {
 }
 
 export type PositionResult =
-  | { ok: true; accuracyM: number; speedKmh: number | null }
+  | {
+      ok: true;
+      accuracyM: number;
+      speedKmh: number | null;
+      /** An expired fix was set aside rather than used as the speed reference. */
+      fixReset: boolean;
+    }
   | ClaimRejected;
 
 export function validatePosition(ctx: PositionContext): PositionResult {
@@ -264,9 +279,37 @@ export function validatePosition(ctx: PositionContext): PositionResult {
   // widen the elapsed window by lying about their own clock, which is exactly
   // what makes a teleport look like a walk.
   let speedKmh: number | null = null;
-  if (ctx.lastFix) {
-    const elapsedSeconds =
-      (serverNow.getTime() - ctx.lastFix.foundAt.getTime()) / 1000;
+  // A fix older than maxFixAgeSeconds is NOT a reference for this check.
+  //
+  // The rest of the system already treats such a fix as meaningless: the spawn
+  // route refuses to place around one, and the check-in route calls the gap an
+  // "outing boundary" and re-arms the player as though they had just arrived.
+  // Using the very same fix as an authoritative statement of where the player
+  // was a moment ago contradicts both, and the contradiction deadlocks anyone
+  // who travels.
+  //
+  // It happened. A player flew Mexico to Beijing: 12,494 km in 43.1 hours, an
+  // implied 289.5 km/h against a 60 km/h limit. Every check-in was refused as
+  // implausible, and check-in is the ONLY thing that writes a new verified fix,
+  // so the stale Mexican fix could never be replaced by the Chinese one. No
+  // fresh fix meant no spawn; no spawn meant nothing to collect; nothing to
+  // collect meant no new fix. The account was locked out of the game by
+  // travelling, permanently, with no action available to clear it.
+  //
+  // The speed check keeps its full force WITHIN an outing, which is where cache
+  // farming would actually happen — consecutive finds minutes apart. What it no
+  // longer does is treat a day-old position on another continent as evidence
+  // about the present. Someone willing to wait out the whole fix-age window
+  // between hops is not farming anything: the cooldown, the proximity rule and
+  // the accuracy floor all still apply to every single find.
+  const fixAgeSeconds = ctx.lastFix
+    ? (serverNow.getTime() - ctx.lastFix.foundAt.getTime()) / 1000
+    : null;
+  const staleFix =
+    fixAgeSeconds !== null && fixAgeSeconds > rules.maxFixAgeSeconds;
+
+  if (ctx.lastFix && !staleFix) {
+    const elapsedSeconds = fixAgeSeconds as number;
 
     if (!(elapsedSeconds >= rules.cooldownSeconds)) {
       return reject(
@@ -288,7 +331,15 @@ export function validatePosition(ctx: PositionContext): PositionResult {
     }
   }
 
-  return { ok: true, accuracyM: attempt.accuracyM, speedKmh };
+  return {
+    ok: true,
+    accuracyM: attempt.accuracyM,
+    speedKmh,
+    // True when an expired fix was set aside. Not a refusal and not an
+    // accusation — but the operator should be able to see that a reference was
+    // dropped, rather than have it happen silently.
+    fixReset: staleFix,
+  };
 }
 
 export function validateClaim(ctx: ClaimContext): ClaimResult {
