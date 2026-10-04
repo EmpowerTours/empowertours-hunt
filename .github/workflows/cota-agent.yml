@@ -5,9 +5,28 @@
 # again, so without something calling it on a clock a take-profit that becomes
 # true at 3am is simply never noticed.
 #
-# DRY RUN IS ON. Every run here decides and reports and sends nothing. Turning it
-# live is one line — `dryRun: false` in the body below — and should happen only
-# after the logs here have shown the agent deciding sensibly for a while.
+# THIS IS LIVE. Scheduled runs send real orders against real collateral. It ran
+# dry from the start and was flipped on 4 October 2026, after one manual live
+# run (22:27 UTC) proved the whole path end to end — the CSRF origin check, the
+# agent lease, the venue and ledger reads, and a decision recorded as
+# authoritative rather than rehearsed. That run chose `holding`, correctly,
+# because the open position was not at its take-profit.
+#
+# What bounds it is the leash, not this file: one market, a maximum notional, a
+# maximum leverage, a daily loss ceiling and a trades-per-day count, every one
+# of them checked by mayOpen() before an order can leave. The trading key cannot
+# withdraw — Perpl enforces that, not us — so the worst case here is a bad
+# trade, never a drained account.
+#
+# TO STOP IT without touching this file: set autonomy to off or exit-only on the
+# leash, or revoke the leash, which revokes the grant with it. Both take effect
+# on the next run. The grants also carry their own expiry, so it stops itself
+# eventually whether or not anybody remembers.
+#
+# The thing to watch for is the exit policy, which never closes at a loss. A
+# poor entry is therefore held indefinitely, and while it is held the agent can
+# open nothing else. That is the policy working as instructed, and it is also
+# the state most likely to look like the agent has died.
 #
 # The Origin header is not optional: the app's CSRF middleware rejects a
 # cross-origin POST with 403 BEFORE the route runs, so without it every
@@ -25,8 +44,10 @@ name: cota-agent
 
 on:
   schedule:
-    # Every 15 minutes. Tighter than this buys nothing while dryRun is on, and
-    # GitHub will not honour it precisely in any case.
+    # Every 15 minutes, and GitHub will not honour it precisely in any case —
+    # scheduled runs are routinely five to twenty minutes late under load. That
+    # is tolerable because each pass re-reads everything from scratch, so a
+    # missed tick is only a slower notice, never a gap to catch up on.
     - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
@@ -45,7 +66,7 @@ jobs:
       - name: Ask the agent to act
         env:
           COTA_AGENT_TOKEN: ${{ secrets.COTA_AGENT_TOKEN }}
-          DRY_RUN: ${{ github.event_name == 'schedule' && 'true' || inputs.dryRun }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dryRun }}
         run: |
           set -euo pipefail
           if [ -z "${COTA_AGENT_TOKEN:-}" ]; then
