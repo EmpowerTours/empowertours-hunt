@@ -466,26 +466,23 @@ export default function SpotPage() {
             data: q.calldata,
             value: q.value,
           });
-        } catch (simErr) {
-          // 0x7939f424 is TransferFromFailed() — the route tried to pull the
-          // USDC and could not. With the balance there, that means the
-          // allowance is on the wrong contract.
+        } catch {
+          // ANY simulation failure on a buy asks the allowance question, rather
+          // than trying to recognise the revert that means it.
           //
-          // KURU USES BOTH. The executor is the spender for some routes and
-          // the entrypoint for others — on 4 October mainnet carried 778
-          // approvals to one and 164 to the other, hours apart. We approved
-          // only the executor, from a note written when that was the route
-          // being used, so a hunter handed an entrypoint route simply could
-          // not trade and was told "no route that would execute", which is
-          // both wrong and unactionable.
+          // Kuru uses both of its contracts as the spender depending on the
+          // route — mainnet on 4 October carried 778 USDC approvals to the
+          // executor and 164 to the entrypoint, hours apart — and this
+          // approved only the executor, so a hunter handed an entrypoint route
+          // could not trade and was told "no route that would execute".
           //
-          // Approving `q.to` approves whatever THIS quote addresses rather
-          // than whichever contract was right last time, and only when a
-          // simulation has already proved it necessary.
-          const why = String(
-            (simErr as { message?: string })?.message ?? simErr,
-          );
-          if (side === "buy" && why.includes("0x7939f424")) {
+          // A first attempt at this matched the selector 0x7939f424
+          // (TransferFromFailed) in the error MESSAGE. viem does not put it
+          // there, so the branch never ran and the approval went to the
+          // executor exactly as before — a fix that changed nothing while
+          // looking like it had. Asking the chain what the allowance is cannot
+          // be wrong about it.
+          if (side === "buy") {
             const spent = (await pc.readContract({
               address: USDC,
               abi: ERC20,
