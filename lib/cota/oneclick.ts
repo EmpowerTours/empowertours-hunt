@@ -116,6 +116,15 @@ export interface Plan {
   /** Collateral that will back the trade once the steps above have run. */
   tradeAusd6: bigint;
   /**
+   * The chosen share was below Perpl's deposit floor and was NOT deployed.
+   *
+   * The trade still goes ahead on whatever collateral is already at the venue.
+   * Reported so the screen can say why the MON did not move, rather than
+   * leaving someone to infer it from a figure that did not change.
+   */
+  chosenTooSmall: boolean;
+
+  /**
    * The notional the order will actually be sent at, 6dp.
    *
    * Clamped to whatever leash governs it, so the press cannot end by having its
@@ -287,8 +296,27 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
 
   let depositAusd6 = 0n;
   let swapMonWei = 0n;
+  // True when the chosen share was too small to deposit and was dropped rather
+  // than rounded up. The screen has to say so; silently doing something ten
+  // times larger than was asked for is the whole hazard here.
+  let chosenTooSmall = false;
 
-  if (wanted6 > 0n) {
+  // AN ASK BELOW PERPL'S FLOOR IS DROPPED, NOT ROUNDED UP.
+  //
+  // Rounding up is what the code did, and on this wallet it turns "5%" into
+  // 84%: five per cent of 353 MON is $0.59, Perpl will not accept a deposit
+  // under $10, and max(chosen, floor) therefore sells ~298 MON to satisfy a
+  // request for 17.68. Nobody choosing the smallest button means "sell most of
+  // what I have", and a control that can do that on a tap has no business
+  // doing it quietly.
+  //
+  // Only safe to drop when the venue can already trade without the deposit —
+  // which is exactly when required6 is zero. Where funding IS needed the floor
+  // still applies, because there is no smaller deposit to make and refusing
+  // outright would strand a hunter who genuinely has to fund.
+  if (wanted6 > 0n && wanted6 < c.minDeposit6 && required6 === 0n) {
+    chosenTooSmall = true;
+  } else if (wanted6 > 0n) {
     depositAusd6 = wanted6 < c.minDeposit6 ? c.minDeposit6 : wanted6;
     const fromWallet =
       b.walletAusd6 >= depositAusd6 ? depositAusd6 : b.walletAusd6;
@@ -364,6 +392,7 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
     depositAusd6,
     tradeAusd6,
     orderNotional6,
+    chosenTooSmall,
   };
 }
 

@@ -90,6 +90,8 @@ const T = {
       "Tu MON se queda en tu cartera: Perpl no acepta depósitos menores a 10 USD y lo tuyo vale menos que eso.",
     monUnchosen:
       "Tu MON se queda en tu cartera. Elige un porcentaje arriba para ponerlo a trabajar.",
+    tooSmallToDeposit:
+      "Ese porcentaje no alcanza el mínimo de depósito de Perpl (10 USD), así que tu MON se queda donde está y la operación usa el colateral que ya tienes. Elige un porcentaje mayor para agregar más.",
     riskTitle: "Esto es dinero real y puedes perderlo",
     riskBody:
       "Operas con apalancamiento en Perpl. Si el precio se mueve fuerte en tu contra, Perpl liquida la posición y pierdes el colateral que depositaste.",
@@ -146,6 +148,8 @@ const T = {
       "Your MON stays in your wallet: Perpl refuses deposits under $10 and yours is worth less than that.",
     monUnchosen:
       "Your MON stays in your wallet. Pick a percentage above to put it to work.",
+    tooSmallToDeposit:
+      "That share is under Perpl's $10 deposit minimum, so your MON stays where it is and the trade uses the collateral you already have. Pick a bigger share to add more.",
     riskTitle: "This is real money and you can lose it",
     riskBody:
       "You are trading with leverage on Perpl. If the price moves hard against you, Perpl liquidates the position and the collateral you deposited is gone.",
@@ -550,7 +554,11 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           and the old text became a false statement about someone's money. */}
       {balances.walletMonWei > 0n && plan.swapMonWei === 0n && (
         <p className="text-ink-faint text-[11px] leading-snug">
-          {pct === null ? t.monUnchosen : t.monIdle}
+          {pct === null
+            ? t.monUnchosen
+            : plan.chosenTooSmall
+              ? t.tooSmallToDeposit
+              : t.monIdle}
         </p>
       )}
 

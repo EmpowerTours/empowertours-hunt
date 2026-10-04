@@ -492,13 +492,49 @@ describe("planOneClick — the hunter chooses how much", () => {
     }
   });
 
-  it("still cannot deposit below Perpl's floor, and says the floor instead", () => {
-    // 5% of 1,767 is ~88 MON, about $3 — under the $10 minimum. Perpl has no
-    // smaller deposit, so the plan asks for the floor rather than pretending.
-    const five = (rich.walletMonWei * 5n) / 100n;
-    const r = planOneClick(rich, { ...funded, targetMonWei: five });
+  it("DROPS an ask below Perpl's floor rather than rounding it up", () => {
+    // THE 5% TRAP. Five per cent of a 353 MON wallet is $0.59; Perpl will not
+    // accept a deposit under $10. Rounding up to the floor — which this did —
+    // turns "5%" into selling ~298 MON, 84% of the wallet, on the smallest
+    // button offered. Nobody tapping 5% means that.
+    //
+    // Safe to drop only because the venue can already trade without it. The
+    // trade still happens on the collateral that is there.
+    const small = {
+      walletMonWei: 353n * WEI,
+      walletAusd6: 0n,
+      perplAusd6: 10_980_000n,
+    };
+    const five = (small.walletMonWei * 5n) / 100n;
+    const r = planOneClick(small, { ...funded, targetMonWei: five });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.depositAusd6).toBe(TEN_DOLLARS);
+    if (r.ok) {
+      expect(r.chosenTooSmall).toBe(true);
+      expect(r.swapMonWei).toBe(0n);
+      expect(r.depositAusd6).toBe(0n);
+      expect(r.steps).toEqual(["trade"]);
+      // And the trade still goes ahead on what is already at the venue.
+      expect(r.tradeAusd6).toBe(10_980_000n);
+    }
+  });
+
+  it("still charges the floor when the account genuinely needs funding", () => {
+    // Nothing at the venue, so there is no trading without a deposit and no
+    // smaller deposit to make. Dropping the ask here would strand them.
+    const empty2 = {
+      walletMonWei: 1_000n * WEI,
+      walletAusd6: 0n,
+      perplAusd6: 0n,
+    };
+    const r = planOneClick(empty2, {
+      ...base,
+      targetMonWei: (empty2.walletMonWei * 5n) / 100n,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.chosenTooSmall).toBe(false);
+      expect(r.depositAusd6).toBe(TEN_DOLLARS);
+    }
   });
 
   it("never spends more MON than the wallet holds, however large the ask", () => {
