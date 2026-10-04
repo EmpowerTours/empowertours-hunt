@@ -446,12 +446,27 @@ export default function SpotPage() {
       let received = 0n;
       let lastRevert: `0x${string}` | null = null;
       for (let attempt = 0; attempt < 4 && sent === null; attempt++) {
+        // EACH RETRY ASKS FOR SLIGHTLY LESS. Re-sending the identical amount —
+        // which this did — cannot fix the failure that actually happens.
+        //
+        // Kuru can return a transaction that spends MORE than the amount it was
+        // quoted for: asked for 47.337660 USDC it built calldata spending
+        // 47.403196, about 0.138% over. That is fatal here precisely because
+        // the tap-the-balance shortcut spends the WHOLE holding, so there is no
+        // headroom for Kuru to round into and a wallet is always a few wei
+        // short of its own quote.
+        //
+        // Half a percent per attempt. The remainder stays in the wallet.
+        const ask =
+          attempt === 0
+            ? amount
+            : (amount * BigInt(1000 - attempt * 5)) / 1000n;
         const q = await kuruQuote({
           token,
           userAddress: address,
           tokenIn: side === "sell" ? NATIVE : USDC,
           tokenOut: side === "sell" ? USDC : NATIVE,
-          amount,
+          amount: ask,
         });
         // Cheaper than a simulation and catches a quote that could only ever
         // revert — a minOut above the output, or nothing out at all.
