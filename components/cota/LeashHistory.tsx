@@ -14,6 +14,8 @@ interface CotaRow {
   venue: string;
   markets: string[];
   digest: string;
+  maxNotionalUsdE6: string;
+  maxLeverageX100: string;
   notAfter: string;
   revokedAt: string | null;
   anchorTxHash: string | null;
@@ -125,7 +127,16 @@ function LeashRow({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const live = row.revokedAt === null && new Date(row.notAfter) > new Date();
+  const expired = new Date(row.notAfter) <= new Date();
+  const live = row.revokedAt === null && !expired;
+  const maxUsd = (Number(row.maxNotionalUsdE6) / 1e6).toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+  });
+  const lev = Number(row.maxLeverageX100) / 100;
+  const until = new Date(row.notAfter).toLocaleDateString(
+    lang === "es" ? "es-MX" : "en-US",
+    { month: "short", day: "numeric" },
+  );
 
   const revoke = async () => {
     setBusy(true);
@@ -164,11 +175,24 @@ function LeashRow({
     <li className="border-hull-line flex items-center justify-between gap-3 rounded-xl border px-3 py-2">
       <div className="min-w-0">
         <div className="text-ink truncate text-sm">
-          {row.venue} · {marketList}
+          {/* THE CEILING, which this list never showed. Without it the rows are
+              indistinguishable — "perpl · MON" three times over — and a hunter
+              asked to revoke the loosest one cannot tell which that is. The
+              number is the whole point of the signature. */}
+          {marketList} · <span translate="no">${maxUsd}</span> ·{" "}
+          <span translate="no">{lev}x</span>
         </div>
         <div className="text-ink-faint text-[11px]">
           {when}
-          {row.revokedAt ? (lang === "es" ? " · revocada" : " · revoked") : ""}
+          {row.revokedAt
+            ? lang === "es"
+              ? " · revocada"
+              : " · revoked"
+            : expired
+              ? lang === "es"
+                ? " · vencida"
+                : " · expired"
+              : `${lang === "es" ? " · vence " : " · expires "}${until}`}
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">

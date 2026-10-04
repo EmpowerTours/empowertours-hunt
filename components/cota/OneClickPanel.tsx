@@ -301,7 +301,14 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           hasLeash,
           monUsd,
           minDeposit6: MIN_DEPOSIT_6DP,
-          minTrade6: MIN_DEPOSIT_6DP,
+          // NOT the deposit floor. Perpl publishes min_deposit_amount and
+          // min_account_open_amount, both $10 — those govern getting AUSD IN.
+          // Neither is a minimum balance required to trade, and nothing in
+          // their context publishes one. Using $10 here meant a hunter holding
+          // $5 of collateral was told to deposit another $10 before they could
+          // trade at all, when the only floor their order actually faces is the
+          // venue's fill minimum.
+          minTrade6: MIN_FILLABLE_6DP,
           // The order has to fit under whichever leash governs it — the live
           // one, or the one this press would sign.
           leashMaxNotional6: live ? BigInt(live.maxNotionalUsdE6) : null,
