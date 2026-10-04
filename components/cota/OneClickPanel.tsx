@@ -82,6 +82,9 @@ const T = {
     doneTitle: "Listo",
     doneBody:
       "Tu operación está abierta bajo tu correa. Puedes verla y cerrarla cuando quieras en Resultados.",
+    tooSmallTitle: "Tu correa permite menos de lo mínimo",
+    tooSmallBody:
+      "El mercado no llena órdenes menores a 3 USD. Sube el tope de tamaño de tu correa en los ajustes avanzados y vuelve aquí.",
   },
   en: {
     title: "Put my MON to work",
@@ -118,6 +121,9 @@ const T = {
     doneTitle: "Done",
     doneBody:
       "Your trade is open under your leash. You can watch it and close it any time from Results.",
+    tooSmallTitle: "Your leash allows less than the minimum",
+    tooSmallBody:
+      "The market will not fill an order under $3. Raise your leash's size ceiling in advanced settings and come back.",
   },
 } as const;
 
@@ -130,6 +136,16 @@ const T = {
  * generous limit, priced at the fee the chain is quoting right now.
  */
 const GAS_UNITS_WHOLE_FLOW = 1_600_000n;
+
+/**
+ * The smallest order Perpl will actually fill, 6dp.
+ *
+ * Chain-verified on MON: a $1 market order filled 0 and came back
+ * TakerOrderSettlementFailed; a $3 one filled fully. Below this an order does
+ * not trade small, it fails — and the worst moment to discover that is after
+ * three irreversible steps have already moved the money.
+ */
+const MIN_FILLABLE_6DP = 3_000_000n;
 
 /**
  * The leash a one-click press signs, and the order it then places.
@@ -205,7 +221,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       const live = (cotaRes?.cotas ?? []).find(
         (c: { revokedAt: string | null; notAfter: string }) =>
           c.revokedAt === null && new Date(c.notAfter).getTime() > now,
-      ) as { digest: string } | undefined;
+      ) as { digest: string; maxNotionalUsdE6: string } | undefined;
       const hasLeash = Boolean(live);
       setLiveDigest(live?.digest ?? null);
 
@@ -224,6 +240,11 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           monUsd,
           minDeposit6: MIN_DEPOSIT_6DP,
           minTrade6: MIN_DEPOSIT_6DP,
+          // The order has to fit under whichever leash governs it — the live
+          // one, or the one this press would sign.
+          leashMaxNotional6: live ? BigInt(live.maxNotionalUsdE6) : null,
+          oneClickNotional6: ONE_CLICK.maxNotionalUsdE6,
+          minFillable6: MIN_FILLABLE_6DP,
           gasReserveWei: GAS_UNITS_WHOLE_FLOW * fee,
           slippageBps: 100n,
         }),
@@ -266,6 +287,17 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
         >
           {t.enrol}
         </a>
+      </Panel>
+    );
+  }
+
+  if (!plan.ok && plan.reason === "below_min_order") {
+    return (
+      <Panel className="space-y-3">
+        <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
+        <Note tone="warn" title={t.tooSmallTitle}>
+          {t.tooSmallBody}
+        </Note>
       </Panel>
     );
   }
@@ -382,7 +414,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
               side: ONE_CLICK.side,
               // The collateral that will be there once the steps above have
               // run, not what is there now.
-              notionalUsd: Number(plan.tradeAusd6) / 1e6,
+              notionalUsd: Number(plan.orderNotional6) / 1e6,
               leverageX: ONE_CLICK.leverageX,
               carry,
               onStep: (step) => setRunning(step),
@@ -404,7 +436,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       >
         {busy
           ? `${t.working}${running ? ` (${label[running]})` : ""}`
-          : `${t.ready} $${ausdLabel(plan.tradeAusd6)}`}
+          : `${t.ready} $${ausdLabel(plan.orderNotional6)}`}
       </Button>
 
       {/* A partial run says where the money actually is. "Something went wrong"

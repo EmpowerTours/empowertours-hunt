@@ -36,6 +36,9 @@ const base: Conditions = {
   minTrade6: TEN_DOLLARS,
   gasReserveWei: GAS,
   slippageBps: 100n,
+  leashMaxNotional6: null,
+  oneClickNotional6: 50_000_000n,
+  minFillable6: 3_000_000n,
 };
 
 const empty: Balances = {
@@ -272,5 +275,65 @@ describe("planOneClick — the leash costs gas too", () => {
     );
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.steps).toEqual(["trade"]);
+  });
+});
+
+describe("planOneClick — the order must fit under the leash governing it", () => {
+  const funded = (perpl: bigint) => ({
+    walletMonWei: 400n * WEI,
+    walletAusd6: 0n,
+    perplAusd6: perpl,
+  });
+
+  it("clamps the order to a live leash's ceiling instead of bouncing off it", () => {
+    // $50 of collateral under a $20 leash. Without the clamp every step would
+    // run and the LAST one would be refused by the hunter's own ceiling —
+    // money moved through three irreversible steps, no position, and the
+    // refusal arriving from the one component whose job is to refuse.
+    const r = planOneClick(funded(50_000_000n), {
+      ...base,
+      hasLeash: true,
+      leashMaxNotional6: 20_000_000n,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.tradeAusd6).toBe(50_000_000n);
+      expect(r.orderNotional6).toBe(20_000_000n);
+    }
+  });
+
+  it("sends the whole collateral when it already fits", () => {
+    const r = planOneClick(funded(10_980_000n), {
+      ...base,
+      hasLeash: true,
+      leashMaxNotional6: 20_000_000n,
+    });
+    expect(r.ok).toBe(true);
+    // The real case: $10.98 at Perpl under a $20 leash goes out whole.
+    if (r.ok) expect(r.orderNotional6).toBe(10_980_000n);
+  });
+
+  it("sizes against the leash the press is ABOUT to sign when none is live", () => {
+    const r = planOneClick(funded(80_000_000n), {
+      ...base,
+      hasLeash: false,
+      leashMaxNotional6: null,
+      oneClickNotional6: 50_000_000n,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.orderNotional6).toBe(50_000_000n);
+  });
+
+  it("refuses rather than sending an order the venue will not fill", () => {
+    // A $1 MON market order filled 0 and returned TakerOrderSettlementFailed;
+    // $3 filled fully. Under the floor is not a small trade, it is a failed one
+    // — and finding that out after three irreversible steps is the worst place.
+    const r = planOneClick(funded(12_000_000n), {
+      ...base,
+      hasLeash: true,
+      leashMaxNotional6: 1_000_000n,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("below_min_order");
   });
 });

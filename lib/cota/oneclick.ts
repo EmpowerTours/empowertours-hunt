@@ -54,6 +54,32 @@ export interface Conditions {
   /** The collateral a trade needs available, 6dp. */
   minTrade6: bigint;
   /**
+   * The live leash's notional ceiling, 6dp, or null when none is live yet.
+   *
+   * The order has to fit UNDER the leash the hunter already signed. Without
+   * this the planner would offer a pressable button to someone holding $50
+   * against a $20 leash, every step would run, and the last one would bounce
+   * off their own ceiling — money moved, no position, and the refusal arriving
+   * from the one component whose job is to refuse. When null, the press signs
+   * a fresh leash and `oneClickNotional6` is what that leash will permit.
+   */
+  leashMaxNotional6: bigint | null;
+  /**
+   * The ceiling a freshly signed one-click leash will carry, 6dp.
+   *
+   * Used when leashMaxNotional6 is null, so the plan can size an order against
+   * the leash it is about to create rather than against one that exists.
+   */
+  oneClickNotional6: bigint;
+  /**
+   * The smallest order the venue will actually fill, 6dp.
+   *
+   * Chain-verified: a $1 MON market order filled 0 and came back
+   * TakerOrderSettlementFailed, a $3 one filled fully. An order under this is
+   * not a small trade, it is a failed one.
+   */
+  minFillable6: bigint;
+  /**
    * MON held back for gas across every step, in wei.
    *
    * Estimated by the caller against the real calls. A flat reserve is the same
@@ -74,11 +100,18 @@ export interface Plan {
   depositAusd6: bigint;
   /** Collateral that will back the trade once the steps above have run. */
   tradeAusd6: bigint;
+  /**
+   * The notional the order will actually be sent at, 6dp.
+   *
+   * Clamped to whatever leash governs it, so the press cannot end by having its
+   * own order refused by the hunter's own ceiling.
+   */
+  orderNotional6: bigint;
 }
 
 export interface Blocked {
   ok: false;
-  reason: "not_enrolled" | "short";
+  reason: "not_enrolled" | "short" | "below_min_order";
   /** Extra MON the wallet still needs. Zero for reasons that are not money. */
   shortfallMonWei: bigint;
   /** What the hunter has to work with now, for a progress line. */
@@ -206,6 +239,28 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
     };
   }
 
+  const tradeAusd6 = haveAtVenue + depositAusd6;
+
+  // The order sits under whichever leash will govern it: the live one, or the
+  // one this press is about to sign. Clamping rather than refusing, because a
+  // hunter with more collateral than their ceiling has not done anything wrong
+  // — they just cannot put all of it to work under the limits they set.
+  const ceiling = c.leashMaxNotional6 ?? c.oneClickNotional6;
+  const orderNotional6 = tradeAusd6 < ceiling ? tradeAusd6 : ceiling;
+
+  // A clamp can land under the venue's fill floor, and an order below it does
+  // not fill small — it fails. Better to say so now than after the money has
+  // moved through three irreversible steps.
+  if (orderNotional6 < c.minFillable6) {
+    return {
+      ok: false,
+      reason: "below_min_order",
+      shortfallMonWei: 0n,
+      haveMonWei: b.walletMonWei,
+      needMonWei: needMonWei,
+    };
+  }
+
   if (willSignLeash) steps.push("leash");
   steps.push("trade");
 
@@ -214,7 +269,8 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
     steps,
     swapMonWei,
     depositAusd6,
-    tradeAusd6: haveAtVenue + depositAusd6,
+    tradeAusd6,
+    orderNotional6,
   };
 }
 
