@@ -34,6 +34,7 @@ const T = {
     signIn: "Inicia sesión",
     none: "Sin correa activa. Firma una Cota para empezar.",
     flat: "Sin posición abierta.",
+    loading: "Leyendo tu exposición desde la casa…",
     closeNow: "Si cierras ahora",
     closeNote:
       "Neto: precio de salida real, menos comisiones pagadas y la de cerrar.",
@@ -65,6 +66,7 @@ const T = {
     signIn: "Sign in",
     none: "No active leash. Sign a Cota to begin.",
     flat: "No open position.",
+    loading: "Reading your exposure from the venue…",
     closeNow: "If you close now",
     closeNote: "Net: the real exit price, less fees paid and the fee to close.",
     markPnl: "Against the mark",
@@ -199,7 +201,17 @@ export default function RiskPage() {
         <Panel>
           <SignInPrompt label={t.signIn} />
         </Panel>
-      ) : risk && risk.leash === null ? (
+      ) : risk === null ? (
+        /* LOADING IS NOT "NO POSITION".
+           Until this resolves, `risk` is null and `p` is null with it, which
+           fell straight through to "No open position." — so the screen whose
+           entire job is reporting exposure announced that there was none while
+           it was still finding out. It read as an answer, it took a few
+           seconds, and it was wrong for every one of them. */
+        <Panel>
+          <p className="text-ink-dim text-sm">{t.loading}</p>
+        </Panel>
+      ) : risk.leash === null ? (
         <Panel className="space-y-3">
           <p className="text-ink-dim text-sm">{t.none}</p>
           <a
