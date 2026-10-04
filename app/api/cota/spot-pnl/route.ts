@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { isAddress } from "viem";
 import { prisma } from "@/lib/db/prisma";
-import { foldSpot, type SpotTrade } from "@/lib/cota/spot-pnl";
+import {
+  foldSpot,
+  withinPeriod,
+  type Period,
+  type SpotTrade,
+} from "@/lib/cota/spot-pnl";
 
 // ---------------------------------------------------------------------------
 // What a wallet's Kuru trades realised.
@@ -41,9 +46,17 @@ export async function GET(req: Request) {
     },
   });
 
-  const r = foldSpot(rows as unknown as SpotTrade[]);
+  // Windowed before the fold, so a period's figures are what that period did on
+  // its own rather than a slice of the lifetime number. See withinPeriod.
+  const asked = new URL(req.url).searchParams.get("period");
+  const period: Period =
+    asked === "day" || asked === "week" || asked === "month" ? asked : "all";
+  const r = foldSpot(
+    withinPeriod(rows as unknown as SpotTrade[], period, Date.now()),
+  );
 
   return NextResponse.json({
+    period,
     // Wei and 6dp as decimal strings: JSON cannot carry a bigint, and anyone
     // reconciling against the chain needs the exact figure rather than a float.
     realisedUsd6: r.realised6.toString(),

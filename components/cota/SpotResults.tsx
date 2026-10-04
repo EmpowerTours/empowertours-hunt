@@ -33,6 +33,10 @@ const T = {
       n === 1
         ? "1 compra sin monto confirmado; no entra en el cálculo."
         : `${n} compras sin monto confirmado; no entran en el cálculo.`,
+    day: "24 h",
+    week: "7 d",
+    month: "30 d",
+    all: "Todo",
     bothNote:
       "Las dos cifras son ciertas. En dólares una ida y vuelta puede quedar en cero mientras el MON sube — y el MON es lo que gastas en recompensas.",
   },
@@ -52,6 +56,10 @@ const T = {
       n === 1
         ? "1 buy has no confirmed amount and is left out of the figures."
         : `${n} buys have no confirmed amount and are left out of the figures.`,
+    day: "24h",
+    week: "7d",
+    month: "30d",
+    all: "All",
     bothNote:
       "Both figures are true. A round trip can net zero dollars while gaining MON — and MON is what you pay rewards in.",
   },
@@ -89,6 +97,7 @@ export function SpotResults({
 }) {
   const t = T[lang];
   const [data, setData] = useState<Payload | null>(null);
+  const [period, setPeriod] = useState<"day" | "week" | "month" | "all">("all");
 
   useEffect(() => {
     if (!wallet) return;
@@ -96,7 +105,7 @@ export function SpotResults({
     void (async () => {
       try {
         const r = await fetch(
-          `/api/cota/spot-pnl?wallet=${encodeURIComponent(wallet)}`,
+          `/api/cota/spot-pnl?wallet=${encodeURIComponent(wallet)}&period=${period}`,
           { cache: "no-store" },
         );
         if (!r.ok) return;
@@ -110,7 +119,7 @@ export function SpotResults({
     return () => {
       live = false;
     };
-  }, [wallet]);
+  }, [wallet, period]);
 
   if (!data) return null;
 
@@ -130,6 +139,28 @@ export function SpotResults({
       <div>
         <p className="text-ink text-sm font-semibold">{t.title}</p>
         <p className="text-ink-faint mt-0.5 text-xs">{t.lede}</p>
+      </div>
+
+      {/* The window. Asked for because "is this total?" was the first question
+          the figures raised, and it was — there was nothing on screen saying
+          so. A windowed figure is NOT a slice of the lifetime one: a sale of
+          MON bought before the window shows its full proceeds, because inside
+          the window nothing was paid for it. */}
+      <div className="grid grid-cols-4 gap-2">
+        {(["day", "week", "month", "all"] as const).map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPeriod(p)}
+            className={`min-h-9 rounded-lg border text-xs ${
+              period === p
+                ? "border-phosphor text-phosphor"
+                : "border-hull-line text-ink-dim"
+            }`}
+          >
+            {t[p]}
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

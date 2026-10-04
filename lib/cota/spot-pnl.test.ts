@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { foldSpot, monText, usdText, type SpotTrade } from "./spot-pnl";
+import {
+  foldSpot,
+  monText,
+  usdText,
+  withinPeriod,
+  type SpotTrade,
+} from "./spot-pnl";
 
 const WEI = 10n ** 18n;
 const USDC = "0x754704bc059f8c67012fed69bc8a327a5aafb603";
@@ -207,5 +213,49 @@ describe("text helpers", () => {
     expect(monText(-WEI)).toBe("-1.00");
     expect(usdText(58_496_400n)).toBe("58.49");
     expect(usdText(-20_000_000n)).toBe("-20.00");
+  });
+});
+
+describe("withinPeriod", () => {
+  const NOW = new Date("2026-10-04T20:00:00Z").getTime();
+  const at = (iso: string) => trade({ side: "sell", at: iso });
+  const trades = [
+    at("2026-10-04T18:00:00Z"), // 2 hours ago
+    at("2026-10-01T12:00:00Z"), // 3 days
+    at("2026-09-20T12:00:00Z"), // 14 days
+    at("2026-08-01T12:00:00Z"), // 64 days
+  ];
+
+  it("keeps only what falls inside the window", () => {
+    expect(withinPeriod(trades, "day", NOW)).toHaveLength(1);
+    expect(withinPeriod(trades, "week", NOW)).toHaveLength(2);
+    expect(withinPeriod(trades, "month", NOW)).toHaveLength(3);
+    expect(withinPeriod(trades, "all", NOW)).toHaveLength(4);
+  });
+
+  it("filters BEFORE the fold, so a window is what the window did", () => {
+    // Bought in January, sold in October. Over "all" the basis is the January
+    // purchase and almost nothing is realised. Over "day" the purchase is
+    // outside the window, so the sale shows its full proceeds — which is the
+    // honest answer to "what did today do", and deliberately not a slice of
+    // the lifetime figure.
+    const all: SpotTrade[] = [
+      trade({
+        side: "buy",
+        at: "2026-01-01T00:00:00Z",
+        nativeInWei: (100n * WEI).toString(),
+        tokensOut: { [USDC]: 9_000_000n.toString() },
+      }),
+      trade({
+        side: "sell",
+        at: "2026-10-04T18:00:00Z",
+        valueWei: (100n * WEI).toString(),
+        tokensIn: { [USDC]: 10_000_000n.toString() },
+      }),
+    ];
+    expect(usdText(foldSpot(all).realised6)).toBe("1.00");
+    expect(usdText(foldSpot(withinPeriod(all, "day", NOW)).realised6)).toBe(
+      "10.00",
+    );
   });
 });

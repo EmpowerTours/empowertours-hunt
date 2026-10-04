@@ -88,6 +88,8 @@ const T = {
       "Dinero real, con apalancamiento. Puedes perder lo que depositas.",
     monIdle:
       "Tu MON se queda en tu cartera: Perpl no acepta depósitos menores a 10 USD y lo tuyo vale menos que eso.",
+    monUnchosen:
+      "Tu MON se queda en tu cartera. Elige un porcentaje arriba para ponerlo a trabajar.",
     riskTitle: "Esto es dinero real y puedes perderlo",
     riskBody:
       "Operas con apalancamiento en Perpl. Si el precio se mueve fuerte en tu contra, Perpl liquida la posición y pierdes el colateral que depositaste.",
@@ -142,6 +144,8 @@ const T = {
     riskShort: "Real money, with leverage. You can lose what you deposit.",
     monIdle:
       "Your MON stays in your wallet: Perpl refuses deposits under $10 and yours is worth less than that.",
+    monUnchosen:
+      "Your MON stays in your wallet. Pick a percentage above to put it to work.",
     riskTitle: "This is real money and you can lose it",
     riskBody:
       "You are trading with leverage on Perpl. If the price moves hard against you, Perpl liquidates the position and the collateral you deposited is gone.",
@@ -538,8 +542,16 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           is not touching deserves the reason unprompted — otherwise the label
           looks like a lie. It is Perpl's floor: below ten dollars there is no
           deposit to make, not a smaller one. */}
+      {/* WHY the MON is staying put, and the two reasons are different.
+          This said "Perpl refuses deposits under $10 and yours is worth less
+          than that" to someone holding 1,767 MON — about $60. The sentence was
+          written when the only reason not to swap was being too poor to; once a
+          percentage could be chosen, not choosing one became the common reason
+          and the old text became a false statement about someone's money. */}
       {balances.walletMonWei > 0n && plan.swapMonWei === 0n && (
-        <p className="text-ink-faint text-[11px] leading-snug">{t.monIdle}</p>
+        <p className="text-ink-faint text-[11px] leading-snug">
+          {pct === null ? t.monUnchosen : t.monIdle}
+        </p>
       )}
 
       <p className="text-alert text-xs leading-snug">{t.riskShort}</p>

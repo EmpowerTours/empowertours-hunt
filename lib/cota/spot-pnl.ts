@@ -177,6 +177,32 @@ export function foldSpot(trades: SpotTrade[]): SpotResult {
   };
 }
 
+/** How far back to count. "all" is the lifetime figure. */
+export type Period = "day" | "week" | "month" | "all";
+
+/**
+ * Trades inside a period ending now.
+ *
+ * Applied BEFORE the fold, not after, and that is the whole subtlety: a
+ * disposal's basis comes from buys that may sit outside the window. Filtering
+ * first means the week's figures are "what the week did on its own" — a sell of
+ * MON bought last month shows the full proceeds as realised, because within the
+ * window nothing was paid for it.
+ *
+ * That is the honest reading of a windowed figure and it is NOT a lifetime
+ * number sliced up. The two differ, and the screen says which it is showing.
+ */
+export function withinPeriod(
+  trades: SpotTrade[],
+  period: Period,
+  nowMs: number,
+): SpotTrade[] {
+  if (period === "all") return trades;
+  const days = period === "day" ? 1 : period === "week" ? 7 : 30;
+  const from = nowMs - days * 24 * 60 * 60 * 1000;
+  return trades.filter((t) => t.at.getTime() >= from);
+}
+
 /** MON from wei, two places, for a screen. */
 export function monText(wei: bigint): string {
   const neg = wei < 0n;
