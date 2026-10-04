@@ -340,12 +340,10 @@ export default function CotaPage() {
         </div>
       </header>
 
-      <Note tone="warn">
-        {lang === "es"
-          ? "Opera AUSD real en Perpl bajo tu correa firmada. Necesitas una cuenta Perpl ya fondeada con AUSD."
-          : "Trade real AUSD on Perpl under your signed leash. Needs a Perpl account already funded with AUSD."}
-      </Note>
-
+      {/* The banner that used to sit here said "trade real AUSD under your
+          signed leash, needs a funded Perpl account". The panel below now says
+          both, with the hunter's actual numbers instead of a general warning —
+          and a general warning above a specific one is read as neither. */}
       {/* The one control. Everything else on this page is now behind it. */}
       <OneClickPanel lang={lang} />
 
@@ -550,123 +548,136 @@ export default function CotaPage() {
         </Panel>
       ) : (
         <>
-          <Panel className="space-y-4">
-            <div>
-              <span className="text-ink-dim font-mono text-xs tracking-[0.14em] uppercase">
-                {t("market")}
-              </span>
-              {marketsFailed ? (
-                <p className="text-alert mt-2 text-sm">{t("noMarkets")}</p>
-              ) : markets === null ? (
-                <p className="text-ink-faint mt-2 text-sm">{t("loading")}</p>
-              ) : (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {markets.map((m) => (
-                    <button
-                      key={m.market}
-                      onClick={() => {
-                        setMarket(m.market);
-                      }}
-                      className={`min-h-12 rounded-2xl border-2 px-4 font-semibold ${
-                        market === m.market
-                          ? "bg-phosphor text-void border-phosphor"
-                          : "border-hull-line text-ink"
-                      }`}
-                    >
-                      {m.market}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <Field
-              label={t("size")}
-              value={maxNotional}
-              onChange={setMaxNotional}
-              step={10}
-              suffix="$"
-            />
-            <Field
-              label={t("leverage")}
-              value={maxLeverage}
-              onChange={setMaxLeverage}
-              step={0.5}
-              min={1}
-              suffix="x"
-            />
-            <Field
-              label={t("loss")}
-              value={maxDailyLoss}
-              onChange={setMaxDailyLoss}
-              step={5}
-              suffix="$"
-            />
-            <Field
-              label={t("trades")}
-              value={maxTrades}
-              onChange={setMaxTrades}
-              step={1}
-            />
-            <Field
-              label={t("duration")}
-              value={days}
-              onChange={setDays}
-              step={1}
-              min={1}
-            />
-          </Panel>
-
-          <Panel className="space-y-3">
-            <h2 className="text-ink-dim font-mono text-xs tracking-[0.14em] uppercase">
-              {t("agreement")}
-            </h2>
-            {ceilings === null ? (
-              <p className="text-alert text-sm">{t("badNumber")}</p>
-            ) : (
-              <ul className="space-y-2.5">
-                {/* Protective clauses first: what bounds the loss is what the
-                    player is actually protected by, and a limit buried under a
-                    venue name is a disclosure nobody read. */}
-                {[...lines]
-                  .sort((a, b) => Number(b.protective) - Number(a.protective))
-                  .map((line) => (
-                    <li
-                      key={line.id}
-                      className={`border-l-2 pl-3 text-sm leading-snug ${
-                        line.protective
-                          ? "border-phosphor text-ink"
-                          : "border-hull-line text-ink-dim"
-                      }`}
-                    >
-                      {line[lang]}
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </Panel>
-
-          {error !== null ? (
-            <Note tone="stop" title={t("error")}>
-              {error}
-            </Note>
-          ) : null}
-
-          {maxNotional < MIN_LIVE_NOTIONAL_USD ? (
-            <Note tone="warn">
-              {lang === "es"
-                ? `En vivo, el tamaño máximo debe ser al menos $${MIN_LIVE_NOTIONAL_USD}. Órdenes más pequeñas no se ejecutan en Perpl.`
-                : `A live leash needs a max size of at least $${MIN_LIVE_NOTIONAL_USD}. Smaller orders won't fill on Perpl.`}
-            </Note>
-          ) : null}
-          <Button
-            onClick={() => void onSign()}
-            disabled={
-              busy || ceilings === null || maxNotional < MIN_LIVE_NOTIONAL_USD
+          <Disclosure
+            title={
+              lang === "es"
+                ? "Ajustes avanzados: fija tus propios límites"
+                : "Advanced: set your own limits"
+            }
+            sub={
+              lang === "es"
+                ? "Mercado, tamaño máximo, apalancamiento, pérdida diaria, vigencia"
+                : "Market, max size, leverage, daily loss, how long it lasts"
             }
           >
-            {busy ? t("signing") : t("sign")}
-          </Button>
+            <Panel className="space-y-4">
+              <div>
+                <span className="text-ink-dim font-mono text-xs tracking-[0.14em] uppercase">
+                  {t("market")}
+                </span>
+                {marketsFailed ? (
+                  <p className="text-alert mt-2 text-sm">{t("noMarkets")}</p>
+                ) : markets === null ? (
+                  <p className="text-ink-faint mt-2 text-sm">{t("loading")}</p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {markets.map((m) => (
+                      <button
+                        key={m.market}
+                        onClick={() => {
+                          setMarket(m.market);
+                        }}
+                        className={`min-h-12 rounded-2xl border-2 px-4 font-semibold ${
+                          market === m.market
+                            ? "bg-phosphor text-void border-phosphor"
+                            : "border-hull-line text-ink"
+                        }`}
+                      >
+                        {m.market}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Field
+                label={t("size")}
+                value={maxNotional}
+                onChange={setMaxNotional}
+                step={10}
+                suffix="$"
+              />
+              <Field
+                label={t("leverage")}
+                value={maxLeverage}
+                onChange={setMaxLeverage}
+                step={0.5}
+                min={1}
+                suffix="x"
+              />
+              <Field
+                label={t("loss")}
+                value={maxDailyLoss}
+                onChange={setMaxDailyLoss}
+                step={5}
+                suffix="$"
+              />
+              <Field
+                label={t("trades")}
+                value={maxTrades}
+                onChange={setMaxTrades}
+                step={1}
+              />
+              <Field
+                label={t("duration")}
+                value={days}
+                onChange={setDays}
+                step={1}
+                min={1}
+              />
+            </Panel>
+
+            <Panel className="space-y-3">
+              <h2 className="text-ink-dim font-mono text-xs tracking-[0.14em] uppercase">
+                {t("agreement")}
+              </h2>
+              {ceilings === null ? (
+                <p className="text-alert text-sm">{t("badNumber")}</p>
+              ) : (
+                <ul className="space-y-2.5">
+                  {/* Protective clauses first: what bounds the loss is what the
+                      player is actually protected by, and a limit buried under a
+                      venue name is a disclosure nobody read. */}
+                  {[...lines]
+                    .sort((a, b) => Number(b.protective) - Number(a.protective))
+                    .map((line) => (
+                      <li
+                        key={line.id}
+                        className={`border-l-2 pl-3 text-sm leading-snug ${
+                          line.protective
+                            ? "border-phosphor text-ink"
+                            : "border-hull-line text-ink-dim"
+                        }`}
+                      >
+                        {line[lang]}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </Panel>
+
+            {error !== null ? (
+              <Note tone="stop" title={t("error")}>
+                {error}
+              </Note>
+            ) : null}
+
+            {maxNotional < MIN_LIVE_NOTIONAL_USD ? (
+              <Note tone="warn">
+                {lang === "es"
+                  ? `En vivo, el tamaño máximo debe ser al menos $${MIN_LIVE_NOTIONAL_USD}. Órdenes más pequeñas no se ejecutan en Perpl.`
+                  : `A live leash needs a max size of at least $${MIN_LIVE_NOTIONAL_USD}. Smaller orders won't fill on Perpl.`}
+              </Note>
+            ) : null}
+            <Button
+              onClick={() => void onSign()}
+              disabled={
+                busy || ceilings === null || maxNotional < MIN_LIVE_NOTIONAL_USD
+              }
+            >
+              {busy ? t("signing") : t("sign")}
+            </Button>
+          </Disclosure>
         </>
       )}
 
