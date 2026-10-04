@@ -395,28 +395,56 @@ export function originNearSurvey(
   marginM: number,
 ): boolean {
   if (area.include.length === 0) return false;
-  let minLat = Infinity;
-  let maxLat = -Infinity;
-  let minLng = Infinity;
-  let maxLng = -Infinity;
+
+  const dLat = marginM / 111_000;
+  const cos = Math.abs(Math.cos((origin.lat * Math.PI) / 180));
+  const dLng = marginM / (111_000 * (cos < 1e-6 ? 1e-6 : cos));
+
+  // EACH RING GETS ITS OWN BOX. One box around every ring at once is the
+  // obvious implementation and it is wrong the moment a second city is
+  // surveyed: rings in Mexico and Bangkok produce a box spanning longitude
+  // -100 to +100, and a player in Dubai, Mumbai or Ürümqi sits inside it
+  // without being near any surveyed street at all. They would be judged ON the
+  // grid, placement would be constrained to hulls thousands of kilometres away,
+  // all ten draws would miss, and the hunt would answer no_walkable_ground
+  // forever — the same silent dead end a traveller already hit once, arriving
+  // on the day the survey expanded rather than the day they flew.
+  //
+  // Returns on the first ring that matches. A player is near THE SURVEY when
+  // they are near SOME surveyed thing, which is not what a union of extremes
+  // measures.
+  //
+  // A ring's box is still a superset of the ring, so this over-reports slightly
+  // for a long diagonal street. That is harmless where rings are dense — the
+  // placement draws land on a neighbouring ring — and it is the existing
+  // behaviour within a city, unchanged. Only the intercontinental case moves.
+  //
+  // Not antimeridian-safe: a ring crossing ±180 still yields a box spanning the
+  // globe. No survey goes near it today, and guessing at a wrap rule nobody can
+  // test against real zones would be worse than saying so here.
   for (const ring of area.include) {
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
     for (const v of ring) {
       if (v.lat < minLat) minLat = v.lat;
       if (v.lat > maxLat) maxLat = v.lat;
       if (v.lng < minLng) minLng = v.lng;
       if (v.lng > maxLng) maxLng = v.lng;
     }
+    // An empty ring describes nowhere. Skip it rather than let Infinity decide.
+    if (!Number.isFinite(minLat)) continue;
+    if (
+      origin.lat >= minLat - dLat &&
+      origin.lat <= maxLat + dLat &&
+      origin.lng >= minLng - dLng &&
+      origin.lng <= maxLng + dLng
+    ) {
+      return true;
+    }
   }
-  if (!Number.isFinite(minLat)) return false;
-  const dLat = marginM / 111_000;
-  const cos = Math.abs(Math.cos((origin.lat * Math.PI) / 180));
-  const dLng = marginM / (111_000 * (cos < 1e-6 ? 1e-6 : cos));
-  return (
-    origin.lat >= minLat - dLat &&
-    origin.lat <= maxLat + dLat &&
-    origin.lng >= minLng - dLng &&
-    origin.lng <= maxLng + dLng
-  );
+  return false;
 }
 
 // ---------------------------------------------------------------------------

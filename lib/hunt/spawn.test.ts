@@ -664,3 +664,81 @@ describe("originNearSurvey — play-anywhere boundary", () => {
     ).toBe(false);
   });
 });
+
+describe("originNearSurvey — a second city must not swallow the world", () => {
+  // A ~1km box around each city centre, as a survey import would produce.
+  const box = (lat: number, lng: number): Ring => [
+    { lat: lat - 0.005, lng: lng - 0.005 },
+    { lat: lat + 0.005, lng: lng - 0.005 },
+    { lat: lat + 0.005, lng: lng + 0.005 },
+    { lat: lat - 0.005, lng: lng + 0.005 },
+  ];
+
+  // The four the survey is about to cover.
+  const TIERRA_COLORADA = { lat: 17.165, lng: -99.515 };
+  const BANGKOK = { lat: 13.7998, lng: 100.6468 };
+  const SINGAPORE = { lat: 1.3521, lng: 103.8198 };
+  const SHUNYI = { lat: 40.0754, lng: 116.5885 };
+
+  const area = {
+    include: [
+      box(TIERRA_COLORADA.lat, TIERRA_COLORADA.lng),
+      box(BANGKOK.lat, BANGKOK.lng),
+      box(SINGAPORE.lat, SINGAPORE.lng),
+      box(SHUNYI.lat, SHUNYI.lng),
+    ],
+    exclude: [] as Ring[],
+  };
+
+  it("is true standing in any one of the surveyed cities", () => {
+    for (const city of [TIERRA_COLORADA, BANGKOK, SINGAPORE, SHUNYI]) {
+      expect(originNearSurvey(city, area, 60)).toBe(true);
+    }
+  });
+
+  it("is FALSE in cities that merely sit between them", () => {
+    // Every one of these falls inside a single box drawn around all four
+    // rings at once — latitude 1.35 to 40.08, longitude -99.52 to 116.59 — and
+    // the old implementation called each of them "on the survey grid". None is
+    // within a thousand kilometres of a surveyed street.
+    const between = [
+      { name: "Mumbai", lat: 19.076, lng: 72.8777 },
+      { name: "Dubai", lat: 25.2048, lng: 55.2708 },
+      { name: "Kashgar", lat: 39.4704, lng: 75.9898 },
+      { name: "Dakar", lat: 14.6937, lng: -17.4441 },
+      { name: "mid-Pacific", lat: 10.0, lng: -150.0 },
+    ];
+    for (const b of between) {
+      expect(
+        originNearSurvey({ lat: b.lat, lng: b.lng }, area, 60),
+        `${b.name} must be off the survey grid`,
+      ).toBe(false);
+    }
+  });
+
+  it("still honours the margin around each individual city", () => {
+    // ~55m north of Bangkok's box edge, inside a 60m margin.
+    const justOutside = { lat: BANGKOK.lat + 0.005 + 0.0005, lng: BANGKOK.lng };
+    expect(originNearSurvey(justOutside, area, 60)).toBe(true);
+    // ~1.1km north of it is not.
+    const wellOutside = { lat: BANGKOK.lat + 0.005 + 0.01, lng: BANGKOK.lng };
+    expect(originNearSurvey(wellOutside, area, 60)).toBe(false);
+  });
+
+  it("is unchanged for a single-city survey, which is today", () => {
+    const only = { include: [box(17.165, -99.515)], exclude: [] as Ring[] };
+    expect(originNearSurvey({ lat: 17.165, lng: -99.515 }, only, 60)).toBe(
+      true,
+    );
+    expect(originNearSurvey(BANGKOK, only, 60)).toBe(false);
+  });
+
+  it("ignores an empty ring rather than letting it decide", () => {
+    const withEmpty = {
+      include: [[] as unknown as Ring, box(BANGKOK.lat, BANGKOK.lng)],
+      exclude: [] as Ring[],
+    };
+    expect(originNearSurvey(BANGKOK, withEmpty, 60)).toBe(true);
+    expect(originNearSurvey(SINGAPORE, withEmpty, 60)).toBe(false);
+  });
+});
