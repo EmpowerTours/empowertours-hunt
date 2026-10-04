@@ -52,6 +52,9 @@ const T = {
     lede: "Un botón: cambia tu MON por AUSD en el libro de Kuru, lo deposita en Perpl y abre la operación bajo tu correa.",
     signIn: "Inicia sesión",
     checking: "Revisando tus saldos…",
+    loadFailed: "No pudimos leer tus saldos",
+    noPrice: "No se pudo leer el precio de MON ahora mismo.",
+    retry: "Reintentar",
     short: "Te falta para empezar",
     shortNote:
       "Perpl no acepta depósitos menores a 10 USD. No es nuestra regla, es la suya.",
@@ -95,6 +98,9 @@ const T = {
     lede: "One button: sells your MON for AUSD on Kuru's order book, deposits it at Perpl, and opens the trade under your leash.",
     signIn: "Sign in",
     checking: "Checking your balances…",
+    loadFailed: "We could not read your balances",
+    noPrice: "Could not read the MON price just now.",
+    retry: "Try again",
     short: "Not enough yet",
     shortNote:
       "Perpl refuses deposits under $10. That is their rule, not ours.",
@@ -193,18 +199,27 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
 
   const load = useCallback(async () => {
     if (auth.status !== "signed-in") return;
+    const address = auth.walletAddress as `0x${string}` | null;
+    if (!address) return;
     try {
       const pub = publicClient();
-      const { account } = await signInAccount();
+      // READ-ONLY, so no passkey ceremony. The address is already in the
+      // session; signInAccount() derives the signing KEY, which reading two
+      // balances does not need. Calling it here put a WebAuthn ceremony in
+      // front of every page load — the "it takes a while" — and, worse, any
+      // failure in it left the panel on "checking your balances" with no error
+      // and no retry, because the loading branch returns before the failure
+      // notice can render. The key is fetched when the button is pressed,
+      // which is the moment a signature is actually needed.
 
       const [monWei, ausd6, accountRes, quoteRes, cotaRes, fee] =
         await Promise.all([
-          pub.getBalance({ address: account.address }),
+          pub.getBalance({ address }),
           pub.readContract({
             address: AUSD_ADDRESS,
             abi: AUSD_ABI,
             functionName: "balanceOf",
-            args: [account.address],
+            args: [address],
           }) as Promise<bigint>,
           fetch("/api/cota/account", { cache: "no-store" }).then((r) =>
             r.ok ? r.json() : null,
@@ -222,7 +237,14 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       // honest way to say how much MON a ten dollar deposit costs, so the panel
       // stays in its loading state rather than inventing a number.
       const monUsd = quoteRes?.askUsd ?? quoteRes?.markUsd ?? null;
-      if (typeof monUsd !== "number" || !(monUsd > 0)) return;
+      if (typeof monUsd !== "number" || !(monUsd > 0)) {
+        // No price, no honest answer about how much MON a $10 deposit costs.
+        // Said out loud rather than returned silently: a bare `return` here
+        // left the panel on "checking your balances" for as long as the page
+        // stayed open, which is indistinguishable from the app being broken.
+        setFailed(t.noPrice);
+        return;
+      }
 
       const now = Date.now();
       const live = (cotaRes?.cotas ?? []).find(
@@ -259,7 +281,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
     } catch (err) {
       setFailed(String((err as { message?: string })?.message ?? err));
     }
-  }, [auth.status]);
+  }, [auth.status, auth.walletAddress]);
 
   useEffect(() => {
     void load();
@@ -277,8 +299,23 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
 
   if (plan === null || balances === null) {
     return (
-      <Panel>
-        <p className="text-ink-dim text-sm">{t.checking}</p>
+      <Panel className="space-y-3">
+        <p className="text-ink-dim text-sm">
+          {failed ? t.loadFailed : t.checking}
+        </p>
+        {failed && (
+          <>
+            <p className="text-ink-faint text-[11px] break-words">{failed}</p>
+            <Button
+              onClick={() => {
+                setFailed(null);
+                void load();
+              }}
+            >
+              {t.retry}
+            </Button>
+          </>
+        )}
       </Panel>
     );
   }
