@@ -37,6 +37,9 @@ const base: Conditions = {
   minTrade6: TEN_DOLLARS,
   gasReserveWei: GAS,
   slippageBps: 100n,
+  // Null means "only what the venue's floor requires", which is what every
+  // case below assumed before a chosen amount existed.
+  targetMonWei: null,
   leashMaxNotional6: null,
   oneClickNotional6: 50_000_000n,
   minFillable6: 3_000_000n,
@@ -450,6 +453,74 @@ describe("planOneClick — it must never reach for the whole wallet", () => {
     if (r.ok) {
       expect(r.swapMonWei).toBe(0n);
       expect(r.steps).toEqual(["trade"]);
+    }
+  });
+});
+
+describe("planOneClick — the hunter chooses how much", () => {
+  // 1,767 MON, already funded past the floor. The state the real wallet was in
+  // when the button offered to invest $10.97 of collateral and touch none of
+  // the MON sitting next to it.
+  const rich = {
+    walletMonWei: 1_767n * WEI,
+    walletAusd6: 0n,
+    perplAusd6: 10_980_000n,
+  };
+  const funded = { ...base, hasLeash: true, leashMaxNotional6: 50_000_000n };
+
+  it("touches no MON when nothing was asked for", () => {
+    const r = planOneClick(rich, funded);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.swapMonWei).toBe(0n);
+      expect(r.steps).toEqual(["trade"]);
+    }
+  });
+
+  it("deploys roughly the share asked for", () => {
+    // 30% of 1,767 MON is ~530 MON, about $18 at $0.034098.
+    const thirty = (rich.walletMonWei * 30n) / 100n;
+    const r = planOneClick(rich, { ...funded, targetMonWei: thirty });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.steps).toContain("swap");
+      expect(r.swapMonWei).toBeGreaterThan(0n);
+      // Never more than was asked for, whatever the rounding.
+      expect(r.swapMonWei).toBeLessThanOrEqual(thirty);
+      expect(Number(r.depositAusd6) / 1e6).toBeGreaterThan(17);
+      expect(Number(r.depositAusd6) / 1e6).toBeLessThan(19);
+    }
+  });
+
+  it("still cannot deposit below Perpl's floor, and says the floor instead", () => {
+    // 5% of 1,767 is ~88 MON, about $3 — under the $10 minimum. Perpl has no
+    // smaller deposit, so the plan asks for the floor rather than pretending.
+    const five = (rich.walletMonWei * 5n) / 100n;
+    const r = planOneClick(rich, { ...funded, targetMonWei: five });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.depositAusd6).toBe(TEN_DOLLARS);
+  });
+
+  it("never spends more MON than the wallet holds, however large the ask", () => {
+    const r = planOneClick(rich, {
+      ...funded,
+      targetMonWei: 999_999n * WEI,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.swapMonWei).toBeLessThanOrEqual(rich.walletMonWei - GAS);
+    }
+  });
+
+  it("leaves the gas alone even when asked for everything", () => {
+    const r = planOneClick(rich, {
+      ...funded,
+      targetMonWei: rich.walletMonWei,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const left = rich.walletMonWei - r.swapMonWei;
+      expect(left).toBeGreaterThanOrEqual(GAS);
     }
   });
 });

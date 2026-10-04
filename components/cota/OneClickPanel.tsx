@@ -72,6 +72,15 @@ const T = {
     enrol: "Crear mi llave →",
     failed: "No se pudo completar",
     advanced: "Ajustes avanzados",
+    howMuch: "¿Cuánto de tu MON?",
+    whichWay: "¿Hacia dónde?",
+    all: "Todo",
+    pctNone: "Solo lo mínimo que exige Perpl. Tu MON se queda donde está.",
+    pctOf: "≈ {mon} MON de tu cartera.",
+    dirUp: "Largo",
+    dirDown: "Corto",
+    dirUpSub: "ganas si MON sube",
+    dirDownSub: "ganas si MON baja",
     reqTitle: "Lo que necesitas para empezar",
     reqNote:
       "Perpl no acepta depósitos menores a 10 USD. Hoy eso son unos {mon} MON en tu cartera. No es nuestra regla, es la suya — y es lo mismo para cualquier cazador nuevo.",
@@ -118,6 +127,15 @@ const T = {
     enrol: "Create my key →",
     failed: "Could not finish",
     advanced: "Advanced settings",
+    howMuch: "How much of your MON?",
+    whichWay: "Which way?",
+    all: "All",
+    pctNone: "Only the minimum Perpl requires. Your MON stays where it is.",
+    pctOf: "≈ {mon} MON from your wallet.",
+    dirUp: "Long",
+    dirDown: "Short",
+    dirUpSub: "you gain if MON rises",
+    dirDownSub: "you gain if MON falls",
     reqTitle: "What you need to start",
     reqNote:
       "Perpl refuses deposits under $10. Today that is about {mon} MON in your wallet. That is their rule, not ours — and it is the same for every new hunter.",
@@ -196,6 +214,9 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
   const [result, setResult] = useState<RunResult | null>(null);
   /** The digest of an already-live leash, when there is one to trade under. */
   const [liveDigest, setLiveDigest] = useState<string | null>(null);
+  /** Share of wallet MON to deploy. null = only what the venue's floor needs. */
+  const [pct, setPct] = useState<number | null>(null);
+  const [side, setSide] = useState<"long" | "short">("long");
 
   const load = useCallback(async () => {
     if (auth.status !== "signed-in") return;
@@ -247,9 +268,21 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       }
 
       const now = Date.now();
+      // IT MUST NAME THE MARKET WE INTEND TO TRADE. Taking the newest live
+      // leash of any market is wrong and was only working by luck: this wallet
+      // holds 17 live leashes, most of them BTC and PUMP, and whichever was
+      // signed last would have been handed to a MON order. enforce.ts would
+      // then refuse it for naming a market the Cota does not cover — the
+      // correct refusal, arriving after the money had already moved.
       const live = (cotaRes?.cotas ?? []).find(
-        (c: { revokedAt: string | null; notAfter: string }) =>
-          c.revokedAt === null && new Date(c.notAfter).getTime() > now,
+        (c: {
+          revokedAt: string | null;
+          notAfter: string;
+          markets: string[];
+        }) =>
+          c.revokedAt === null &&
+          new Date(c.notAfter).getTime() > now &&
+          (c.markets ?? []).includes(ONE_CLICK.market),
       ) as { digest: string; maxNotionalUsdE6: string } | undefined;
       const hasLeash = Boolean(live);
       setLiveDigest(live?.digest ?? null);
@@ -274,6 +307,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           leashMaxNotional6: live ? BigInt(live.maxNotionalUsdE6) : null,
           oneClickNotional6: ONE_CLICK.maxNotionalUsdE6,
           minFillable6: MIN_FILLABLE_6DP,
+          targetMonWei: pct === null ? null : (monWei * BigInt(pct)) / 100n,
           gasReserveWei: GAS_UNITS_WHOLE_FLOW * fee,
           slippageBps: 100n,
         }),
@@ -281,7 +315,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
     } catch (err) {
       setFailed(String((err as { message?: string })?.message ?? err));
     }
-  }, [auth.status, auth.walletAddress]);
+  }, [auth.status, auth.walletAddress, pct]);
 
   useEffect(() => {
     void load();
@@ -410,6 +444,66 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
         <p className="text-ink-faint mt-1 text-xs">{t.lede}</p>
       </div>
 
+      {/* HOW MUCH, and WHICH WAY. Both were decided for the hunter before: the
+          amount by whatever the venue's floor happened to be, and the direction
+          by a constant that only ever said long. Neither is a choice this code
+          is in a position to make — one is their money and the other is their
+          opinion about the price. */}
+      <div>
+        <p className="text-ink-dim text-xs tracking-wide uppercase">
+          {t.howMuch}
+        </p>
+        <div className="mt-1.5 grid grid-cols-4 gap-2">
+          {([5, 30, 80, 100] as const).map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setPct(pct === n ? null : n)}
+              className={`min-h-11 rounded-xl border-2 font-mono text-sm ${
+                pct === n
+                  ? "border-phosphor text-phosphor"
+                  : "border-hull-line text-ink-dim"
+              }`}
+            >
+              {n === 100 ? t.all : `${n}%`}
+            </button>
+          ))}
+        </div>
+        <p className="text-ink-faint mt-1 text-[11px]">
+          {pct === null
+            ? t.pctNone
+            : t.pctOf.replace(
+                "{mon}",
+                monLabel((balances.walletMonWei * BigInt(pct)) / 100n),
+              )}
+        </p>
+      </div>
+
+      <div>
+        <p className="text-ink-dim text-xs tracking-wide uppercase">
+          {t.whichWay}
+        </p>
+        <div className="mt-1.5 grid grid-cols-2 gap-2">
+          {(["long", "short"] as const).map((sd) => (
+            <button
+              key={sd}
+              type="button"
+              onClick={() => setSide(sd)}
+              className={`min-h-12 rounded-xl border-2 px-2 text-sm font-semibold ${
+                side === sd
+                  ? "border-phosphor text-phosphor"
+                  : "border-hull-line text-ink-dim"
+              }`}
+            >
+              {sd === "long" ? t.dirUp : t.dirDown}
+              <span className="mt-0.5 block text-[11px] font-normal opacity-70">
+                {sd === "long" ? t.dirUpSub : t.dirDownSub}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* What the press will do, BEFORE it is pressed. Three of these four
           steps move money and none can be undone, so the sequence is spelled
           out rather than hidden behind a verb. */}
@@ -463,7 +557,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
               plan,
               ceilings: ONE_CLICK,
               market: ONE_CLICK.market,
-              side: ONE_CLICK.side,
+              side,
               // The collateral that will be there once the steps above have
               // run, not what is there now.
               notionalUsd: Number(plan.orderNotional6) / 1e6,

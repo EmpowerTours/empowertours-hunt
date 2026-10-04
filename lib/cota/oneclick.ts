@@ -89,6 +89,21 @@ export interface Conditions {
   gasReserveWei: bigint;
   /** Slippage allowance on the MON->AUSD leg, in basis points. */
   slippageBps: bigint;
+  /**
+   * MON the hunter has CHOSEN to deploy, in wei, or null for "only what the
+   * venue's floor requires".
+   *
+   * The middle ground between the two things this got wrong in one day. It
+   * first deployed the whole wallet, which sold 1,629 MON belonging to someone
+   * who had just topped up. Reverting that left it deploying nothing when the
+   * account was already funded, so a button saying "put my MON to work" sat
+   * next to 1,767 MON and proposed to touch none of it.
+   *
+   * Neither is a default anyone would choose. An amount the hunter picked is,
+   * and it is the only version where the button's promise and its behaviour
+   * are the same sentence.
+   */
+  targetMonWei: bigint | null;
 }
 
 export interface Plan {
@@ -255,11 +270,26 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
         ? c.minTrade6 - haveAtVenue
         : c.minDeposit6;
 
+  // What the hunter asked to deploy, in dollars, capped by what they hold.
+  const chosenMonWei =
+    c.targetMonWei === null
+      ? 0n
+      : c.targetMonWei > spendableMonWei
+        ? spendableMonWei
+        : c.targetMonWei;
+  const chosen6 = ausdForMon(chosenMonWei, c.monUsd, c.slippageBps);
+
+  // The deposit is the larger of what the venue demands and what was asked
+  // for — never more than one, never less than the other. Perpl refuses
+  // anything under its floor, so a request below it still costs a floor-sized
+  // deposit, and the screen says so before the press.
+  const wanted6 = chosen6 > required6 ? chosen6 : required6;
+
   let depositAusd6 = 0n;
   let swapMonWei = 0n;
 
-  if (required6 > 0n) {
-    depositAusd6 = required6;
+  if (wanted6 > 0n) {
+    depositAusd6 = wanted6 < c.minDeposit6 ? c.minDeposit6 : wanted6;
     const fromWallet =
       b.walletAusd6 >= depositAusd6 ? depositAusd6 : b.walletAusd6;
     const toBuy = depositAusd6 - fromWallet;
