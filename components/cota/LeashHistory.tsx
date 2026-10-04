@@ -14,6 +14,7 @@ interface CotaRow {
   venue: string;
   markets: string[];
   digest: string;
+  notAfter: string;
   revokedAt: string | null;
   anchorTxHash: string | null;
   createdAt: string;
@@ -31,6 +32,16 @@ export function LeashHistory({
   refreshKey?: string | null;
 }) {
   const [rows, setRows] = useState<CotaRow[] | null>(null);
+  const markRevoked = (digest: string) =>
+    setRows((prev) =>
+      prev === null
+        ? prev
+        : prev.map((r) =>
+            r.digest === digest
+              ? { ...r, revokedAt: new Date().toISOString() }
+              : r,
+          ),
+    );
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -62,7 +73,7 @@ export function LeashHistory({
         </h2>
         <ul className="space-y-2">
           {rows.slice(0, LEASH_PREVIEW).map((r) => (
-            <LeashRow key={r.id} row={r} lang={lang} />
+            <LeashRow key={r.id} row={r} lang={lang} onRevoked={markRevoked} />
           ))}
         </ul>
         {hidden > 0 ? (
@@ -87,7 +98,7 @@ export function LeashHistory({
       >
         <ul className="space-y-2">
           {rows.map((r) => (
-            <LeashRow key={r.id} row={r} lang={lang} />
+            <LeashRow key={r.id} row={r} lang={lang} onRevoked={markRevoked} />
           ))}
         </ul>
       </Sheet>
@@ -99,7 +110,46 @@ export function LeashHistory({
    the evidence. A leash either anchored to AuditAnchorV2 or it did not, and
    the explorer link is how somebody checks that without believing this
    screen. See components/ui/Sheet.tsx. */
-function LeashRow({ row, lang }: { row: CotaRow; lang: "es" | "en" }) {
+function LeashRow({
+  row,
+  lang,
+  onRevoked,
+}: {
+  row: CotaRow;
+  lang: "es" | "en";
+  onRevoked: (digest: string) => void;
+}) {
+  // Two taps, because it cannot be undone — the same shape the trade screen
+  // uses, and for the same reason.
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const live = row.revokedAt === null && new Date(row.notAfter) > new Date();
+
+  const revoke = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      const res = await fetch("/api/cota/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ digest: row.digest }),
+      });
+      const body = (await res.json()) as { revoked?: boolean; error?: string };
+      if (!res.ok || !body.revoked) {
+        setFailed(body.error ?? "failed");
+        return;
+      }
+      onRevoked(row.digest);
+    } catch (e) {
+      setFailed(String((e as { message?: string })?.message ?? e));
+    } finally {
+      setBusy(false);
+      setArmed(false);
+    }
+  };
+
   const when = new Date(row.createdAt).toLocaleDateString(
     lang === "es" ? "es-MX" : "en-US",
     { month: "short", day: "numeric" },
@@ -121,20 +171,66 @@ function LeashRow({ row, lang }: { row: CotaRow; lang: "es" | "en" }) {
           {row.revokedAt ? (lang === "es" ? " · revocada" : " · revoked") : ""}
         </div>
       </div>
-      {row.anchorTxHash ? (
-        <a
-          href={`https://monadscan.com/tx/${row.anchorTxHash}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 text-[12px] font-medium text-[#4ade80] underline"
-        >
-          {lang === "es" ? "Anclada ✓" : "Anchored ✓"}
-        </a>
-      ) : (
-        <Pill color="#a1a1aa">
-          {lang === "es" ? "sin anclar" : "not anchored"}
-        </Pill>
-      )}
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        {row.anchorTxHash ? (
+          <a
+            href={`https://monadscan.com/tx/${row.anchorTxHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[12px] font-medium text-[#4ade80] underline"
+          >
+            {lang === "es" ? "Anclada ✓" : "Anchored ✓"}
+          </a>
+        ) : (
+          <Pill color="#a1a1aa">
+            {lang === "es" ? "sin anclar" : "not anchored"}
+          </Pill>
+        )}
+
+        {/* REVOKE LIVES HERE because this is the only screen that lists every
+            leash. The trade screen can revoke only the one it is holding, and
+            it holds one for the market it trades — so a wallet with live BTC
+            and PUMP leashes had no way to withdraw them at all. A ceiling you
+            cannot take back is not a ceiling: the loosest live leash is the
+            real limit, and signing a tighter one changes nothing while the
+            looser one stands. */}
+        {live &&
+          (armed ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void revoke()}
+                disabled={busy}
+                className="text-alert text-[11px] font-semibold underline disabled:opacity-50"
+              >
+                {busy
+                  ? lang === "es"
+                    ? "Revocando…"
+                    : "Revoking…"
+                  : lang === "es"
+                    ? "Confirmar"
+                    : "Confirm"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setArmed(false)}
+                disabled={busy}
+                className="text-ink-faint text-[11px] underline"
+              >
+                {lang === "es" ? "No" : "No"}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setArmed(true)}
+              className="text-ink-dim text-[11px] underline underline-offset-2"
+            >
+              {lang === "es" ? "Revocar" : "Revoke"}
+            </button>
+          ))}
+        {failed && <span className="text-alert text-[10px]">{failed}</span>}
+      </div>
     </li>
   );
 }
