@@ -168,18 +168,33 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
 
   // Gas is needed only for the steps that actually touch the chain.
   //
-  // A swap and a deposit are transactions; signing a leash is EIP-712 and
-  // placing the order goes over the enrolled key, and neither costs a wei.
-  // Charging a reserve regardless would strand the hunter who funded Perpl
-  // last week and has since spent their MON — they would hold collateral at
-  // the venue, be perfectly able to trade it, and be told they were short. That
-  // is the same shape as the travel lockout: a requirement that cannot be met
-  // and does not need to be.
+  // THE LEASH IS ONE OF THEM, which is not obvious from its name.
+  // signAndAnchorCota signs the EIP-712 message and then anchors the digest on
+  // Monad, so a leash costs a transaction like the other two. Leaving it out —
+  // as a first version of this did, reasoning that a signature is free — would
+  // have let a hunter through with just enough MON for the swap and the
+  // deposit, and then produced a leash whose anchor silently failed. The anchor
+  // is tolerated as best-effort in sign.ts precisely so a bad moment does not
+  // lose the signature, and that tolerance is exactly what would have hidden it.
   //
-  // It is added to the requirement rather than checked against what is left
-  // after the swap, because the swap spends the same balance: needing 296 MON
-  // of input and 0.15 of gas means needing 296.15, not 296.
-  const touchesChain = steps.includes("swap") || steps.includes("deposit");
+  // Only placing the order is free: it goes over the enrolled trading key.
+  //
+  // Charging a reserve when NOTHING touches the chain would strand the hunter
+  // who funded Perpl last week and has since spent their MON — holding
+  // collateral at the venue, perfectly able to trade it, and told they were
+  // short. The same shape as the travel lockout: a requirement that cannot be
+  // met and does not need to be.
+  //
+  // Added to the requirement rather than checked against what is left after the
+  // swap, because the swap spends the same balance: needing 296 MON of input
+  // and 0.15 of gas means needing 296.15, not 296.
+  // Read from willSignLeash, NOT from steps.includes("leash"): the leash is
+  // pushed below, after this check, so asking the array here would always say
+  // no. That ordering is what made the first attempt at this fix pass its own
+  // test while changing nothing.
+  const willSignLeash = !c.hasLeash;
+  const touchesChain =
+    steps.includes("swap") || steps.includes("deposit") || willSignLeash;
   const needMonWei = swapMonWei + (touchesChain ? c.gasReserveWei : 0n);
   if (b.walletMonWei < needMonWei) {
     return {
@@ -191,7 +206,7 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
     };
   }
 
-  if (!c.hasLeash) steps.push("leash");
+  if (willSignLeash) steps.push("leash");
   steps.push("trade");
 
   return {

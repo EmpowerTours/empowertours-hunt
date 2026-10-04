@@ -13,7 +13,14 @@ import {
   planOneClick,
   type Balances,
   type OneClick,
+  type Step,
 } from "@/lib/cota/oneclick";
+import {
+  runPlan,
+  strandedAfter,
+  type RunResult,
+} from "@/lib/cota/oneclick-run";
+import { buildRunners, type Carry } from "@/lib/cota/oneclick-steps";
 
 // ---------------------------------------------------------------------------
 // The one control on the Cota hub.
@@ -72,6 +79,9 @@ const T = {
       "Tu correa limita lo que el agente puede ABRIR — apalancamiento, tamaño, pérdida diaria. No cierra una posición por ti y no detiene al mercado.",
     riskNoLiq:
       "No te mostramos un precio de liquidación a propósito: Perpl documenta sus márgenes en unidades que se contradicen, y un número sacado de la unidad equivocada te diría que estás más seguro de lo que estás.",
+    doneTitle: "Listo",
+    doneBody:
+      "Tu operación está abierta bajo tu correa. Puedes verla y cerrarla cuando quieras en Resultados.",
   },
   en: {
     title: "Put my MON to work",
@@ -105,6 +115,9 @@ const T = {
       "Your leash limits what the agent may OPEN — leverage, size, daily loss. It does not close a position for you and it cannot stop the market.",
     riskNoLiq:
       "We deliberately do not show you a liquidation price: Perpl documents its margin figures in contradictory units, and a number taken from the wrong one would tell you that you are safer than you are.",
+    doneTitle: "Done",
+    doneBody:
+      "Your trade is open under your leash. You can watch it and close it any time from Results.",
   },
 } as const;
 
@@ -118,6 +131,30 @@ const T = {
  */
 const GAS_UNITS_WHOLE_FLOW = 1_600_000n;
 
+/**
+ * The leash a one-click press signs, and the order it then places.
+ *
+ * ONE TIMES LEVERAGE, deliberately, and not the 2x the leash permits. The
+ * ceiling is what the hunter authorises; the order is what this button actually
+ * sends, and they do not have to be the same number. At 1x a liquidation needs
+ * the price to go to roughly nothing, which turns the risk disclosed above from
+ * a live hazard into a remote one for the person who pressed a button they did
+ * not fully understand. Advanced settings are where someone who does understand
+ * raises it.
+ */
+const ONE_CLICK = {
+  venue: "perpl" as const,
+  markets: ["MON"] as const,
+  maxNotionalUsdE6: 50_000_000n,
+  maxLeverageX100: 200n,
+  maxDailyLossUsdE6: 10_000_000n,
+  maxTradesPerDay: 5,
+  durationSeconds: 30n * 24n * 60n * 60n,
+  market: "MON",
+  side: "long" as const,
+  leverageX: 1,
+};
+
 export function OneClickPanel({ lang }: { lang: Lang }) {
   const t = T[lang];
   const auth = useAuthSlot();
@@ -126,6 +163,10 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
   const [balances, setBalances] = useState<Balances | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState<Step | null>(null);
+  const [result, setResult] = useState<RunResult | null>(null);
+  /** The digest of an already-live leash, when there is one to trade under. */
+  const [liveDigest, setLiveDigest] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (auth.status !== "signed-in") return;
@@ -161,12 +202,12 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       if (typeof monUsd !== "number" || !(monUsd > 0)) return;
 
       const now = Date.now();
-      const hasLeash = Boolean(
-        (cotaRes?.cotas ?? []).some(
-          (c: { revokedAt: string | null; notAfter: string }) =>
-            c.revokedAt === null && new Date(c.notAfter).getTime() > now,
-        ),
-      );
+      const live = (cotaRes?.cotas ?? []).find(
+        (c: { revokedAt: string | null; notAfter: string }) =>
+          c.revokedAt === null && new Date(c.notAfter).getTime() > now,
+      ) as { digest: string } | undefined;
+      const hasLeash = Boolean(live);
+      setLiveDigest(live?.digest ?? null);
 
       const b: Balances = {
         walletMonWei: monWei,
@@ -319,17 +360,70 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       </Note>
 
       <Button
-        onClick={() => {
+        onClick={async () => {
           setBusy(true);
-          // Execution is wired on the trade screen, which already holds the
-          // leash form this sequence needs. Carrying the plan there rather than
-          // duplicating a second signing path.
-          window.location.href = "/cota/trade?oneclick=1";
+          setResult(null);
+          try {
+            // One unlock. Every signature below comes from this account
+            // without prompting again, which is what makes one press one press.
+            const { account } = await signInAccount();
+            const carry: Carry = {
+              // A hunter who already has a live leash trades under it rather
+              // than signing a second one; the plan omits the leash step for
+              // exactly that case, so the digest has to come from the live one.
+              digest: liveDigest,
+              wentThroughOrderBook: null,
+            };
+            const runners = buildRunners({
+              account,
+              plan,
+              ceilings: ONE_CLICK,
+              market: ONE_CLICK.market,
+              side: ONE_CLICK.side,
+              // The collateral that will be there once the steps above have
+              // run, not what is there now.
+              notionalUsd: Number(plan.tradeAusd6) / 1e6,
+              leverageX: ONE_CLICK.leverageX,
+              carry,
+              onStep: (step) => setRunning(step),
+            });
+            const r = await runPlan(plan.steps, runners, (step, err) => {
+              const msg = String((err as { message?: string })?.message ?? err);
+              return `${step}: ${msg}`;
+            });
+            setResult(r);
+            if (r.ok) await load();
+          } catch (err) {
+            setFailed(String((err as { message?: string })?.message ?? err));
+          } finally {
+            setRunning(null);
+            setBusy(false);
+          }
         }}
         disabled={busy}
       >
-        {busy ? t.working : `${t.ready} $${ausdLabel(plan.tradeAusd6)}`}
+        {busy
+          ? `${t.working}${running ? ` (${label[running]})` : ""}`
+          : `${t.ready} $${ausdLabel(plan.tradeAusd6)}`}
       </Button>
+
+      {/* A partial run says where the money actually is. "Something went wrong"
+          is not an acceptable sentence on a path that has already spent it. */}
+      {result && !result.ok && (
+        <Note tone="stop" title={t.failed}>
+          <span className="block">
+            {result.outcomes.find((o) => !o.ok)?.error ?? ""}
+          </span>
+          {strandedAfter(result, lang) && (
+            <span className="mt-1 block">{strandedAfter(result, lang)}</span>
+          )}
+        </Note>
+      )}
+      {result?.ok && (
+        <Note tone="success" title={t.doneTitle}>
+          {t.doneBody}
+        </Note>
+      )}
 
       {failed && <Note tone="warn">{`${t.failed}: ${failed}`}</Note>}
     </Panel>

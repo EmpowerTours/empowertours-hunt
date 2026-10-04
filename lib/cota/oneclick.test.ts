@@ -138,7 +138,14 @@ describe("planOneClick — skipping what is already done", () => {
   });
 
   it("skips swap and deposit when Perpl already holds the collateral", () => {
-    const r = planOneClick({ ...empty, perplAusd6: 12_000_000n }, base);
+    // Gas is still needed, because the leash below it anchors on chain. This
+    // case originally passed walletMonWei: 0 and expected a plan — written
+    // while the leash was believed to be free. It is not, and the version of
+    // this test that asserted otherwise would have shipped the belief.
+    const r = planOneClick(
+      { walletMonWei: GAS, walletAusd6: 0n, perplAusd6: 12_000_000n },
+      base,
+    );
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.steps).toEqual(["leash", "trade"]);
@@ -233,5 +240,37 @@ describe("labels", () => {
     expect(ausdLabel(0n)).toBe("0.00");
     expect(ausdLabel(TEN_DOLLARS)).toBe("10.00");
     expect(ausdLabel(12_345_678n)).toBe("12.34");
+  });
+});
+
+describe("planOneClick — the leash costs gas too", () => {
+  it("demands gas for a funded hunter who still has to sign a leash", () => {
+    // signAndAnchorCota does not just sign: it anchors the digest on Monad, so
+    // the leash is a transaction. A first version of this module treated it as
+    // free, which would have let someone through with exactly enough for the
+    // swap and the deposit and then produced a leash whose anchor failed —
+    // silently, because sign.ts tolerates an anchor failure on purpose so a bad
+    // moment cannot cost someone their signature.
+    const r = planOneClick(
+      { walletMonWei: 0n, walletAusd6: 0n, perplAusd6: 12_000_000n },
+      base,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("short");
+      expect(r.shortfallMonWei).toBe(GAS);
+    }
+  });
+
+  it("needs nothing at all once the leash is already live", () => {
+    // Funded, leashed, and the only step left goes over the enrolled key. No
+    // transaction, so no MON required — a hunter in this state must not be told
+    // they are short of anything.
+    const r = planOneClick(
+      { walletMonWei: 0n, walletAusd6: 0n, perplAusd6: 12_000_000n },
+      { ...base, hasLeash: true },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.steps).toEqual(["trade"]);
   });
 });
