@@ -62,6 +62,16 @@ const T = {
     enrol: "Crear mi llave →",
     failed: "No se pudo completar",
     advanced: "Ajustes avanzados",
+    reqTitle: "Lo que necesitas para empezar",
+    reqNote:
+      "Perpl no acepta depósitos menores a 10 USD. Hoy eso son unos {mon} MON en tu cartera. No es nuestra regla, es la suya — y es lo mismo para cualquier cazador nuevo.",
+    riskTitle: "Esto es dinero real y puedes perderlo",
+    riskBody:
+      "Operas con apalancamiento en Perpl. Si el precio se mueve fuerte en tu contra, Perpl liquida la posición y pierdes el colateral que depositaste.",
+    riskLeash:
+      "Tu correa limita lo que el agente puede ABRIR — apalancamiento, tamaño, pérdida diaria. No cierra una posición por ti y no detiene al mercado.",
+    riskNoLiq:
+      "No te mostramos un precio de liquidación a propósito: Perpl documenta sus márgenes en unidades que se contradicen, y un número sacado de la unidad equivocada te diría que estás más seguro de lo que estás.",
   },
   en: {
     title: "Put my MON to work",
@@ -85,6 +95,16 @@ const T = {
     enrol: "Create my key →",
     failed: "Could not finish",
     advanced: "Advanced settings",
+    reqTitle: "What you need to start",
+    reqNote:
+      "Perpl refuses deposits under $10. Today that is about {mon} MON in your wallet. That is their rule, not ours — and it is the same for every new hunter.",
+    riskTitle: "This is real money and you can lose it",
+    riskBody:
+      "You are trading with leverage on Perpl. If the price moves hard against you, Perpl liquidates the position and the collateral you deposited is gone.",
+    riskLeash:
+      "Your leash limits what the agent may OPEN — leverage, size, daily loss. It does not close a position for you and it cannot stop the market.",
+    riskNoLiq:
+      "We deliberately do not show you a liquidation price: Perpl documents its margin figures in contradictory units, and a number taken from the wrong one would tell you that you are safer than you are.",
   },
 } as const;
 
@@ -245,6 +265,12 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
         >
           {t.keepHunting}
         </a>
+        {/* Stated as a requirement, not just as today's gap. A hunter deciding
+            whether this is worth walking for needs the entry price of the whole
+            mechanic, not only how far off they happen to be this minute. */}
+        <p className="text-ink-faint text-[11px] leading-snug">
+          {t.reqNote.replace("{mon}", monLabel(plan.needMonWei))}
+        </p>
       </Panel>
     );
   }
@@ -278,6 +304,19 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           ))}
         </ol>
       </div>
+
+      {/* Said BEFORE the button, not after, and not behind a disclosure.
+          A permission or a loss that a hunter only discovers by pressing is one
+          they never agreed to. The leash is the product's whole claim, so it is
+          worth being exact about what it does not do: it bounds the agent, and
+          the market is not the agent. */}
+      <Note tone="warn" title={t.riskTitle}>
+        <span className="block">{t.riskBody}</span>
+        <span className="mt-1 block">{t.riskLeash}</span>
+        <span className="text-ink-faint mt-1 block text-[11px]">
+          {t.riskNoLiq}
+        </span>
+      </Note>
 
       <Button
         onClick={() => {
