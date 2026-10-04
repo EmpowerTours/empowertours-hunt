@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
-import { formatEther, parseEther, parseUnits } from "viem";
+import { formatEther, formatUnits, parseEther, parseUnits } from "viem";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { Sheet, SheetOpener } from "@/components/ui/Sheet";
@@ -466,7 +466,45 @@ export default function SpotPage() {
             data: q.calldata,
             value: q.value,
           });
-        } catch {
+        } catch (simErr) {
+          // 0x7939f424 is TransferFromFailed() — the route tried to pull the
+          // USDC and could not. With the balance there, that means the
+          // allowance is on the wrong contract.
+          //
+          // KURU USES BOTH. The executor is the spender for some routes and
+          // the entrypoint for others — on 4 October mainnet carried 778
+          // approvals to one and 164 to the other, hours apart. We approved
+          // only the executor, from a note written when that was the route
+          // being used, so a hunter handed an entrypoint route simply could
+          // not trade and was told "no route that would execute", which is
+          // both wrong and unactionable.
+          //
+          // Approving `q.to` approves whatever THIS quote addresses rather
+          // than whichever contract was right last time, and only when a
+          // simulation has already proved it necessary.
+          const why = String(
+            (simErr as { message?: string })?.message ?? simErr,
+          );
+          if (side === "buy" && why.includes("0x7939f424")) {
+            const spent = (await pc.readContract({
+              address: USDC,
+              abi: ERC20,
+              functionName: "allowance",
+              args: [address, q.to],
+            })) as bigint;
+            if (spent < amount) {
+              setApproving(true);
+              const h = await walletClientFor(account).writeContract({
+                address: USDC,
+                abi: ERC20,
+                functionName: "approve",
+                args: [q.to, amount],
+              });
+              await pc.waitForTransactionReceipt({ hash: h });
+              setApproving(false);
+              continue;
+            }
+          }
           await new Promise((r) => setTimeout(r, 1200));
           continue;
         }
@@ -675,7 +713,12 @@ export default function SpotPage() {
                     setInput(
                       side === "sell"
                         ? formatEther(maxMon)
-                        : ((usdcBal ?? 0n) / 1_000_000n).toString(),
+                        : // formatUnits, not integer division. Dividing bigints
+                          // truncates, so a balance of 58.4964 filled the box
+                          // with "58" while the button beside it displayed
+                          // 58.4964 — the tap silently left 0.4964 USDC behind
+                          // and the two numbers on one line disagreed.
+                          formatUnits(usdcBal ?? 0n, 6),
                     )
                   }
                   className="text-phosphor font-mono text-xs underline"
