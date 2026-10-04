@@ -199,8 +199,29 @@ export function parseQuote(body: unknown): KuruQuote {
   // 0x1e703000 against ce1e7030. A prefix, silently.
   const raw = data.toLowerCase();
   const calldata = (raw.startsWith("0x") ? raw : `0x${raw}`) as `0x${string}`;
+
+  // AN EMPTY QUOTE IS NOT A QUOTE. Kuru answers an unroutable amount with an
+  // empty `data`, which survives every check above — the types are all correct,
+  // the string is simply blank — and becomes `0x`. What goes out is then a
+  // transaction to the entrypoint with no calldata and no value, which always
+  // reverts, and the error says only "execution reverted for an unknown
+  // reason" with the raw arguments showing an empty data field. It cost a real
+  // press to find.
+  //
+  // Checked here rather than at the call site because every caller would
+  // otherwise need to know that a successful response can describe nothing.
+  if (calldata.length <= 2) {
+    throw new Error(
+      "kuru: no route for that amount — the quote came back with no calldata",
+    );
+  }
+  const output = BigInt(b.output);
+  if (output <= 0n) {
+    throw new Error("kuru: no route for that amount — the quote returns zero");
+  }
+
   return {
-    output: BigInt(b.output),
+    output,
     minOut: BigInt(b.minOut),
     to: normaliseAddress(tx.to),
     value: BigInt((tx.value as string | undefined) ?? "0"),

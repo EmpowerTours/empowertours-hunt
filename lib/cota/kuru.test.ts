@@ -93,7 +93,11 @@ describe("parseQuote — the 0x prefix", () => {
     const q = parseQuote({
       output: "1",
       minOut: "1",
-      transaction: { to: "B3E6778480B2E488385E8205EA05E20060B813CB", value: "0", data: "0xab" },
+      transaction: {
+        to: "B3E6778480B2E488385E8205EA05E20060B813CB",
+        value: "0",
+        data: "0xab",
+      },
     });
     expect(q.to).toBe("0xb3e6778480b2e488385e8205ea05e20060b813cb");
   });
@@ -144,5 +148,43 @@ describe("parseQuote", () => {
     const q = parseQuote(body(`0xAA${MARKET.toUpperCase()}`));
     expect(q.calldata).toBe(q.calldata.toLowerCase());
     expect(q.usesOrderBook).toBe(true);
+  });
+});
+
+describe("parseQuote — an empty quote is not a quote", () => {
+  const good = {
+    output: "1000000",
+    minOut: "990000",
+    transaction: {
+      to: "0xb3e6778480b2e488385e8205ea05e20060b813cb",
+      value: "0",
+      data: "deadbeef",
+    },
+  };
+
+  it("accepts a real quote", () => {
+    const q = parseQuote(good);
+    expect(q.calldata).toBe("0xdeadbeef");
+    expect(q.output).toBe(1_000_000n);
+  });
+
+  it("refuses calldata that is empty", () => {
+    // Kuru answers an unroutable amount with a blank `data`. Every type check
+    // passes — the string is simply empty — and it becomes "0x", which goes out
+    // as a transaction with no calldata and no value and reverts with no stated
+    // reason. This happened on a real press.
+    for (const data of ["", "0x"]) {
+      expect(() =>
+        parseQuote({ ...good, transaction: { ...good.transaction, data } }),
+      ).toThrow(/no route/i);
+    }
+  });
+
+  it("refuses a quote that would deliver nothing", () => {
+    expect(() => parseQuote({ ...good, output: "0" })).toThrow(/no route/i);
+  });
+
+  it("still refuses a response missing its fields outright", () => {
+    expect(() => parseQuote({ output: "1" })).toThrow(/missing/i);
   });
 });

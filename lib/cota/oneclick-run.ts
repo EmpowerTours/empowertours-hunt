@@ -123,9 +123,14 @@ export function strandedAfter(
       : "The swap did go through, so you are holding AUSD in your wallet. It was the deposit to Perpl that failed — your money is safe, try the deposit again.";
   }
   if (result.failedAt === "swap") {
+    // Does NOT claim the gas was spent. Kuru's send path simulates with
+    // eth_call before signing anything, so most failures here cost nothing at
+    // all — and telling someone they paid for a failure they did not pay for is
+    // its own small dishonesty. It cannot know which happened, so it says what
+    // is certain: the MON did not move.
     return es
-      ? "No se cambió nada. Tu MON sigue en tu cartera; sólo se gastó el gas del intento."
-      : "Nothing was swapped. Your MON is still in your wallet; only the gas for the attempt was spent.";
+      ? "No se cambió nada: tu MON sigue completo en tu cartera. Si la operación llegó a enviarse, sólo se gastó su gas."
+      : "Nothing was swapped — your MON is all still in your wallet. If a transaction was actually sent, only its gas was spent.";
   }
   if (result.failedAt === "leash" || result.failedAt === "trade") {
     return es

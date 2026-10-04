@@ -180,6 +180,13 @@ export async function swapMonToAusdViaKuru(args: {
 }): Promise<KuruSwapResult> {
   const { account, monWei } = args;
   const step = args.onStep ?? (() => {});
+
+  // Selling nothing is not a swap. A zero here produced a quote with empty
+  // calldata and a transaction that reverted for no stated reason; refusing it
+  // by name costs one comparison and makes the next occurrence self-explaining.
+  if (monWei <= 0n) {
+    throw new Error("kuru: nothing to swap — the amount is zero");
+  }
   const pc = publicClient();
   const user = account.address;
 
