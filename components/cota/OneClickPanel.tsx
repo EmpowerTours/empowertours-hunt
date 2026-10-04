@@ -1,0 +1,298 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Button, Note, Panel } from "@/components/ui/primitives";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
+import { useAuthSlot } from "@/app/providers";
+import { signInAccount } from "@/lib/auth/passkey";
+import { publicClient } from "@/lib/cota/swap";
+import { AUSD_ABI, AUSD_ADDRESS, MIN_DEPOSIT_6DP } from "@/lib/cota/deposit";
+import {
+  ausdLabel,
+  monLabel,
+  planOneClick,
+  type Balances,
+  type OneClick,
+} from "@/lib/cota/oneclick";
+
+// ---------------------------------------------------------------------------
+// The one control on the Cota hub.
+//
+// The hub had eleven buttons — swap, bridge, swap USDC, on-ramp, deposit,
+// trade, risk, results, leaderboard, spot, enrol. Every one is a real step
+// somebody has to take, in roughly that order, and together they ask a hunter
+// who has just walked to a cache to work out which four apply to them. Eleven
+// correct buttons are worse than one.
+//
+// WHAT IT MOSTLY DOES IS SAY NO, HONESTLY. Perpl will not accept a deposit
+// under ten dollars — min_deposit_amount and min_account_open_amount are both
+// 10000000 at six decimals in their own published context — and a spawn is one
+// MON, about three and a half cents. So the usual answer is "you are 295 MON
+// short", and the usual job of this panel is to say that with a number and a
+// progress bar instead of offering a button that fails on tap.
+//
+// It never guesses a balance. Wallet MON and AUSD are read from the chain,
+// collateral from Perpl, and the price from the live book. A panel that
+// estimated any of them could tell a hunter they were ready when they were not,
+// and they would find out by spending gas.
+// ---------------------------------------------------------------------------
+
+type Lang = "es" | "en";
+
+const T = {
+  es: {
+    title: "Poner mi MON a trabajar",
+    lede: "Un botón: cambia tu MON por AUSD en el libro de Kuru, lo deposita en Perpl y abre la operación bajo tu correa.",
+    signIn: "Inicia sesión",
+    checking: "Revisando tus saldos…",
+    short: "Te falta para empezar",
+    shortNote:
+      "Perpl no acepta depósitos menores a 10 USD. No es nuestra regla, es la suya.",
+    have: "Tienes",
+    need: "Necesitas",
+    keepHunting: "Seguir cazando MON →",
+    ready: "Invertir",
+    willDo: "Al presionar:",
+    stepSwap: "cambiar MON por AUSD en el libro de Kuru",
+    stepDeposit: "depositar el AUSD en Perpl",
+    stepLeash: "firmar tu correa (tú decides los límites)",
+    stepTrade: "abrir la operación",
+    working: "Trabajando…",
+    notEnrolled: "Primero necesitas una llave de operación.",
+    enrol: "Crear mi llave →",
+    failed: "No se pudo completar",
+    advanced: "Ajustes avanzados",
+  },
+  en: {
+    title: "Put my MON to work",
+    lede: "One button: sells your MON for AUSD on Kuru's order book, deposits it at Perpl, and opens the trade under your leash.",
+    signIn: "Sign in",
+    checking: "Checking your balances…",
+    short: "Not enough yet",
+    shortNote:
+      "Perpl refuses deposits under $10. That is their rule, not ours.",
+    have: "You have",
+    need: "You need",
+    keepHunting: "Go hunt more MON →",
+    ready: "Invest",
+    willDo: "One press will:",
+    stepSwap: "sell MON for AUSD on Kuru's order book",
+    stepDeposit: "deposit the AUSD at Perpl",
+    stepLeash: "sign your leash (you set the limits)",
+    stepTrade: "open the trade",
+    working: "Working…",
+    notEnrolled: "You need a trading key first.",
+    enrol: "Create my key →",
+    failed: "Could not finish",
+    advanced: "Advanced settings",
+  },
+} as const;
+
+/**
+ * MON held back for gas, derived from the live base fee rather than guessed.
+ *
+ * A flat reserve is the same mistake as a flat gas limit: wrong the moment the
+ * route or the base fee moves, and on Monad the whole limit is charged whether
+ * it is used or not, so being wrong is paid for in full. Four transactions at a
+ * generous limit, priced at the fee the chain is quoting right now.
+ */
+const GAS_UNITS_WHOLE_FLOW = 1_600_000n;
+
+export function OneClickPanel({ lang }: { lang: Lang }) {
+  const t = T[lang];
+  const auth = useAuthSlot();
+
+  const [plan, setPlan] = useState<OneClick | null>(null);
+  const [balances, setBalances] = useState<Balances | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    if (auth.status !== "signed-in") return;
+    try {
+      const pub = publicClient();
+      const { account } = await signInAccount();
+
+      const [monWei, ausd6, accountRes, quoteRes, cotaRes, fee] =
+        await Promise.all([
+          pub.getBalance({ address: account.address }),
+          pub.readContract({
+            address: AUSD_ADDRESS,
+            abi: AUSD_ABI,
+            functionName: "balanceOf",
+            args: [account.address],
+          }) as Promise<bigint>,
+          fetch("/api/cota/account", { cache: "no-store" }).then((r) =>
+            r.ok ? r.json() : null,
+          ),
+          fetch("/api/cota/quote?market=MON", { cache: "no-store" }).then(
+            (r) => (r.ok ? r.json() : null),
+          ),
+          fetch("/api/cota", { cache: "no-store" }).then((r) =>
+            r.ok ? r.json() : null,
+          ),
+          pub.getGasPrice(),
+        ]);
+
+      // A missing price is not a reason to guess one. Without it there is no
+      // honest way to say how much MON a ten dollar deposit costs, so the panel
+      // stays in its loading state rather than inventing a number.
+      const monUsd = quoteRes?.askUsd ?? quoteRes?.markUsd ?? null;
+      if (typeof monUsd !== "number" || !(monUsd > 0)) return;
+
+      const now = Date.now();
+      const hasLeash = Boolean(
+        (cotaRes?.cotas ?? []).some(
+          (c: { revokedAt: string | null; notAfter: string }) =>
+            c.revokedAt === null && new Date(c.notAfter).getTime() > now,
+        ),
+      );
+
+      const b: Balances = {
+        walletMonWei: monWei,
+        walletAusd6: ausd6,
+        perplAusd6: BigInt(
+          Math.round((accountRes?.account?.balanceUsd ?? 0) * 1e6),
+        ),
+      };
+      setBalances(b);
+      setPlan(
+        planOneClick(b, {
+          enrolled: Boolean(accountRes?.enrolled),
+          hasLeash,
+          monUsd,
+          minDeposit6: MIN_DEPOSIT_6DP,
+          minTrade6: MIN_DEPOSIT_6DP,
+          gasReserveWei: GAS_UNITS_WHOLE_FLOW * fee,
+          slippageBps: 100n,
+        }),
+      );
+    } catch (err) {
+      setFailed(String((err as { message?: string })?.message ?? err));
+    }
+  }, [auth.status]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (auth.status !== "signed-in") {
+    return (
+      <Panel className="space-y-3">
+        <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
+        <p className="text-ink-dim text-sm">{t.lede}</p>
+        <SignInPrompt label={t.signIn} />
+      </Panel>
+    );
+  }
+
+  if (plan === null || balances === null) {
+    return (
+      <Panel>
+        <p className="text-ink-dim text-sm">{t.checking}</p>
+      </Panel>
+    );
+  }
+
+  if (!plan.ok && plan.reason === "not_enrolled") {
+    return (
+      <Panel className="space-y-3">
+        <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
+        <p className="text-ink-dim text-sm">{t.notEnrolled}</p>
+        <a
+          href="/cota/enroll"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {t.enrol}
+        </a>
+      </Panel>
+    );
+  }
+
+  if (!plan.ok) {
+    const pct =
+      plan.needMonWei > 0n
+        ? Number((plan.haveMonWei * 100n) / plan.needMonWei)
+        : 0;
+    return (
+      <Panel className="space-y-3">
+        <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
+        <div>
+          <p className="text-ink text-sm font-semibold">{t.short}</p>
+          <p className="text-ink-faint mt-1 text-xs">{t.shortNote}</p>
+        </div>
+        {/* The number, not a vague "not yet". A hunter deciding whether to walk
+            another hour deserves to know it is 295 MON and not 3. */}
+        <div className="border-hull-line bg-hull-2/40 rounded-xl border p-3">
+          <div className="text-ink-dim flex justify-between font-mono text-xs">
+            <span>{t.have}</span>
+            <span className="text-ink">{monLabel(plan.haveMonWei)} MON</span>
+          </div>
+          <div className="text-ink-dim mt-1 flex justify-between font-mono text-xs">
+            <span>{t.need}</span>
+            <span className="text-spawn">{monLabel(plan.needMonWei)} MON</span>
+          </div>
+          <div className="bg-hull-line mt-2 h-1.5 w-full overflow-hidden rounded-full">
+            <div
+              className="bg-spawn h-full rounded-full"
+              style={{ width: `${Math.max(1, Math.min(100, pct))}%` }}
+            />
+          </div>
+        </div>
+        <a
+          href="/hunt"
+          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+        >
+          {t.keepHunting}
+        </a>
+      </Panel>
+    );
+  }
+
+  const label: Record<string, string> = {
+    swap: t.stepSwap,
+    deposit: t.stepDeposit,
+    leash: t.stepLeash,
+    trade: t.stepTrade,
+  };
+
+  return (
+    <Panel className="space-y-3">
+      <div>
+        <h2 className="text-ink text-lg font-semibold">{t.title}</h2>
+        <p className="text-ink-faint mt-1 text-xs">{t.lede}</p>
+      </div>
+
+      {/* What the press will do, BEFORE it is pressed. Three of these four
+          steps move money and none can be undone, so the sequence is spelled
+          out rather than hidden behind a verb. */}
+      <div className="border-hull-line bg-hull-2/40 rounded-xl border p-3">
+        <p className="text-ink-dim font-mono text-[11px] tracking-[0.18em] uppercase">
+          {t.willDo}
+        </p>
+        <ol className="text-ink-dim mt-2 space-y-1 text-xs">
+          {plan.steps.map((s, i) => (
+            <li key={s}>
+              {i + 1}. {label[s]}
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <Button
+        onClick={() => {
+          setBusy(true);
+          // Execution is wired on the trade screen, which already holds the
+          // leash form this sequence needs. Carrying the plan there rather than
+          // duplicating a second signing path.
+          window.location.href = "/cota/trade?oneclick=1";
+        }}
+        disabled={busy}
+      >
+        {busy ? t.working : `${t.ready} $${ausdLabel(plan.tradeAusd6)}`}
+      </Button>
+
+      {failed && <Note tone="warn">{`${t.failed}: ${failed}`}</Note>}
+    </Panel>
+  );
+}

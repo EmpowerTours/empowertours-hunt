@@ -6,8 +6,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
-import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
+import {
+  Button,
+  Disclosure,
+  Note,
+  Panel,
+  Pill,
+} from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
+import { OneClickPanel } from "@/components/cota/OneClickPanel";
 import { LeashHistory } from "@/components/cota/LeashHistory";
 import { readback } from "@/lib/cota/readback";
 import { leverageX100, LossyScaleError, usdE6 } from "@/lib/cota/scale";
@@ -339,130 +346,150 @@ export default function CotaPage() {
           : "Trade real AUSD on Perpl under your signed leash. Needs a Perpl account already funded with AUSD."}
       </Note>
 
-      {/* The path to AUSD; two ways, by where your money already is. */}
-      <div className="grid gap-2">
-        <a
-          href="/cota/swap"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es"
-            ? "Cambiar MON cazado → AUSD →"
-            : "Swap hunted MON → AUSD →"}
-        </a>
-        <a
-          href="/cota/bridge"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es"
-            ? "Traer AUSD de otra red (puente) →"
-            : "Bring AUSD from another chain →"}
-        </a>
-        {/* The door for money that is on neither Monad nor a chain we bridge
-            AUSD from. One address, any chain, no wallet to connect — it lands
-            USDC, so it feeds /cota/swap rather than replacing it. */}
-        {/* The other half of the on-ramp. A hunter who funded through Aurora
-            holds USDC, not MON, so the MON swap above is the wrong door for
-            them — it answers "you have no MON". */}
-        <a
-          href="/cota/swap/usdc"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es" ? "Cambiar USDC → AUSD →" : "Swap USDC → AUSD →"}
-        </a>
-        <a
-          href="/cota/onramp"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es"
-            ? "Fondear desde cualquier red →"
-            : "Fund from any chain →"}
-        </a>
-        {/* Once you hold AUSD, this opens the Perpl account. It must run
-              before enrolling a key — enrollment 404s without an account. */}
-        <a
-          href="/cota/deposit"
-          className="bg-phosphor/10 border-phosphor/40 text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es"
-            ? "Fondear cuenta Perpl (depositar AUSD) →"
-            : "Fund Perpl account (deposit AUSD) →"}
-        </a>
-        <a
-          href="/cota/trade"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es"
-            ? "Operar bajo tu correa →"
-            : "Trade under your leash →"}
-        </a>
-        {/* Exposure. Only meaningful once there is a Perpl position, so it
-              lives inside the live block — but it had no link at all until
-              now, which made a whole screen unreachable. */}
-        <a
-          href="/cota/risk"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es"
-            ? "Ver mi riesgo y exposición →"
-            : "See my risk and exposure →"}
-        </a>
-        {/* Results. Deliberately NOT inside anything conditional on a live
-            leash: the hunter asking what they made is usually the one whose
-            position is closed and whose leash has expired, which is the exact
-            state that makes the risk screen say nothing. */}
-        <a
-          href="/cota/history"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es" ? "Ver mis resultados →" : "See my results →"}
-        </a>
-        {/* MON moved. Outside any leash condition for the same reason results
-            are: it counts spot trades too, which need no leash, no Perpl
-            account and no AUSD — so gating it behind the live block would hide
-            it from the hunters most likely to be on it. */}
-        <a
-          href="/cota/leaderboard"
-          className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-        >
-          {lang === "es" ? "MON movido esta semana →" : "MON moved this week →"}
-        </a>
-      </div>
+      {/* The one control. Everything else on this page is now behind it. */}
+      <OneClickPanel lang={lang} />
 
-      {/* Spot sits apart from the Perpl ladder, deliberately.
-          Everything above is the Perpl ladder: get AUSD, fund an account,
-          enrol a key, trade under a leash. Spot needs none of it — no AUSD, no
-          Perpl account, no leash, just the wallet the passkey already derived.
-          Putting it inside the live block would have hidden it behind a toggle
-          that defaults to "practice", from exactly the hunter it is for: one
-          who wants out of MON, or into it, without any of the machinery. It
-          was unreachable from here until now for that reason. */}
-      <a
-        href="/cota/spot"
-        className="border-hull-line text-ink flex min-h-14 w-full flex-col items-center justify-center rounded-2xl border px-5 py-2 text-sm font-medium"
+      {/* Every destination, behind one disclosure.
+          These eleven links are each a real step and they were each a button
+          on the front of this page, which asked a hunter who had just walked
+          to a cache to work out which four applied to them. The panel above
+          answers that for them; this is where it stays reachable for anyone
+          who wants a particular step on purpose. */}
+      <Disclosure
+        title={lang === "es" ? "Todos los pasos" : "All the steps"}
+        sub={
+          lang === "es"
+            ? "Cambiar, puentear, depositar, operar, riesgo, resultados"
+            : "Swap, bridge, deposit, trade, risk, results"
+        }
       >
-        <span>
-          {lang === "es"
-            ? "Spot: MON ↔ USDC en el libro de Kuru →"
-            : "Spot: MON ↔ USDC on Kuru's order book →"}
-        </span>
-        <span className="text-ink-faint text-xs font-normal">
-          {lang === "es"
-            ? "Sin cuenta Perpl, sin AUSD — solo tu wallet"
-            : "No Perpl account, no AUSD — just your wallet"}
-        </span>
-        {/* Says REAL, and says it here rather than on the spot page itself.
-            Added when a practice mode existed and this card could render
-            directly beneath a "Practice with fake money" notice. That mode is
-            gone, but the warning stays: the sublabel above sells the card on
-            needing no account and no AUSD, which reads as low stakes, and this
-            is the one control on the page that spends actual MON on a live
-            order book. */}
-        <span className="mt-1 text-xs font-semibold text-amber-400">
-          {lang === "es"
-            ? "Dinero real — esto no es práctica"
-            : "Real money — this is not practice"}
-        </span>
-      </a>
+        {/* The path to AUSD; two ways, by where your money already is. */}
+        <div className="grid gap-2">
+          <a
+            href="/cota/swap"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Cambiar MON cazado → AUSD →"
+              : "Swap hunted MON → AUSD →"}
+          </a>
+          <a
+            href="/cota/bridge"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Traer AUSD de otra red (puente) →"
+              : "Bring AUSD from another chain →"}
+          </a>
+          {/* The door for money that is on neither Monad nor a chain we bridge
+              AUSD from. One address, any chain, no wallet to connect — it lands
+              USDC, so it feeds /cota/swap rather than replacing it. */}
+          {/* The other half of the on-ramp. A hunter who funded through Aurora
+              holds USDC, not MON, so the MON swap above is the wrong door for
+              them — it answers "you have no MON". */}
+          <a
+            href="/cota/swap/usdc"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es" ? "Cambiar USDC → AUSD →" : "Swap USDC → AUSD →"}
+          </a>
+          <a
+            href="/cota/onramp"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Fondear desde cualquier red →"
+              : "Fund from any chain →"}
+          </a>
+          {/* Once you hold AUSD, this opens the Perpl account. It must run
+                before enrolling a key — enrollment 404s without an account. */}
+          <a
+            href="/cota/deposit"
+            className="bg-phosphor/10 border-phosphor/40 text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Fondear cuenta Perpl (depositar AUSD) →"
+              : "Fund Perpl account (deposit AUSD) →"}
+          </a>
+          <a
+            href="/cota/trade"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Operar bajo tu correa →"
+              : "Trade under your leash →"}
+          </a>
+          {/* Exposure. Only meaningful once there is a Perpl position, so it
+                lives inside the live block — but it had no link at all until
+                now, which made a whole screen unreachable. */}
+          <a
+            href="/cota/risk"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "Ver mi riesgo y exposición →"
+              : "See my risk and exposure →"}
+          </a>
+          {/* Results. Deliberately NOT inside anything conditional on a live
+              leash: the hunter asking what they made is usually the one whose
+              position is closed and whose leash has expired, which is the exact
+              state that makes the risk screen say nothing. */}
+          <a
+            href="/cota/history"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es" ? "Ver mis resultados →" : "See my results →"}
+          </a>
+          {/* MON moved. Outside any leash condition for the same reason results
+              are: it counts spot trades too, which need no leash, no Perpl
+              account and no AUSD — so gating it behind the live block would hide
+              it from the hunters most likely to be on it. */}
+          <a
+            href="/cota/leaderboard"
+            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
+          >
+            {lang === "es"
+              ? "MON movido esta semana →"
+              : "MON moved this week →"}
+          </a>
+        </div>
+
+        {/* Spot sits apart from the Perpl ladder, deliberately.
+            Everything above is the Perpl ladder: get AUSD, fund an account,
+            enrol a key, trade under a leash. Spot needs none of it — no AUSD, no
+            Perpl account, no leash, just the wallet the passkey already derived.
+            Putting it inside the live block would have hidden it behind a toggle
+            that defaults to "practice", from exactly the hunter it is for: one
+            who wants out of MON, or into it, without any of the machinery. It
+            was unreachable from here until now for that reason. */}
+        <a
+          href="/cota/spot"
+          className="border-hull-line text-ink flex min-h-14 w-full flex-col items-center justify-center rounded-2xl border px-5 py-2 text-sm font-medium"
+        >
+          <span>
+            {lang === "es"
+              ? "Spot: MON ↔ USDC en el libro de Kuru →"
+              : "Spot: MON ↔ USDC on Kuru's order book →"}
+          </span>
+          <span className="text-ink-faint text-xs font-normal">
+            {lang === "es"
+              ? "Sin cuenta Perpl, sin AUSD — solo tu wallet"
+              : "No Perpl account, no AUSD — just your wallet"}
+          </span>
+          {/* Says REAL, and says it here rather than on the spot page itself.
+              Added when a practice mode existed and this card could render
+              directly beneath a "Practice with fake money" notice. That mode is
+              gone, but the warning stays: the sublabel above sells the card on
+              needing no account and no AUSD, which reads as low stakes, and this
+              is the one control on the page that spends actual MON on a live
+              order book. */}
+          <span className="mt-1 text-xs font-semibold text-amber-400">
+            {lang === "es"
+              ? "Dinero real — esto no es práctica"
+              : "Real money — this is not practice"}
+          </span>
+        </a>
+      </Disclosure>
 
       {auth.status !== "signed-in" ? (
         <Panel className="space-y-3">

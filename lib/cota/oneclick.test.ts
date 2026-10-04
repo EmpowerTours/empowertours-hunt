@@ -1,0 +1,237 @@
+import { describe, expect, it } from "vitest";
+import {
+  ausdLabel,
+  monForAusd,
+  monLabel,
+  planOneClick,
+  type Balances,
+  type Conditions,
+} from "./oneclick";
+
+// ---------------------------------------------------------------------------
+// Pinned to the real situation on 2026-10-04, not to convenient round numbers.
+//
+//   MON                     $0.034098 (ask, live book)
+//   Perpl min_deposit       10000000 at 6dp = $10, from their own context
+//   Perpl min_account_open  the same $10
+//   a spawn                 1 MON, which is 3.4 cents
+//   daily cap per player    20 MON, which is 68 cents
+//
+// The gap those four numbers describe is the whole reason this module exists,
+// so the tests state it out loud rather than testing a tidier world.
+// ---------------------------------------------------------------------------
+
+const MON_USD = 0.034098;
+const TEN_DOLLARS = 10_000_000n;
+const WEI = 10n ** 18n;
+
+/** Gas across swap + deposit, measured generously. Passed in, never assumed. */
+const GAS = (15n * WEI) / 100n; // 0.15 MON
+
+const base: Conditions = {
+  enrolled: true,
+  hasLeash: false,
+  monUsd: MON_USD,
+  minDeposit6: TEN_DOLLARS,
+  minTrade6: TEN_DOLLARS,
+  gasReserveWei: GAS,
+  slippageBps: 100n,
+};
+
+const empty: Balances = {
+  walletMonWei: 0n,
+  walletAusd6: 0n,
+  perplAusd6: 0n,
+};
+
+describe("monForAusd", () => {
+  it("prices $10 of AUSD at about 296 MON including 1% slippage", () => {
+    const wei = monForAusd(TEN_DOLLARS, MON_USD, 100n);
+    const mon = Number(wei) / 1e18;
+    expect(mon).toBeGreaterThan(295);
+    expect(mon).toBeLessThan(297);
+  });
+
+  it("rounds UP, because landing under Perpl's floor wastes the gas", () => {
+    // A swap that returns a hair less than the floor leaves the hunter holding
+    // AUSD they cannot deposit, having paid for the privilege. Overshooting
+    // costs them nothing: the remainder is still their AUSD.
+    const exact = monForAusd(1_000_000n, 1, 0n);
+    expect(exact).toBe(WEI);
+    const up = monForAusd(1_000_001n, 1, 0n);
+    expect(up).toBeGreaterThan(WEI);
+  });
+
+  it("never returns an amount that converts back to less than it must buy", () => {
+    // The invariant, rather than a spot check: whatever MON this hands back,
+    // selling it at the same price must reach the target. A floor division
+    // lands a wei short, the deposit misses Perpl's $10 by a hundredth of a
+    // cent, and the hunter has paid gas to be refused.
+    const prices = [0.034098, 0.0341, 1, 0.000003, 123.456];
+    const targets = [1n, 999_999n, 1_000_000n, TEN_DOLLARS, 123_456_789n];
+    for (const price of prices) {
+      const priceE6 = BigInt(Math.ceil(price * 1e6));
+      for (const target of targets) {
+        const wei = monForAusd(target, price, 0n);
+        // AUSD obtained = wei * priceE6 / 1e18, floored as a venue would.
+        const back = (wei * priceE6) / WEI;
+        expect(
+          back >= target,
+          `${target} at ${price} came back as ${back}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("refuses a price that is zero, negative or not a number", () => {
+    for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => monForAusd(TEN_DOLLARS, bad, 0n)).toThrow(RangeError);
+    }
+  });
+});
+
+describe("planOneClick — the hunter who just collected one spawn", () => {
+  it("is short by about 295 MON after a single 1 MON claim", () => {
+    const r = planOneClick({ ...empty, walletMonWei: WEI }, base);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("short");
+      const short = Number(r.shortfallMonWei) / 1e18;
+      // One claim is 3.4 cents against a $10 floor. This is the number the
+      // screen has to show honestly instead of offering a button that fails.
+      expect(short).toBeGreaterThan(294);
+      expect(short).toBeLessThan(297);
+    }
+  });
+
+  it("is still short after a full day at the 20 MON cap", () => {
+    const r = planOneClick({ ...empty, walletMonWei: 20n * WEI }, base);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("short");
+  });
+
+  it("clears once the wallet holds enough, and says what it will do", () => {
+    const r = planOneClick({ ...empty, walletMonWei: 300n * WEI }, base);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.steps).toEqual(["swap", "deposit", "leash", "trade"]);
+      expect(r.depositAusd6).toBe(TEN_DOLLARS);
+      expect(r.tradeAusd6).toBe(TEN_DOLLARS);
+      expect(r.swapMonWei).toBeGreaterThan(0n);
+    }
+  });
+});
+
+describe("planOneClick — skipping what is already done", () => {
+  it("skips the swap when the wallet already holds the AUSD", () => {
+    const r = planOneClick(
+      { walletMonWei: WEI, walletAusd6: TEN_DOLLARS, perplAusd6: 0n },
+      base,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.steps).toEqual(["deposit", "leash", "trade"]);
+      expect(r.swapMonWei).toBe(0n);
+      // Only gas is needed in MON now, so 1 MON is plenty.
+      expect(r.depositAusd6).toBe(TEN_DOLLARS);
+    }
+  });
+
+  it("skips swap and deposit when Perpl already holds the collateral", () => {
+    const r = planOneClick({ ...empty, perplAusd6: 12_000_000n }, base);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.steps).toEqual(["leash", "trade"]);
+      expect(r.swapMonWei).toBe(0n);
+      expect(r.depositAusd6).toBe(0n);
+      expect(r.tradeAusd6).toBe(12_000_000n);
+    }
+  });
+
+  it("is a single trade step when funded and already leashed", () => {
+    const r = planOneClick(
+      { ...empty, perplAusd6: 12_000_000n },
+      { ...base, hasLeash: true },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.steps).toEqual(["trade"]);
+  });
+
+  it("never skips the leash to save a step", () => {
+    // The leash is what bounds everything the agent may later do. A button that
+    // traded without one would be the product contradicting its own thesis, so
+    // it appears in every plan that ends in a trade without one already live.
+    const r = planOneClick({ ...empty, walletMonWei: 400n * WEI }, base);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.steps).toContain("leash");
+  });
+});
+
+describe("planOneClick — Perpl's floor is not a suggestion", () => {
+  it("deposits the whole $10 to cover a $2 shortfall", () => {
+    // Perpl has no top-up below min_deposit_amount. Asking for the difference
+    // would be refused at the venue, so the plan asks for the floor.
+    const r = planOneClick({ ...empty, perplAusd6: 8_000_000n }, {
+      ...base,
+      walletMonWei: 0n,
+    } as Conditions);
+    expect(r.ok).toBe(false); // no MON to buy it with
+    const funded = planOneClick(
+      { walletMonWei: 400n * WEI, walletAusd6: 0n, perplAusd6: 8_000_000n },
+      base,
+    );
+    expect(funded.ok).toBe(true);
+    if (funded.ok) {
+      expect(funded.depositAusd6).toBe(TEN_DOLLARS);
+      expect(funded.tradeAusd6).toBe(18_000_000n);
+    }
+  });
+});
+
+describe("planOneClick — gas is reserved, not borrowed from the swap", () => {
+  it("adds the reserve on top of the swap rather than hoping for change", () => {
+    const need = monForAusd(TEN_DOLLARS, MON_USD, 100n);
+    // Exactly the swap amount and not a wei more: there is nothing left to pay
+    // gas with, so the plan must refuse rather than strand them mid-sequence.
+    const justSwap = planOneClick({ ...empty, walletMonWei: need }, base);
+    expect(justSwap.ok).toBe(false);
+    if (!justSwap.ok) expect(justSwap.shortfallMonWei).toBe(GAS);
+
+    const withGas = planOneClick({ ...empty, walletMonWei: need + GAS }, base);
+    expect(withGas.ok).toBe(true);
+  });
+
+  it("still demands gas when no swap is needed, because deposit costs gas too", () => {
+    const r = planOneClick(
+      { walletMonWei: 0n, walletAusd6: TEN_DOLLARS, perplAusd6: 0n },
+      base,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.shortfallMonWei).toBe(GAS);
+  });
+});
+
+describe("planOneClick — reasons that are not money", () => {
+  it("blocks on enrolment before looking at balances at all", () => {
+    const r = planOneClick(
+      { walletMonWei: 10_000n * WEI, walletAusd6: 0n, perplAusd6: 0n },
+      { ...base, enrolled: false },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe("not_enrolled");
+      expect(r.shortfallMonWei).toBe(0n);
+    }
+  });
+});
+
+describe("labels", () => {
+  it("renders MON and AUSD without inventing precision", () => {
+    expect(monLabel(0n)).toBe("0.00");
+    expect(monLabel(WEI)).toBe("1.00");
+    expect(monLabel((1234n * WEI) / 100n)).toBe("12.34");
+    expect(ausdLabel(0n)).toBe("0.00");
+    expect(ausdLabel(TEN_DOLLARS)).toBe("10.00");
+    expect(ausdLabel(12_345_678n)).toBe("12.34");
+  });
+});
