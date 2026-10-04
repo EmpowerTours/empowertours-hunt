@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
+import { SpotResults } from "@/components/cota/SpotResults";
 import { Note, Panel, Pill, Stat } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
@@ -258,6 +259,19 @@ export default function HistoryPage() {
         </div>
         <LanguageSwitch className="shrink-0" />
       </header>
+
+      {/* Spot sits ABOVE the perp results, not below, because a hunter who has
+          only ever swapped has nothing underneath — and because the two answer
+          the same question in different arithmetic. The perp fold nets signed
+          sizes to zero and prices the difference; spot has no position to
+          close and needs a cost basis, which is why it is its own component
+          rather than another section of the same fold. */}
+      {auth.status === "signed-in" && (
+        <SpotResults
+          lang={lang === "es" ? "es" : "en"}
+          wallet={auth.walletAddress}
+        />
+      )}
 
       {auth.status !== "signed-in" ? (
         <Panel>

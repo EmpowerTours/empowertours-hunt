@@ -1725,6 +1725,12 @@ model KuruSwap {
   /// a buy (native MON moves no Transfer event) and empty on a revert.
   tokensIn Json
 
+  /// ERC-20 units that LEFT the wallet, { tokenAddress: "units" }. What a buy
+  /// cost. Without it a buy records what arrived and never what was paid, and
+  /// no profit can be computed from the table at all — there is no cost basis
+  /// to subtract. Empty on a sell (which pays in native MON) and on a revert.
+  tokensOut Json @default("{}")
+
   /// True only when Kuru's MON/USDC market appears in this transaction's OWN
   /// logs. Read from the logs rather than the calldata: calldata says where the
   /// router meant to go, logs say where the fill happened.

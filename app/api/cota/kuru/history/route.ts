@@ -95,13 +95,34 @@ export async function POST(req: Request) {
       publicClient().getTransaction({ hash }),
     ]);
   } catch {
-    // Not mined yet, or not a transaction. Either way there is nothing to read,
-    // and writing a row we could not verify is exactly what this endpoint
-    // refuses to do. The client retries after the receipt lands.
     return NextResponse.json(
       { error: "no receipt for that hash yet" },
       { status: 404 },
     );
+  }
+
+  // WHEN THE TRADE HAPPENED, from the block — not when this row was written.
+  //
+  // `at` defaulted to now(), which is the same instant for a trade recorded as
+  // it happens and wrong for every other case. A sell backfilled from its hash
+  // an hour later landed in the table timestamped an hour late, and any profit
+  // calculation that orders by time would then read the round trip backwards:
+  // the buy before the sell it paid for.
+  //
+  // A block timestamp cannot drift that way. Falling back to now() only when
+  // the block cannot be read, because a row with an approximate time is still
+  // better than no row.
+  let at: Date | undefined;
+  try {
+    const block = await publicClient().getBlock({
+      blockNumber: receipt.blockNumber,
+    });
+    at = new Date(Number(block.timestamp) * 1000);
+  } catch {
+    // Left undefined, which falls back to the column default. A block we could
+    // not read is a worse timestamp, not a worse trade — the receipt above
+    // already proved the trade happened, and refusing the row over its clock
+    // would discard the thing worth keeping to protect the thing that is not.
   }
 
   let record;
@@ -141,7 +162,11 @@ export async function POST(req: Request) {
         tokensIn: Object.fromEntries(
           Object.entries(record.tokensIn).map(([t, u]) => [t, u.toString()]),
         ),
+        tokensOut: Object.fromEntries(
+          Object.entries(record.tokensOut).map(([t, u]) => [t, u.toString()]),
+        ),
         crossedOrderBook: record.crossedOrderBook,
+        ...(at ? { at } : {}),
       },
     });
   } catch {
@@ -177,6 +202,7 @@ export async function GET(req: Request) {
       valueWei: true,
       nativeInWei: true,
       tokensIn: true,
+      tokensOut: true,
       crossedOrderBook: true,
       at: true,
     },

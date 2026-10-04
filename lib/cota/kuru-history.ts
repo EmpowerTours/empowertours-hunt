@@ -94,6 +94,8 @@ export interface TradeRecord {
   valueWei: bigint;
   /** ERC-20 units that reached the wallet, keyed by lowercased token. */
   tokensIn: Record<string, bigint>;
+  /** ERC-20 units that left the wallet — what a buy actually cost. */
+  tokensOut: Record<string, bigint>;
   /** True only when Kuru's MON/USDC market is in the transaction's own logs. */
   crossedOrderBook: boolean;
   /**
@@ -255,6 +257,37 @@ export function nativeReceivedFromTrace(
 }
 
 /**
+ * ERC-20 units that LEFT `wallet` in this transaction.
+ *
+ * The mirror of tokensReceived, and the thing a buy had no record of. A buy
+ * sends no MON (`valueWei` is zero) and receives no ERC-20 (`tokensIn` is
+ * empty, because MON is native), so the row said what arrived and never what it
+ * cost. That is fine for a log and useless for a profit calculation: "did that
+ * trade make money" cannot be answered without knowing what the MON sold had
+ * been bought for, and the price paid was simply not stored.
+ *
+ * Summed rather than taken from one log, for the same reason as tokensReceived:
+ * a route can pay in more than one hop.
+ */
+export function tokensSpent(
+  logs: MinimalLog[],
+  wallet: string,
+): Record<string, bigint> {
+  const who = wallet.toLowerCase().slice(2).padStart(64, "0");
+  const out: Record<string, bigint> = {};
+  for (const l of logs) {
+    if (l.topics.length < 3) continue;
+    if (l.topics[0].toLowerCase() !== TRANSFER) continue;
+    // topic1 is `from` — the only difference from tokensReceived, which reads
+    // topic2.
+    if (l.topics[1].toLowerCase().slice(2) !== who) continue;
+    const token = l.address.toLowerCase();
+    out[token] = (out[token] ?? 0n) + BigInt(l.data === "0x" ? "0x0" : l.data);
+  }
+  return out;
+}
+
+/**
  * Turn a receipt into the row we store.
  *
  * Refuses anything that is not a Kuru trade by the sender who claims it. Both
@@ -290,6 +323,7 @@ export function toRecord(
     // A reverted transaction emits no logs, so both of these read as "nothing
     // happened" on their own. `ok` is what distinguishes that from a fill.
     tokensIn: r.status === "success" ? tokensReceived(r.logs, w) : {},
+    tokensOut: r.status === "success" ? tokensSpent(r.logs, w) : {},
     crossedOrderBook: r.status === "success" && crossedOrderBook(r.logs),
     // A revert delivered nothing, and that is known rather than unknown: zero,
     // not null. It still cost the full gas limit, which is why the row is kept.
