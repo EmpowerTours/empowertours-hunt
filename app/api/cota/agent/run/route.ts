@@ -77,6 +77,27 @@ export async function POST(req: Request) {
   // Unset means the seam is closed, not open — the same rule /check follows.
   if (expected === undefined || expected.length < 16) return unauthorised();
   if (req.headers.get("authorization") !== `Bearer ${expected}`) {
+    // WHO IS CALLING THIS. Logged on the refusal only, and never the token.
+    //
+    // Something polled this endpoint every few minutes for days with a valid
+    // token, and when that token was rotated it stopped — which is the only
+    // reason anyone noticed it existed. It is not GitHub Actions, not Railway,
+    // not the Mac Mini, not the CRE workflow (that organisation has never had
+    // deploy access) and not the WSL box. Nothing recorded the caller, so there
+    // was no trail to follow.
+    //
+    // If it is still running it is failing here, once per cycle, and this line
+    // names it. The user-agent and the forwarded IP are enough to identify a
+    // scheduler; the Authorization header is deliberately NOT touched.
+    console.warn(
+      "[cota/agent/run] refused:",
+      JSON.stringify({
+        ua: req.headers.get("user-agent")?.slice(0, 120) ?? null,
+        ip: req.headers.get("x-forwarded-for")?.slice(0, 60) ?? null,
+        origin: req.headers.get("origin") ?? null,
+        hasAuth: req.headers.get("authorization") !== null,
+      }),
+    );
     return unauthorised();
   }
 
