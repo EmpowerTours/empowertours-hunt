@@ -108,7 +108,7 @@ const STEPS: Step[] = [
     id: "cre",
     title: "See what schedules the agent",
     bounty: "Best workflow with CRE · Chainlink",
-    why: 'A Chainlink Runtime Environment workflow built to drive the agent: workflow.yaml, staging and production configs, and a CRE-CLI simulation that makes the real HTTPS call to the live endpoint and reaches consensus on the reply. It is NOT deployed — CRE deployment is gated behind Early Access and this org does not have it, which `cre whoami` reports as "Deploy Access: Not enabled". Simulated, not running.',
+    why: "A Chainlink Runtime Environment workflow is the agent's scheduler: a cron trigger calling the decision endpoint, with workflow.yaml and separate staging and production configs — two targets rather than one flag, because the difference between them is whether real money moves. The CRE-CLI simulation makes the real HTTPS call to the live endpoint and reaches consensus on the reply. Deployment is behind Early Access for every account right now, which is why Chainlink's own guidance is to build and test in simulation.",
     action:
       "Read cre/agent-scheduler/, including SIMULATION.md for the transcript.",
     href: "https://github.com/EmpowerTours/empowertours-hunt/tree/master/cre/agent-scheduler",
