@@ -37,8 +37,16 @@
 # because the decision is stateless — every run re-reads the venue, the ledger
 # and the grant from scratch, so a missed tick leaves nothing to catch up on, it
 # only means the agent was slower to notice. Where the lateness does cost
-# something, the minute-by-minute poll on the Mac Mini covers it, and the lease
-# in the route stops the two of them acting at once.
+# something, the Chainlink CRE workflow in cre/agent-scheduler covers it — it
+# polls every minute ("*/1 * * * *" in its config) and the lease in the route
+# stops the two of them acting at once.
+#
+# THIS COMMENT USED TO SAY THE MAC MINI. It was wrong, and wrong in the most
+# expensive way a comment can be: it named a machine that has nothing to do with
+# this, so anyone tracing an unexplained decision at 3am would go and look at a
+# box in another country. The decisions land on the :10 second every minute,
+# which is the CRE's signature, and the Mac Mini was switched off while they
+# kept arriving — which is how it was finally caught.
 
 name: cota-agent
 
