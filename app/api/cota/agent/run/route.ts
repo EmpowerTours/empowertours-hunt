@@ -101,6 +101,20 @@ export async function POST(req: Request) {
     return unauthorised();
   }
 
+  // AND on the way through, not only on refusal. The refusal log alone could
+  // never identify a caller that simply stopped: rotating the token silenced
+  // something that had polled for days, and it never came back to be refused.
+  // One line per accepted call is the only thing that names it the moment it
+  // works again.
+  console.warn(
+    "[cota/agent/run] accepted:",
+    JSON.stringify({
+      ua: req.headers.get("user-agent")?.slice(0, 120) ?? null,
+      ip: req.headers.get("x-forwarded-for")?.slice(0, 60) ?? null,
+      origin: req.headers.get("origin") ?? null,
+    }),
+  );
+
   const parsed = Input.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
