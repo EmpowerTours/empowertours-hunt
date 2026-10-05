@@ -32,8 +32,8 @@
 // unique index on EditionClaim, which is free and authoritative for anything
 // we sold.
 
-import { createPublicClient, http, parseAbi, type Address } from "viem";
-import { monad, monadRpcUrl } from "@/lib/monad";
+import { createPublicClient, parseAbi, type Address } from "viem";
+import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
 
 const REGISTRY_ABI = parseAbi([
   "function licensesHeld(address owner, uint256 masterTokenId) view returns (uint32)",
@@ -56,7 +56,7 @@ export async function unexplainedLicences(args: {
   try {
     const client = createPublicClient({
       chain: monad,
-      transport: http(monadRpcUrl()),
+      transport: monadTransport(),
     });
     const held = await client.readContract({
       address: args.registry,

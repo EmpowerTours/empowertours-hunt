@@ -1,13 +1,12 @@
 import {
   createWalletClient,
   createPublicClient,
-  http,
   parseAbi,
   type Address,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { monad } from "@/lib/monad";
+import { monad, monadTransport } from "@/lib/monad";
 
 // ---------------------------------------------------------------------------
 // The relayer that puts an fcempowertours licence into a hunter's wallet.
@@ -338,7 +337,7 @@ export function relayerCapacity(
 
   const value = (async (): Promise<bigint | null> => {
     try {
-      const transport = http(process.env.MONAD_RPC_URL);
+      const transport = monadTransport();
       const pub = createPublicClient({ chain: monad, transport });
       const wmon = await paymentTokenOf(pub, cfg.salesController);
       const funds = await readFunds(
@@ -487,7 +486,7 @@ export function relayLicense(
     }
 
     const account = privateKeyToAccount(cfg.privateKey);
-    const transport = http(process.env.MONAD_RPC_URL);
+    const transport = monadTransport();
     const wallet = createWalletClient({ account, chain: monad, transport });
     const pub = createPublicClient({ chain: monad, transport });
 
@@ -707,7 +706,7 @@ export async function isBuyable(
   try {
     const pub = createPublicClient({
       chain: monad,
-      transport: http(process.env.MONAD_RPC_URL),
+      transport: monadTransport(),
     });
     const [price, collectorPrice, salesPaused] = await pub.readContract({
       address: cfg.salesController,

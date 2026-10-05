@@ -66,14 +66,13 @@
 import {
   createPublicClient,
   createWalletClient,
-  http,
   formatEther,
   TransactionReceiptNotFoundError,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { PayoutStatus } from "@prisma/client";
-import { monad, monadRpcUrl } from "@/lib/monad";
+import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
 import { prisma } from "@/lib/db/prisma";
 import { toWei } from "@/lib/wei";
 
@@ -134,7 +133,7 @@ function receiptTimeoutMs(): number {
 // env may not be populated yet in a serverless cold start, and a memoised
 // client would pin the first RPC URL it ever saw for the life of the process.
 function publicClient() {
-  return createPublicClient({ chain: monad, transport: http(rpcUrl()) });
+  return createPublicClient({ chain: monad, transport: monadTransport() });
 }
 
 function treasuryWallet() {
@@ -149,7 +148,7 @@ function treasuryWallet() {
   return createWalletClient({
     account,
     chain: monad,
-    transport: http(rpcUrl()),
+    transport: monadTransport(),
   });
 }
 

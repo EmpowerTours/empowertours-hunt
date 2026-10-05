@@ -1,5 +1,5 @@
-import { createPublicClient, http, parseAbi, type Address } from "viem";
-import { monad } from "@/lib/monad";
+import { createPublicClient, parseAbi, type Address } from "viem";
+import { monad, monadTransport } from "@/lib/monad";
 
 // ---------------------------------------------------------------------------
 // Reading the TurboCohort price.
@@ -63,7 +63,7 @@ export async function readTierPriceWei(tier: TierName): Promise<bigint | null> {
   try {
     const client = createPublicClient({
       chain: monad,
-      transport: http(process.env.MONAD_RPC_URL),
+      transport: monadTransport(),
     });
     const price = await client.readContract({
       address,

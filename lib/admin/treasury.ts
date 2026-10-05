@@ -9,9 +9,9 @@
 // still needs to see what is owed even when the balance is unavailable, and a
 // blank number next to a big liability is a clearer signal than a 500 page.
 
-import { createPublicClient, http, type Hex } from "viem";
+import { createPublicClient, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { monad } from "@/lib/monad";
+import { monad, monadTransport } from "@/lib/monad";
 
 export interface TreasuryBalance {
   address: string | null;
@@ -49,7 +49,7 @@ export async function readTreasuryBalance(): Promise<TreasuryBalance> {
     const client = createPublicClient({
       chain: monad,
       // Honour the override; viem falls back to the chain default when unset.
-      transport: http(process.env.MONAD_RPC_URL),
+      transport: monadTransport(),
     });
     const balanceWei = await client.getBalance({ address: address as Hex });
     return { address, balanceWei, error: null };

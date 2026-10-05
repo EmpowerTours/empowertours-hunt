@@ -1,7 +1,7 @@
 "use client";
 
-import { createWalletClient, http } from "viem";
-import { monad, monadRpcUrl } from "@/lib/monad";
+import { createWalletClient } from "viem";
+import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
 import type { ClaimMessage, ClaimSigner } from "@/components/hunt/types";
 import {
   accountFromPrfOutput,
@@ -391,7 +391,7 @@ export async function payFromPasskey(
     const wallet = createWalletClient({
       account: passkey.account,
       chain: monad,
-      transport: http(monadRpcUrl()),
+      transport: monadTransport(),
     });
     return await wallet.sendTransaction({
       to,

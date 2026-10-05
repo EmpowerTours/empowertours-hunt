@@ -24,13 +24,12 @@
 import {
   createPublicClient,
   createWalletClient,
-  http,
   parseAbi,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { prisma } from "@/lib/db/prisma";
-import { monad } from "@/lib/monad";
+import { monad, monadTransport } from "@/lib/monad";
 import { toWei } from "@/lib/wei";
 import { enqueueTreasuryOp } from "@/lib/hunt/payout";
 import { TIERS, isTierName, readTierPriceWei } from "@/lib/hunt/cohort";
@@ -61,11 +60,8 @@ export interface SettleResult {
   needsReconciliation?: boolean;
 }
 
-function rpcUrl(): string {
-  return process.env.MONAD_RPC_URL ?? "https://rpc.monad.xyz";
-}
 function publicClient() {
-  return createPublicClient({ chain: monad, transport: http(rpcUrl()) });
+  return createPublicClient({ chain: monad, transport: monadTransport() });
 }
 function settlerWallet() {
   const pk = process.env.HUNT_TREASURY_PRIVATE_KEY;
@@ -73,7 +69,7 @@ function settlerWallet() {
   return createWalletClient({
     account: privateKeyToAccount(pk as Hex),
     chain: monad,
-    transport: http(rpcUrl()),
+    transport: monadTransport(),
   });
 }
 function cohortAddress(): `0x${string}` | null {

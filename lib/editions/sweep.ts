@@ -129,8 +129,8 @@ export function emptyReport(): SweepReport {
 // it is deliberately thin: it gathers facts, hands them to decideSweep, and
 // does only what comes back.
 
-import { createPublicClient, http, parseAbi } from "viem";
-import { monad, monadRpcUrl } from "@/lib/monad";
+import { createPublicClient, parseAbi } from "viem";
+import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
 import { prisma } from "@/lib/db/prisma";
 import { relayerConfig, enqueueRelayerOp } from "./relayer";
 import { privateKeyToAccount } from "viem/accounts";
@@ -187,7 +187,7 @@ export async function sweepStrandedLicences(
 
   const pub = createPublicClient({
     chain: monad,
-    transport: http(monadRpcUrl()),
+    transport: monadTransport(),
   });
 
   for (const row of rows) {
@@ -268,7 +268,7 @@ export async function sweepStrandedLicences(
       const wallet = createWalletClient({
         account,
         chain: monad,
-        transport: http(monadRpcUrl()),
+        transport: monadTransport(),
       });
       const txHash = await enqueueRelayerOp(() =>
         wallet.writeContract({

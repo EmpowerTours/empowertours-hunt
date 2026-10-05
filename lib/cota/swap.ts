@@ -2,10 +2,9 @@ import {
   createPublicClient,
   createWalletClient,
   formatUnits,
-  http,
   type LocalAccount,
 } from "viem";
-import { monad, monadRpcUrl } from "@/lib/monad";
+import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
 
 // ---------------------------------------------------------------------------
 // MON -> AUSD swap desk (MonAusdSwapOracle), live on Monad mainnet. A hunter
@@ -53,17 +52,18 @@ export const SWAP_ABI = [
   },
 ] as const;
 
-// Both take the URL explicitly. `http()` bare is the bug documented on
-// monadRpcUrl: it ignores MONAD_RPC_URL and quietly uses the public endpoint.
+// Both go through monadTransport(), which honours MONAD_RPC_URL and keeps a
+// second endpoint behind it. A bare `http()` is the bug documented on
+// monadRpcUrl: it ignores the setting and quietly uses the public endpoint.
 export function publicClient() {
-  return createPublicClient({ chain: monad, transport: http(monadRpcUrl()) });
+  return createPublicClient({ chain: monad, transport: monadTransport() });
 }
 
 export function walletClientFor(account: LocalAccount) {
   return createWalletClient({
     account,
     chain: monad,
-    transport: http(monadRpcUrl()),
+    transport: monadTransport(),
   });
 }
 

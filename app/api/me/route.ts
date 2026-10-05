@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http } from "viem";
+import { createPublicClient } from "viem";
 import { prisma } from "@/lib/db/prisma";
 import { readTierPriceWei } from "@/lib/hunt/cohort";
 import { readCatalogue } from "@/lib/editions/catalogue";
 import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
-import { monad } from "@/lib/monad";
+import { monad, monadTransport } from "@/lib/monad";
 import { isClientAbort } from "@/lib/aborted";
 
 // ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ export async function GET(req: Request) {
     try {
       const client = createPublicClient({
         chain: monad,
-        transport: http(process.env.MONAD_RPC_URL),
+        transport: monadTransport(),
       });
       const balance = await client.getBalance({
         address: row.walletAddress as `0x${string}`,

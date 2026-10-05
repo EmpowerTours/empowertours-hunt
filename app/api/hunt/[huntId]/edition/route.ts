@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http } from "viem";
+import { createPublicClient } from "viem";
 import { prisma } from "@/lib/db/prisma";
 import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
-import { monad, monadRpcUrl } from "@/lib/monad";
+import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
 import { readCatalogue } from "@/lib/editions/catalogue";
 import { relayerCapacity, relayerConfig } from "@/lib/editions/relayer";
 import { unexplainedLicences } from "@/lib/editions/ownership";
@@ -120,7 +120,7 @@ export async function GET(
     try {
       const client = createPublicClient({
         chain: monad,
-        transport: http(monadRpcUrl()),
+        transport: monadTransport(),
       });
       balanceWei = await client.getBalance({
         address: player.walletAddress as `0x${string}`,

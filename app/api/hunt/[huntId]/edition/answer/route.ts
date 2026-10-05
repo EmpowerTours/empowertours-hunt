@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, type Address } from "viem";
+import { createPublicClient, type Address } from "viem";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { AuthError, clientIp, requirePlayer } from "@/lib/auth";
 import { checkLimit } from "@/lib/ratelimit";
-import { monad, monadRpcUrl } from "@/lib/monad";
+import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
 import { isBuyable, relayerConfig, relayLicense } from "@/lib/editions/relayer";
 import { checkPayment } from "@/lib/editions/payment";
 import { toWei } from "@/lib/wei";
@@ -132,7 +132,7 @@ export async function POST(
       }
       const client = createPublicClient({
         chain: monad,
-        transport: http(monadRpcUrl()),
+        transport: monadTransport(),
       });
       let transfer;
       try {
