@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { ProgressPanel } from "./ProgressPanel";
 import { CotaEntry } from "./CotaEntry";
+import { Collectibles } from "./Collectibles";
 import { isCotaHost } from "@/lib/host";
 
 export const metadata: Metadata = { title: "Progress" };
@@ -29,6 +30,7 @@ export default async function WalletPage() {
 
       <CotaEntry />
       <ProgressPanel />
+      <Collectibles />
     </main>
   );
 }
