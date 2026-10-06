@@ -282,6 +282,23 @@ export function validateHuntConsistency(merged: {
       "cannot enable spawns with a zero MON budget — set budgetMon first",
     );
   }
+  // The same trap one field over, and a quieter one. spawnMinWei/spawnMaxWei
+  // default to 0, and the only other check here is min > max, which 0/0
+  // passes. So a hunt could be saved with spawns ON and nothing to pay out:
+  // lib/hunt/spawn.ts then denies every scan with `spawn_bounds_misconfigured`,
+  // which the client treats as TERMINAL and stops polling. The operator sees a
+  // radar that never populates and no error anywhere — exactly what happened
+  // to the Monad open hunt on 2026-10-06. Refuse it at the point of saving,
+  // where there is somebody to tell.
+  if (
+    merged.spawnEnabled &&
+    (merged.spawnMinWei.lessThanOrEqualTo(0) ||
+      merged.spawnMaxWei.lessThanOrEqualTo(0))
+  ) {
+    throw new AdminInputError(
+      "cannot enable spawns while spawnMinMon or spawnMaxMon is 0 — every scan would be refused as misconfigured and the radar would simply never populate",
+    );
+  }
   if (merged.autoApproveMaxWei.greaterThan(merged.spawnMaxWei)) {
     throw new AdminInputError(
       "autoApproveMaxMon exceeds spawnMaxMon, which means every spawn auto-approves. Set it below spawnMaxMon, or set it to 0 to require a human on every payout.",
