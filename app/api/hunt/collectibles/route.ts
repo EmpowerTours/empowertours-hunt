@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, http, parseAbi } from "viem";
 import { requirePlayer, AuthError } from "@/lib/auth";
+import { prisma } from "@/lib/db/prisma";
 import { monad } from "@/lib/monad";
 import {
-  COLLECTIONS,
   TRANSFER_TOPIC,
+  collectionsForPlayer,
   addressTopic,
   readMetadata,
   toHttpUrl,
@@ -34,8 +35,11 @@ const LOG_RPC = "https://rpc1.monad.xyz";
 
 export async function GET(req: Request) {
   let wallet: string;
+  let playerId: string;
   try {
-    wallet = (await requirePlayer(req)).walletAddress;
+    const player = await requirePlayer(req);
+    wallet = player.walletAddress;
+    playerId = player.id;
   } catch (e) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: "sign in first" }, { status: 401 });
@@ -43,11 +47,20 @@ export async function GET(req: Request) {
     throw e;
   }
 
+  // Editions are not one contract: each work lives in its artist's own
+  // collection, so the addresses come from this hunter's own claims rather
+  // than a list. Nobody is scanned against collections they never touched.
+  const claimed = await prisma.editionClaim.findMany({
+    where: { playerId },
+    select: { collection: true },
+    distinct: ["collection"],
+  });
+
   const client = createPublicClient({ chain: monad, transport: http(LOG_RPC) });
   const owner = addressTopic(wallet);
   const items: Collectible[] = [];
 
-  for (const collection of COLLECTIONS) {
+  for (const collection of collectionsForPlayer(claimed)) {
     let candidates: bigint[];
     try {
       const logs = (await client.request({

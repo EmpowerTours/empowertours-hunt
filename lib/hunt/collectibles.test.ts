@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   COLLECTIONS,
+  DEFAULT_FROM_BLOCK,
+  collectionsForPlayer,
   addressTopic,
   readMetadata,
   toHttpUrl,
@@ -120,5 +122,56 @@ describe("the collection list", () => {
   it("gives every collection a positive start block", () => {
     // fromBlock 0 would scan the chain from genesis on every page load.
     for (const c of COLLECTIONS) expect(c.fromBlock).toBeGreaterThan(0n);
+  });
+});
+
+describe("collectionsForPlayer", () => {
+  it("adds the collections this hunter claimed an edition from", () => {
+    // Editions are not one contract — EditionClaim.collection is per row,
+    // because each work belongs to its artist's own collection.
+    const out = collectionsForPlayer([
+      { collection: "0xAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaa" },
+    ]);
+    expect(out.map((c) => c.address)).toContain(
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    expect(out.map((c) => c.address)).toContain(
+      "0x200723a706de0013316e5cd8eba2b3f53dd90c29",
+    );
+  });
+
+  it("never scans the same contract twice", () => {
+    // A hunter with several claims in one collection, or a claim in a
+    // collection already named above, must not produce duplicate scans.
+    const out = collectionsForPlayer([
+      { collection: "0x200723a706de0013316e5cd8eba2b3f53dd90c29" },
+      { collection: "0xBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbb" },
+      { collection: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    ]);
+    expect(new Set(out.map((c) => c.address)).size).toBe(out.length);
+  });
+
+  it("drops a malformed collection rather than querying for it", () => {
+    // A bad row would otherwise become an eth_getLogs against address
+    // "undefined", which fails the whole scan for one broken record.
+    const out = collectionsForPlayer([
+      { collection: "" },
+      { collection: "not-an-address" },
+      { collection: "0x123" },
+    ]);
+    expect(out).toEqual([...COLLECTIONS]);
+  });
+
+  it("gives a discovered collection a real start block", () => {
+    const out = collectionsForPlayer([
+      { collection: "0xCCccCCccCCccCCccCCccCCccCCccCCccCCccCCcc" },
+    ]);
+    const found = out.find((c) => c.name === "Editions");
+    expect(found?.fromBlock).toBe(DEFAULT_FROM_BLOCK);
+    expect(DEFAULT_FROM_BLOCK).toBeGreaterThan(0n);
+  });
+
+  it("returns just the named list when the hunter has claimed nothing", () => {
+    expect(collectionsForPlayer([])).toEqual([...COLLECTIONS]);
   });
 });

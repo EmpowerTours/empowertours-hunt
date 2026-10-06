@@ -38,6 +38,16 @@ export interface Collectible {
  * Open on a kiosk, sent it to the wallet her passkey made, and had nowhere in
  * the app to see it.
  */
+/**
+ * How far back a collection discovered at runtime is scanned.
+ *
+ * Monad mainnet opened 2025-11-24 and editions are far younger, so this is
+ * generous. It is a REAL limit, not a formality: a token transferred before
+ * this block will not be listed. rpc1 serves ranges this wide in one call —
+ * the app's own transport cannot, which is why the route does not use it.
+ */
+export const DEFAULT_FROM_BLOCK = 90_000_000n;
+
 export const COLLECTIONS: readonly Collection[] = [
   {
     address: "0x200723a706de0013316e5cd8eba2b3f53dd90c29",
@@ -133,4 +143,40 @@ export function readMetadata(raw: unknown): {
         ? o.image_url
         : null;
   return { name, image: toHttpUrl(image) };
+}
+
+/**
+ * Every collection worth scanning for one hunter: the named ones, plus the
+ * collections they personally claimed an edition from.
+ *
+ * Editions are NOT one contract. `EditionClaim.collection` is per row, because
+ * each work belongs to its artist's own collection, so there is no single
+ * address to add to the list above. Deriving it from the hunter's own claims
+ * also means nobody is scanned against collections they never touched.
+ */
+export function collectionsForPlayer(
+  claimed: readonly { collection: string }[],
+  base: readonly Collection[] = COLLECTIONS,
+): Collection[] {
+  const out: Collection[] = [];
+  const seen = new Set<string>();
+  for (const c of base) {
+    const key = c.address.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+  }
+  for (const row of claimed) {
+    const raw = row.collection?.trim().toLowerCase();
+    // A malformed row must not become an eth_getLogs for address "undefined".
+    if (!raw || !/^0x[0-9a-f]{40}$/.test(raw)) continue;
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    out.push({
+      address: raw as `0x${string}`,
+      name: "Editions",
+      fromBlock: DEFAULT_FROM_BLOCK,
+    });
+  }
+  return out;
 }
