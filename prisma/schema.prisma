@@ -469,7 +469,7 @@ model Hunt {
   createdBy         Player? @relation("HuntCreator", fields: [createdByPlayerId], references: [id], onDelete: SetNull)
   createdByPlayerId String?
 
-  maxAccuracyM        Int @default(30)
+  maxAccuracyM        Int @default(40)
   maxSpeedKmh         Int @default(60)
   cooldownSeconds     Int @default(60)
   maxClockSkewSeconds Int @default(120)

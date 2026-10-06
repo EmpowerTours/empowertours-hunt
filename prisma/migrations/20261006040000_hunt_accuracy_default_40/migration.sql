@@ -1,0 +1,18 @@
+-- Raise the default GPS accuracy gate from 30m to 40m for NEW hunts.
+--
+-- 30m was blocking real play. An iPhone on LTE among buildings reports +-33m
+-- routinely, and because check-in is the only writer of the verified position,
+-- those 3 metres cascaded: check-in refused, verified position aged past
+-- maxVerifiedFixAgeSeconds, and the spawn feed then reported a stale position
+-- on a phone whose own GPS reading was 4 seconds old.
+--
+-- 40m, not 50m. The gate is the ONLY bound on how wrong a reported point can
+-- be: lib/hunt/validator.ts tests `distance <= cache.radiusMeters` against the
+-- reported coordinates as if they were exact, and does not subtract accuracy.
+-- Against a 25m claim radius, 40m already means someone can sit outside the
+-- circle and collect. 50m would put them across a street.
+--
+-- Deliberately NOT applied to existing hunts. Each one is somebody's live game
+-- with its own terrain, and silently loosening a position check under a running
+-- hunt is not a migration's business. Change those per hunt in the admin UI.
+ALTER TABLE "Hunt" ALTER COLUMN "maxAccuracyM" SET DEFAULT 40;

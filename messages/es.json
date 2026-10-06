@@ -14,13 +14,13 @@
     "clock_skew": "El reloj de tu dispositivo está desfasado. Corrige la hora e inténtalo de nuevo.",
     "contended": "No pudimos confirmar esa recogida ahorita. El premio sigue siendo tuyo: vuelve a tocarlo.",
     "cooldown": "Muy pronto después de tu última recogida.",
-    "gps_accuracy_too_low": "Tu GPS todavía no es lo bastante preciso. Espera a que se estabilice.",
+    "gps_accuracy_too_low": "Tu lectura del GPS todavía no es lo bastante precisa. Espera a que se estabilice.",
     "hunt_budget_exhausted": "Esta búsqueda ya repartió todo su presupuesto.",
     "hunt_ended": "Esta búsqueda ya cerró.",
     "hunt_not_active": "Esta búsqueda no está activa.",
     "hunt_not_started": "Esta búsqueda todavía no abre.",
     "implausible_speed": "Avanzaste demasiado en muy poco tiempo. El intento quedó registrado para revisión.",
-    "no_verified_position": "Esperando una señal de GPS buena. Sal al aire libre si puedes — en cuanto sepamos dónde estás, aparecen recompensas cerca.",
+    "no_verified_position": "Todavía no hemos confirmado tu posición. Para confirmarla hace falta una lectura del GPS lo bastante precisa para esta búsqueda — sal a cielo abierto y ocurre solo.",
     "no_walkable_ground": "Por aquí no puede caer nada. Regresa hacia las calles e inténtalo otra vez.",
     "out_of_range": "Todavía no estás lo bastante cerca.",
     "player_daily_cap_reached": "Llegaste a tu límite del día.",
@@ -32,7 +32,7 @@
     "spawn_disabled": "Esta búsqueda no está soltando recompensas ahorita.",
     "spawn_expired": "Ese premio ya venció.",
     "spawn_not_found": "Ese premio no está en tu radar.",
-    "stale_verified_position": "Tu última ubicación es muy vieja. Deja la app abierta un momento mientras te encontramos otra vez.",
+    "stale_verified_position": "Hace rato que no confirmamos tu posición. Es que tu lectura del GPS no es lo bastante precisa para volver a confirmarla, no que tu teléfono esté perdido — sal a cielo abierto y se actualiza solo.",
     "unknown": "Esa recogida fue rechazada."
   },
   "claim": {
@@ -51,8 +51,8 @@
     "needs": "necesita ±{meters} m",
     "ready": "GPS listo.",
     "retry": "Reintentar",
-    "timeout": "La última ubicación ya está vieja: tu teléfono dejó de reportar. Mantén la pantalla encendida y vuelve a intentar.",
-    "unavailable": "Tu dispositivo no pudo obtener una ubicación. Sal a cielo abierto, lejos de los edificios, y vuelve a intentar.",
+    "timeout": "Tu teléfono dejó de reportar lecturas del GPS. Mantén la pantalla encendida y vuelve a intentar.",
+    "unavailable": "Tu dispositivo no pudo obtener una lectura del GPS. Sal a cielo abierto, lejos de los edificios, y vuelve a intentar.",
     "unsupported": "Este navegador no puede reportar tu ubicación. La búsqueda necesita GPS: prueba con Safari o Chrome por HTTPS."
   },
   "payout": {
@@ -195,7 +195,7 @@
     "noFix": "SIN UBICACIÓN",
     "noFixHint": "Esperando a que tu teléfono reporte una posición.",
     "needAccuracy": "NECESITA ±{meters} M",
-    "needAccuracyHint": "Ahorita ±{current} m — el servidor rechaza un reclamo con esta señal.",
+    "needAccuracyHint": "Ahorita ±{current} m — el servidor rechaza un reclamo con esta lectura.",
     "wait": "ESPERA {seconds}s",
     "waitHint": "Los hallazgos se espacian a propósito.",
     "claim": "RECLAMAR AQUÍ"
@@ -242,11 +242,11 @@
   "fix": {
     "titleDenied": "Ubicación bloqueada",
     "titleUnsupported": "Sin geolocalización",
-    "titleUnavailable": "Sin ubicación",
-    "titleTimeout": "Ubicación vieja",
+    "titleUnavailable": "Sin lectura del GPS",
+    "titleTimeout": "Lectura del GPS vieja",
     "titleDefault": "Ubicación",
     "refusedTitle": "El reclamo será rechazado",
-    "refusedBody": "Tu teléfono solo tiene certeza de ±{current} m y esta búsqueda necesita ±{needed} m. Sal a cielo abierto y espera — el servidor rechaza un reclamo con esta señal, así que tocar ahora solo gasta un límite."
+    "refusedBody": "Tu teléfono solo tiene certeza de ±{current} m y esta búsqueda necesita ±{needed} m. Sal a cielo abierto y espera — el servidor rechaza un reclamo con esta lectura, así que tocar ahora solo gasta un límite."
   },
   "spawnPanel": {
     "header": "Premios · MON real",

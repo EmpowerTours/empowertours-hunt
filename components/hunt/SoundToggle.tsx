@@ -59,6 +59,23 @@ export function SoundToggle({
     }
   }
 
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={toggle}
+        aria-pressed={!mutedNow}
+        aria-label={mutedNow ? t("off") : t("on")}
+        title={mutedNow ? t("off") : t("on")}
+        className={`border-hull-line flex min-h-11 w-11 shrink-0 items-center justify-center rounded-xl border text-base transition-colors ${
+          mutedNow ? "text-ink-faint" : "text-ink-dim hover:text-ink"
+        } ${className ?? ""}`}
+      >
+        <span aria-hidden="true">{mutedNow ? "\u266a\u0338" : "\u266a"}</span>
+      </button>
+    );
+  }
+
   return (
     <div className={className}>
       <button

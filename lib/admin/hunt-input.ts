@@ -90,7 +90,7 @@ export interface HuntWriteInput {
 
 /** Sensible starting point for a new hunt: ~0.001 MON spawns, human gate on. */
 export const HUNT_DEFAULTS = {
-  maxAccuracyM: 30,
+  maxAccuracyM: 40,
   maxSpeedKmh: 60,
   cooldownSeconds: 60,
   maxClockSkewSeconds: 120,

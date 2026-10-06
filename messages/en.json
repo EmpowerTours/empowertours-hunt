@@ -14,13 +14,13 @@
     "clock_skew": "Your device clock is off. Fix the time and try again.",
     "contended": "We could not confirm that collect just now. The drop is still yours — tap it again.",
     "cooldown": "Too soon after your last collect.",
-    "gps_accuracy_too_low": "Your GPS is not accurate enough yet. Wait for the fix to settle.",
+    "gps_accuracy_too_low": "Your GPS reading is not precise enough yet. Wait for it to settle.",
     "hunt_budget_exhausted": "This hunt has paid out its budget.",
     "hunt_ended": "This hunt has closed.",
     "hunt_not_active": "This hunt is not running.",
     "hunt_not_started": "This hunt has not opened yet.",
     "implausible_speed": "You covered too much ground too fast. The attempt was logged for review.",
-    "no_verified_position": "Waiting for a good GPS fix. Step outside if you can — once we know where you are, rewards appear nearby.",
+    "no_verified_position": "Your position has not been confirmed yet. Confirming needs a GPS reading precise enough for this hunt — step into open sky and it happens on its own.",
     "no_walkable_ground": "Nothing can drop around here. Head back toward the streets and try again.",
     "out_of_range": "You are not close enough yet.",
     "player_daily_cap_reached": "You have reached your daily limit.",
@@ -32,7 +32,7 @@
     "spawn_disabled": "This hunt isn't dropping rewards right now.",
     "spawn_expired": "That drop expired.",
     "spawn_not_found": "That drop is not on your radar.",
-    "stale_verified_position": "Your last fix is too old. Keep the app open a moment while we find you again.",
+    "stale_verified_position": "Your position was last confirmed a while ago. This is your GPS reading not being precise enough to re-confirm it, not your phone being lost — step into open sky and it refreshes on its own.",
     "unknown": "That collect was refused."
   },
   "claim": {
@@ -51,8 +51,8 @@
     "needs": "needs ±{meters} m",
     "ready": "GPS locked.",
     "retry": "Retry",
-    "timeout": "The last fix is stale — your phone has stopped reporting a position. Keep the screen on and retry.",
-    "unavailable": "Your device could not get a fix. Step outside, away from buildings, and retry.",
+    "timeout": "Your phone has stopped reporting a GPS reading. Keep the screen on and retry.",
+    "unavailable": "Your device could not get a GPS reading. Step outside, away from buildings, and retry.",
     "unsupported": "This browser cannot report a location. A hunt needs GPS — try Safari or Chrome over HTTPS."
   },
   "payout": {
@@ -195,7 +195,7 @@
     "noFix": "NO FIX",
     "noFixHint": "Waiting for your phone to report a position.",
     "needAccuracy": "NEED ±{meters} M",
-    "needAccuracyHint": "Currently ±{current} m — the server refuses a claim on this fix.",
+    "needAccuracyHint": "Currently ±{current} m — the server refuses a claim on this reading.",
     "wait": "WAIT {seconds}s",
     "waitHint": "Finds are spaced out on purpose.",
     "claim": "CLAIM THIS SPOT"
@@ -242,11 +242,11 @@
   "fix": {
     "titleDenied": "Location blocked",
     "titleUnsupported": "No geolocation",
-    "titleUnavailable": "No fix",
-    "titleTimeout": "Fix stale",
+    "titleUnavailable": "No GPS reading",
+    "titleTimeout": "GPS reading stale",
     "titleDefault": "Location",
     "refusedTitle": "Claim will be refused",
-    "refusedBody": "Your phone is only sure to ±{current} m and this hunt needs ±{needed} m. Step into open sky and wait — the server rejects a claim on this fix, so tapping now only burns a rate limit."
+    "refusedBody": "Your phone is only sure to ±{current} m and this hunt needs ±{needed} m. Step into open sky and wait — the server rejects a claim on this reading, so tapping now only burns a rate limit."
   },
   "spawnPanel": {
     "header": "Spawns · real MON",
