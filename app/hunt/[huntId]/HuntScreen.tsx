@@ -61,13 +61,18 @@ import { formatMon, weiOrZero } from "@/components/hunt/format";
    one slow spawn scan. Nothing below it opens a timer of its own.
 
    RATE-LIMIT BUDGET (lib/ratelimit.ts, per player per minute):
-     hint  12  — useHint self-throttles to at most 10
-     claim  5  — user-initiated only
-     spawn  6  — SHARED between scanning and collecting. The scan runs every
-                 30s (2/min), leaving four tokens for collects. Polling faster
-                 would mean a player can be rate-limited out of collecting the
-                 drop they just walked to, which is the one thing that actually
-                 costs them money.
+     hint       12  — useHint self-throttles to at most 10
+     claim       5  — user-initiated only
+     spawn       6  — COLLECT ONLY.
+     spawnScan  20  — the 30s scan (2/min) and the edition poll.
+
+   These were one bucket of 6 until 2026-10-05 and the arithmetic in this
+   comment was wrong, which is how a player lost a drop. A collect costs TWO
+   tokens, not one: the `finally` below forces a rescan, on failure as well as
+   success. So two scans plus two taps was already 6/6, and the third tap came
+   back "slow down" with 18s left on a 1 MON spawn. Discovery now has its own
+   bucket, so no amount of polling can spend a collect token. If you ever point
+   a poll at `spawn` again, you reintroduce exactly this.
 --------------------------------------------------------------------------- */
 
 const SPAWN_SCAN_MS = 30_000;

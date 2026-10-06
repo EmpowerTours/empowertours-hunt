@@ -77,9 +77,11 @@ export async function GET(
     const { huntId } = await ctx.params;
     const player = await requirePlayer(req);
 
-    // Shares the spawn bucket: both are polled on the same loop, and a script
-    // hammering this would hammer that too.
-    const limit = await checkLimit("spawn", {
+    // Shares the spawnScan bucket: both are polled on the same loop, and a
+    // script hammering this would hammer that too. Deliberately NOT the
+    // `spawn` bucket, which is collect-only — a poll must never be able to
+    // spend the token a player needs to take the drop they walked to.
+    const limit = await checkLimit("spawnScan", {
       playerId: player.id,
       ip: clientIp(req),
     });

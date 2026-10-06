@@ -86,7 +86,7 @@ export async function POST(
 
     // Before any read of the hunt. A spawn request is cheap for the caller and
     // not free for us, and this is a money path.
-    const limit = await checkLimit("spawn", {
+    const limit = await checkLimit("spawnScan", {
       playerId: player.id,
       ip: clientIp(req),
     });

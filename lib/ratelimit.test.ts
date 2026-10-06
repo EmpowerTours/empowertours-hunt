@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   MemoryTokenBucketLimiter,
@@ -232,5 +233,58 @@ describe("checkLimit", () => {
       await checkLimit("hint", { ip: `10.0.${(i >> 8) & 255}.${i & 255}` });
     }
     expect(__memorySize()).toBeLessThanOrEqual(20_000);
+  });
+});
+
+describe("the collect budget cannot be spent by polling", () => {
+  // A player walked to a 1 MON drop on 2026-10-05, tapped COLLECT, and got
+  // "slow down" with 18 seconds left. Cause: scanning, the edition poll and
+  // collecting all drew on one 6-token bucket, and a collect costs two tokens
+  // because HuntScreen forces a rescan afterwards. These assert the split that
+  // fixed it, because the arithmetic that broke it lived in a comment and a
+  // comment cannot fail.
+
+  const source = (p: string) =>
+    readFileSync(new URL(p, import.meta.url), "utf8");
+
+  it("scanning and collecting draw on different buckets", () => {
+    expect(source("../app/api/hunt/[huntId]/spawn/collect/route.ts")).toContain(
+      'checkLimit("spawn"',
+    );
+    expect(source("../app/api/hunt/[huntId]/spawn/route.ts")).toContain(
+      'checkLimit("spawnScan"',
+    );
+  });
+
+  it("the edition poll does not draw on the collect bucket", () => {
+    // It is polled on the same loop as the scan, so on `spawn` it would eat
+    // collect tokens on a timer with no player involved at all.
+    expect(source("../app/api/hunt/[huntId]/edition/route.ts")).toContain(
+      'checkLimit("spawnScan"',
+    );
+  });
+
+  it("leaves the whole collect budget to collects", () => {
+    // The app's own loop is ~4 requests/min (scan every 30s plus the edition
+    // poll). None of them may touch `spawn`, so every one of its tokens is
+    // available for a deliberate tap.
+    const collect = limitSpec("spawn").perPlayer;
+    const scan = limitSpec("spawnScan").perPlayer;
+    // Both are per-player limited; a null here would mean the money path has
+    // no per-player ceiling at all, which is its own bug.
+    expect(collect).not.toBeNull();
+    expect(scan).not.toBeNull();
+    if (collect === null || scan === null) throw new Error("unreachable");
+    expect(collect.tokens).toBeGreaterThanOrEqual(6);
+    // A collect costs two tokens (the collect, plus the rescan it forces), so
+    // the bucket must fund at least three real attempts in a window.
+    expect(collect.tokens / 2).toBeGreaterThanOrEqual(3);
+    // And the scan bucket must absorb the app's own loop with room to spare.
+    expect(scan.tokens).toBeGreaterThan(4 * 2);
+  });
+
+  it("still fails closed on the money path", () => {
+    // A Redis blip must not become free collects.
+    expect(limitSpec("spawn").failClosed).toBe(true);
   });
 });

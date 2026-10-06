@@ -32,6 +32,7 @@ export type LimitName =
   | "claim"
   | "hint"
   | "spawn"
+  | "spawnScan"
   | "register"
   | "cota"
   | "browse"
@@ -77,6 +78,19 @@ interface LimitSpec {
  *           defeats quantization. Matches the 12/min the route used before.
  * spawn   — spawn coordinates are public, so this bounds collect attempts, not
  *           discovery. Hunt.spawnCooldownSeconds is the real control.
+ *
+ *           COLLECT ONLY. Scanning used to draw from this same bucket, which
+ *           meant discovery starved the money path: the 30s scan costs 2/min,
+ *           and a collect costs two tokens because HuntScreen forces a rescan
+ *           afterwards — on failure as well as success. Two taps on a drop
+ *           with seconds left and the third was refused by the limiter rather
+ *           than by the game, which is the exact outcome the budget comment in
+ *           HuntScreen says must never happen. Reported from the field
+ *           2026-10-05 as "slow down" on a 1 MON drop with 18s on the clock.
+ *
+ * spawnScan — discovery and the edition poll. Separate bucket so read traffic
+ *           can never consume a collect token. Public coordinates, so the
+ *           ceiling is about load, not secrecy.
  * register— open signup, so this is flood protection, NOT the sybil bound. The
  *           sybil bound is the hunt budget ceiling plus admin moderation of
  *           Player.active. Loose enough for a shared NAT, tight enough that
@@ -99,6 +113,15 @@ const LIMITS: Record<LimitName, LimitSpec> = {
   spawn: {
     perPlayer: { tokens: 6, windowSeconds: 60 },
     perIp: { tokens: 20, windowSeconds: 60 },
+    failClosed: true,
+  },
+  spawnScan: {
+    // The app scans every 30s and polls editions on the same loop, so the
+    // floor is ~4/min before a player touches anything. Generous on purpose:
+    // refusing a scan costs a player nothing but a stale screen, while
+    // refusing a collect costs them the drop.
+    perPlayer: { tokens: 20, windowSeconds: 60 },
+    perIp: { tokens: 60, windowSeconds: 60 },
     failClosed: true,
   },
   // Registration mints an identity, so the burst is what matters, not the
