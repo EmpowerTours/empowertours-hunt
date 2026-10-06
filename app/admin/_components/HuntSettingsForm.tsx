@@ -127,7 +127,7 @@ function DateTimeField({
 
 /** What the operator's own clock says, so the UTC string is never a riddle. */
 function localReadout(iso: string): string {
-  if (!iso) return "no end bound — this hunt never retires itself";
+  if (!iso) return "blank — no bound";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "not a valid date";
   return `your time: ${d.toLocaleString()}`;
@@ -269,6 +269,21 @@ export function HuntSettingsForm({
               value={v.startsAt}
               onChange={(iso) => set("startsAt", iso)}
             />
+            {/* iOS's datetime picker offers no way to empty itself, and a
+                half-typed date here rejects the WHOLE save — one bad field and
+                the preset you just applied goes with it. */}
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => set("startsAt", "")}
+                className="border-hull-line text-ink-faint hover:text-ink min-h-11 rounded-xl border px-3 font-mono text-xs"
+              >
+                Clear
+              </button>
+            </div>
+            <p className="text-ink-faint mt-1 text-[11px]">
+              {localReadout(v.startsAt)}
+            </p>
           </Field>
           <Field
             label="Ends at"
@@ -305,7 +320,9 @@ export function HuntSettingsForm({
               </button>
             </div>
             <p className="text-ink-faint mt-1 text-[11px]">
-              {localReadout(v.endsAt)}
+              {v.endsAt
+                ? localReadout(v.endsAt)
+                : "blank — this hunt never retires itself"}
             </p>
           </Field>
           <div className="md:col-span-2">
