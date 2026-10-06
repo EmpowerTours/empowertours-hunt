@@ -16,6 +16,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminPost } from "@/app/admin/_components/api";
 import { commitNumberDraft } from "@/lib/admin/number-draft";
+import {
+  fromLocalInput,
+  toLocalInput,
+  todayAtLocalHour,
+} from "@/lib/admin/datetime-local";
 
 export interface HuntFormValues {
   name: string;
@@ -87,6 +92,45 @@ function NumberInput({
       onBlur={() => setDraft(null)}
     />
   );
+}
+
+/**
+ * A date you can actually enter on a phone.
+ *
+ * These were plain text boxes wanting a full ISO string —
+ * "2026-10-06T21:00:00.000Z" — typed on a mobile keyboard, which is how
+ * "ends at" ends up blank and a venue hunt ends up living forever.
+ *
+ * `datetime-local` gives iOS its native wheel picker. It speaks LOCAL time
+ * with no zone, so what the operator picks is what their watch says, and the
+ * conversion to UTC happens here rather than in their head. The stored value
+ * stays a full ISO string, which is what the server parses.
+ */
+function DateTimeField({
+  value,
+  onChange,
+  className,
+}: {
+  value: string;
+  onChange: (iso: string) => void;
+  className?: string;
+}) {
+  return (
+    <input
+      type="datetime-local"
+      className={className}
+      value={toLocalInput(value)}
+      onChange={(e) => onChange(fromLocalInput(e.target.value))}
+    />
+  );
+}
+
+/** What the operator's own clock says, so the UTC string is never a riddle. */
+function localReadout(iso: string): string {
+  if (!iso) return "no end bound — this hunt never retires itself";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "not a valid date";
+  return `your time: ${d.toLocaleString()}`;
 }
 
 function Field({
@@ -219,27 +263,50 @@ export function HuntSettingsForm({
               <option value="true">active</option>
             </select>
           </Field>
-          <Field
-            label="Starts at"
-            explain="ISO datetime, or blank for no start bound."
-          >
-            <input
+          <Field label="Starts at" explain="Blank for no start bound.">
+            <DateTimeField
               className={inputClass}
               value={v.startsAt}
-              placeholder="2026-08-20T09:00:00.000Z"
-              onChange={(e) => set("startsAt", e.target.value)}
+              onChange={(iso) => set("startsAt", iso)}
             />
           </Field>
           <Field
             label="Ends at"
-            explain="ISO datetime, or blank for no end bound."
+            explain="Blank for no end bound. The player-facing hunt list filters on this, so an end date is what retires a hunt without anyone having to remember."
           >
-            <input
+            <DateTimeField
               className={inputClass}
               value={v.endsAt}
-              placeholder="2026-09-20T09:00:00.000Z"
-              onChange={(e) => set("endsAt", e.target.value)}
+              onChange={(iso) => set("endsAt", iso)}
             />
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => set("endsAt", todayAtLocalHour(21))}
+                className="border-hull-line text-ink-dim hover:text-ink min-h-11 rounded-xl border px-3 font-mono text-xs"
+              >
+                Today 9pm
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  set("endsAt", new Date(Date.now() + 86_400_000).toISOString())
+                }
+                className="border-hull-line text-ink-dim hover:text-ink min-h-11 rounded-xl border px-3 font-mono text-xs"
+              >
+                +24h
+              </button>
+              <button
+                type="button"
+                onClick={() => set("endsAt", "")}
+                className="border-hull-line text-ink-faint hover:text-ink min-h-11 rounded-xl border px-3 font-mono text-xs"
+              >
+                Clear
+              </button>
+            </div>
+            <p className="text-ink-faint mt-1 text-[11px]">
+              {localReadout(v.endsAt)}
+            </p>
           </Field>
           <div className="md:col-span-2">
             <Field label="Description" explain="Optional blurb.">
