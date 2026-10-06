@@ -2,8 +2,17 @@
  * The sound a collect makes.
  *
  * Synthesised rather than shipped: three short notes cost nothing in the
- * bundle, need no CDN round trip at the moment they have to be instant, and
- * work the same offline, which matters for a game played outdoors on a phone.
+ * bundle and need no fetch at the moment they have to be instant. An audio
+ * file would be a second request on a connection that is, by the nature of
+ * this game, a phone outdoors on mobile data — so the first collect of a
+ * session could fire while the file was still arriving, or never arrive.
+ * Synthesised, the sound is already in the JS that drew the button.
+ *
+ * To be clear, since the earlier wording here suggested otherwise: NOTHING in
+ * Hunt works offline. `collectSpawn` is a signed POST, the server verifies the
+ * position, and the payout is a Monad transaction. There is no service worker
+ * and no offline mode. Only the chime needs no network, and only because it is
+ * computed rather than downloaded.
  *
  * iOS is the constraint. An AudioContext starts `suspended` and may only be
  * resumed from inside a user gesture, and a collect is a network round trip —
