@@ -582,17 +582,24 @@ export function HuntScreen({ huntId }: { huntId: string }) {
             {compass.heading === null ? tHunt("northUp") : tHunt("headingUp")}
           </p>
         </div>
-        {/* The wallet link alone. The language pill was tried here and the
-            header could not afford it: at 360px it crushed the hunt name to
-            "Bús..." and wrapped the status onto three lines, costing 25px to
-            save 30. It lives at the foot of the scroller instead, where the
-            flexible region absorbs it for nothing. */}
-        <Link
-          href="/hunt/wallet"
-          className="border-hull-line text-ink-dim flex min-h-11 shrink-0 items-center rounded-xl border px-3 font-mono text-xs tracking-widest uppercase"
-        >
-          {tNav("wallet")}
-        </Link>
+        {/* The sound toggle and the wallet link. The LANGUAGE pill was tried
+            here and the header could not afford it: at 360px it crushed the
+            hunt name to "Bús..." and wrapped the status onto three lines,
+            costing 25px to save 30. It still lives at the foot of the
+            scroller for that reason.
+            The sound toggle is a different shape — one glyph in a 44px square
+            rather than two text options — so it fits where the pill did not,
+            and it belongs next to the other always-on control rather than
+            buried under a scroll. */}
+        <div className="flex shrink-0 items-center gap-2">
+          <SoundToggle compact />
+          <Link
+            href="/hunt/wallet"
+            className="border-hull-line text-ink-dim flex min-h-11 shrink-0 items-center rounded-xl border px-3 font-mono text-xs tracking-widest uppercase"
+          >
+            {tNav("wallet")}
+          </Link>
+        </div>
       </header>
 
       {/* The hero, and still full width on the 360x740 floor: 46dvh is 340px
@@ -693,10 +700,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           </Note>
         ) : null}
 
-        <div className="flex items-center justify-end gap-2 pb-1">
-          <SoundToggle />
-          <LanguageSwitch />
-        </div>
+        <LanguageSwitch className="flex justify-end pb-1" />
       </div>
 
       {/* Pinned to the bottom of the viewport, outside the scroller.

@@ -27,7 +27,19 @@ import {
  * the only way to find out whether your phone will actually make the noise,
  * and it doubles as the gesture that unlocks audio on iOS.
  */
-export function SoundToggle({ className }: { className?: string }) {
+export function SoundToggle({
+  className,
+  compact = false,
+}: {
+  className?: string;
+  /**
+   * Icon only, for the header. The header is the width-critical row — adding
+   * the language pill there once crushed the hunt name to "Bús..." and wrapped
+   * the status onto three lines — so this variant is a single glyph in a 44px
+   * touch target, and the meaning lives in aria-label instead of a word.
+   */
+  compact?: boolean;
+}) {
   const t = useTranslations("sound");
   const mutedNow = useSyncExternalStore(
     subscribeMuted,
