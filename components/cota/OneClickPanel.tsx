@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Disclosure, Note, Panel } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
+import { formatMon } from "@/components/hunt/format";
 import { useAuthSlot } from "@/app/providers";
 import { signInAccount } from "@/lib/auth/passkey";
 import { publicClient } from "@/lib/cota/swap";
@@ -445,8 +446,18 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
     );
   }
 
+  // The swap line carries the NUMBER, not just the verb.
+  //
+  // Perpl will not take less than $10, so an ask below that floor is raised to
+  // it — which is correct and unavoidable, and was invisible. On a wallet
+  // holding $10.46, tapping "5%" sold 97% of it and the list still read "sell
+  // MON for AUSD on Kuru's order book". The percentage is a request; this line
+  // is what actually leaves the wallet, and the two are not always the same.
   const label: Record<string, string> = {
-    swap: t.stepSwap,
+    swap:
+      plan.swapMonWei > 0n
+        ? `${t.stepSwap} — ${formatMon(plan.swapMonWei)} MON`
+        : t.stepSwap,
     deposit: t.stepDeposit,
     leash: t.stepLeash,
     trade: t.stepTrade,
