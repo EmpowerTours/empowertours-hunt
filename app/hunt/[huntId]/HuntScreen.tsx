@@ -25,6 +25,7 @@ import {
   type EditionOfferView,
 } from "@/components/hunt/EditionCard";
 import { payFromPasskey } from "@/lib/auth/signIn";
+import { playChime, unlockAudio } from "@/lib/hunt/chime";
 import { SpawnPanel } from "@/components/hunt/SpawnPanel";
 import {
   ApiError,
@@ -415,6 +416,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   const onClaim = useCallback(async () => {
     if (fix === null || !gate.ready) return;
 
+    unlockAudio();
     setRefusal(null);
     setClaimError(null);
     claimAbort.current?.abort();
@@ -430,6 +432,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
       if (controller.signal.aborted) return;
 
       if (result.found) {
+        playChime("success");
         setFind(result);
         setCooldownUntil(Date.now() + cooldownSeconds * 1_000);
         hint.refresh();
@@ -465,6 +468,9 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   const onCollect = useCallback(
     async (spawnId: string) => {
       if (fix === null) return;
+      // Synchronously, before the await: iOS only lets audio start from inside
+      // the gesture, and the answer arrives long after this tap has returned.
+      unlockAudio();
       setCollectingId(spawnId);
       setSpawnError(null);
       setCollectNote(null);
@@ -480,6 +486,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           setSpawns((list) => list.filter((s) => s.id !== spawnId));
           setSelectedSpawnId(null);
           const amount = formatMon(weiOrZero(result.amountMonWei));
+          playChime(result.payout.holdReason === null ? "success" : "held");
           setCollectNote(
             result.payout.holdReason === null
               ? { text: tPayout("released", { amount }), tone: "success" }

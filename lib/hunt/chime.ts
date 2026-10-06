@@ -1,0 +1,131 @@
+/**
+ * The sound a collect makes.
+ *
+ * Synthesised rather than shipped: three short notes cost nothing in the
+ * bundle, need no CDN round trip at the moment they have to be instant, and
+ * work the same offline, which matters for a game played outdoors on a phone.
+ *
+ * iOS is the constraint. An AudioContext starts `suspended` and may only be
+ * resumed from inside a user gesture, and a collect is a network round trip —
+ * by the time the server answers we are long outside the tap that started it.
+ * So the two halves are separate on purpose: call `unlockAudio()` synchronously
+ * in the tap handler, before any `await`, and `playChime()` whenever the answer
+ * arrives. A context resumed during the gesture stays usable afterwards.
+ *
+ * Everything here fails silently. A phone that will not make noise is not a
+ * reason to lose the player's collect.
+ */
+
+type Tone = "success" | "held";
+
+/** Opt out with `localStorage.setItem("hunt.sound", "off")`. */
+const MUTE_KEY = "hunt.sound";
+
+type ContextFactory = () => AudioContext | null;
+
+let cached: AudioContext | null = null;
+let factory: ContextFactory = () => {
+  if (typeof window === "undefined") return null;
+  const Ctor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
+  if (!Ctor) return null;
+  cached ??= new Ctor();
+  return cached;
+};
+
+function muted(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(MUTE_KEY) === "off";
+  } catch {
+    // Safari in private mode throws on localStorage. Not a reason to be silent.
+    return false;
+  }
+}
+
+function context(): AudioContext | null {
+  if (muted()) return null;
+  try {
+    return factory();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Call from inside the tap, before awaiting anything. Without this the chime
+ * is silent on iOS no matter what `playChime` does later.
+ */
+export function unlockAudio(): void {
+  const ctx = context();
+  if (ctx === null) return;
+  try {
+    if (ctx.state === "suspended") void ctx.resume().catch(() => {});
+  } catch {
+    // Nothing to recover: the player simply gets no sound.
+  }
+}
+
+/** One note, shaped so it reads as a chime rather than a beep. */
+function note(
+  ctx: AudioContext,
+  freq: number,
+  startAt: number,
+  seconds: number,
+  peak: number,
+): void {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  // Triangle, not sine: a little harmonic content survives a phone speaker,
+  // which rolls off the fundamental badly at these frequencies.
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(freq, startAt);
+  // A fast attack and an exponential tail. Ramping to a true zero is invalid
+  // for exponential ramps, hence the epsilon.
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(peak, startAt + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + seconds);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(startAt);
+  osc.stop(startAt + seconds + 0.02);
+}
+
+/**
+ * `success` — the payout was released: a rising major triad, the "it landed"
+ * sound. `held` — collected, but the payout is held, so it resolves lower and
+ * stops short rather than celebrating something that has not happened yet.
+ */
+export function playChime(tone: Tone): void {
+  const ctx = context();
+  if (ctx === null) return;
+  try {
+    const t = ctx.currentTime;
+    if (tone === "success") {
+      // A5, C#6, E6 — a major triad arpeggiated fast enough to read as one
+      // event rather than three notes.
+      note(ctx, 880.0, t, 0.11, 0.18);
+      note(ctx, 1108.7, t + 0.055, 0.11, 0.16);
+      note(ctx, 1318.5, t + 0.11, 0.22, 0.2);
+    } else {
+      note(ctx, 660.0, t, 0.14, 0.13);
+      note(ctx, 740.0, t + 0.07, 0.16, 0.1);
+    }
+  } catch {
+    // An AudioContext can be closed or refused mid-flight. Silence is fine.
+  }
+}
+
+/** Test seam. Never called from application code. */
+export function __setAudioContextFactory(f: ContextFactory | null): void {
+  cached = null;
+  factory =
+    f ??
+    (() => {
+      if (typeof window === "undefined") return null;
+      const Ctor = window.AudioContext;
+      if (!Ctor) return null;
+      cached ??= new Ctor();
+      return cached;
+    });
+}
