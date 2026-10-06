@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __setAudioContextFactory, playChime, unlockAudio } from "./chime";
+import {
+  __setAudioContextFactory,
+  isMuted,
+  isMutedOnServer,
+  playChime,
+  setMuted,
+  subscribeMuted,
+  unlockAudio,
+} from "./chime";
 
 type FakeNode = { connect: (n: unknown) => unknown };
 
@@ -150,5 +158,69 @@ describe("the iOS ordering rule", () => {
     expect(HUNT_SCREEN).toContain(
       'playChime(result.payout.holdReason === null ? "success" : "held")',
     );
+  });
+});
+
+describe("the mute store behind the UI toggle", () => {
+  it("round-trips through setMuted", () => {
+    expect(isMuted()).toBe(false);
+    setMuted(true);
+    expect(isMuted()).toBe(true);
+    setMuted(false);
+    expect(isMuted()).toBe(false);
+  });
+
+  it("tells subscribers so the toggle cannot disagree with the sound", () => {
+    const seen = vi.fn();
+    const stop = subscribeMuted(seen);
+    setMuted(true);
+    expect(seen).toHaveBeenCalledTimes(1);
+    stop();
+    setMuted(false);
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports unmuted on the server, so the markup matches on hydration", () => {
+    // The server cannot read this device's localStorage. If the server
+    // snapshot guessed, React would warn and the button would flicker.
+    setMuted(true);
+    expect(isMutedOnServer()).toBe(false);
+  });
+
+  it("muting actually silences playChime, not just the label", () => {
+    const f = fakeContext();
+    __setAudioContextFactory(() => f.ctx as unknown as AudioContext);
+    setMuted(true);
+    playChime("success");
+    expect(f.started).toHaveLength(0);
+    setMuted(false);
+    playChime("success");
+    expect(f.started).toHaveLength(3);
+  });
+
+  it("does not throw when localStorage is unavailable", () => {
+    vi.stubGlobal("localStorage", undefined);
+    expect(() => setMuted(true)).not.toThrow();
+    expect(isMuted()).toBe(false);
+  });
+});
+
+describe("the toggle's translations", () => {
+  const load = (f: string) =>
+    JSON.parse(
+      readFileSync(
+        new URL(`../../messages/${f}.json`, import.meta.url),
+        "utf8",
+      ),
+    ) as { sound?: Record<string, string> };
+
+  it("exist in every locale, because a missing key renders the key", () => {
+    for (const locale of ["en", "es"]) {
+      const sound = load(locale).sound;
+      expect(sound, locale).toBeDefined();
+      for (const key of ["label", "on", "off"]) {
+        expect(sound?.[key], `${locale}.sound.${key}`).toBeTruthy();
+      }
+    }
   });
 });

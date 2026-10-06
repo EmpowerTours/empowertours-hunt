@@ -5,6 +5,11 @@
     "en": "English",
     "switchedNote": "Idioma elegido manualmente. Se queda así en este dispositivo."
   },
+  "sound": {
+    "label": "Sonido",
+    "on": "SONIDO SÍ",
+    "off": "SONIDO NO"
+  },
   "spawnReason": {
     "clock_skew": "El reloj de tu dispositivo está desfasado. Corrige la hora e inténtalo de nuevo.",
     "contended": "No pudimos confirmar esa recogida ahorita. El premio sigue siendo tuyo: vuelve a tocarlo.",

@@ -39,6 +39,7 @@ import {
 import { isTerminalSpawnReason } from "@/components/hunt/copy";
 import { useSpawnReason } from "@/components/hunt/useSpawnReason";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
+import { SoundToggle } from "@/components/hunt/SoundToggle";
 import { useTranslations } from "next-intl";
 import {
   bearingDegrees,
@@ -692,7 +693,10 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           </Note>
         ) : null}
 
-        <LanguageSwitch className="flex justify-end pb-1" />
+        <div className="flex items-center justify-end gap-2 pb-1">
+          <SoundToggle />
+          <LanguageSwitch />
+        </div>
       </div>
 
       {/* Pinned to the bottom of the viewport, outside the scroller.

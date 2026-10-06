@@ -5,6 +5,11 @@
     "en": "English",
     "switchedNote": "Language set manually. It will stay this way on this device."
   },
+  "sound": {
+    "label": "Sound",
+    "on": "SOUND ON",
+    "off": "SOUND OFF"
+  },
   "spawnReason": {
     "clock_skew": "Your device clock is off. Fix the time and try again.",
     "contended": "We could not confirm that collect just now. The drop is still yours — tap it again.",

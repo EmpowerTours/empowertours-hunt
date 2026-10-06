@@ -10,9 +10,11 @@
  *
  * To be clear, since the earlier wording here suggested otherwise: NOTHING in
  * Hunt works offline. `collectSpawn` is a signed POST, the server verifies the
- * position, and the payout is a Monad transaction. There is no service worker
- * and no offline mode. Only the chime needs no network, and only because it is
- * computed rather than downloaded.
+ * position, and the payout is a Monad transaction. There IS a web manifest
+ * (app/manifest.ts), so Hunt installs to the home screen and looks like a
+ * native app — which is exactly what misleads people here. Installable is not
+ * offline: that needs a service worker, and there is none. Only the chime
+ * needs no network, and only because it is computed rather than downloaded.
  *
  * iOS is the constraint. An AudioContext starts `suspended` and may only be
  * resumed from inside a user gesture, and a collect is a network round trip —
@@ -51,6 +53,48 @@ function muted(): boolean {
     // Safari in private mode throws on localStorage. Not a reason to be silent.
     return false;
   }
+}
+
+// --- the mute setting, as an external store -------------------------------
+//
+// Exposed this way so the UI toggle can read it through useSyncExternalStore
+// and never disagree with what playChime() will actually do. Reading
+// localStorage during render would hydration-mismatch, because the server has
+// no idea what this device prefers.
+
+const listeners = new Set<() => void>();
+
+/** Subscribe to mute changes, including from another tab. */
+export function subscribeMuted(onChange: () => void): () => void {
+  listeners.add(onChange);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === MUTE_KEY || e.key === null) onChange();
+  };
+  globalThis.addEventListener?.("storage", onStorage);
+  return () => {
+    listeners.delete(onChange);
+    globalThis.removeEventListener?.("storage", onStorage);
+  };
+}
+
+export function isMuted(): boolean {
+  return muted();
+}
+
+/** The server cannot know; assume sound is on so the markup is stable. */
+export function isMutedOnServer(): boolean {
+  return false;
+}
+
+export function setMuted(next: boolean): void {
+  try {
+    if (next) globalThis.localStorage?.setItem(MUTE_KEY, "off");
+    else globalThis.localStorage?.removeItem(MUTE_KEY);
+  } catch {
+    // Private mode. The toggle will not persist, which is better than throwing
+    // inside a click handler.
+  }
+  for (const l of listeners) l();
 }
 
 function context(): AudioContext | null {
