@@ -131,6 +131,33 @@ export function HuntSettingsForm({
     setV((prev) => ({ ...prev, [k]: value }));
   }
 
+  /**
+   * Indoor demo settings, in one tap.
+   *
+   * The defaults place a drop 80-600 m away on purpose, so collecting one
+   * always needs real movement. In a conference hall that means walking out of
+   * the building, and at a 40 m accuracy gate the check-in refuses indoors
+   * anyway, so nothing spawns at all.
+   *
+   * It deliberately does NOT save, and deliberately does not touch `active` or
+   * `spawnEnabled`. These numbers remove an anti-spoofing control — a 60 m
+   * spawn radius with an 80 m gate can be farmed from a chair — so a human
+   * reads them and presses Save. The one that keeps it bounded is `endsAt`,
+   * which is left for you to set, because only you know when the event ends.
+   */
+  function applyVenuePreset() {
+    setV((prev) => ({
+      ...prev,
+      spawnMinRadiusM: 30,
+      spawnMaxRadiusM: 60,
+      unsurveyedSpawnRadiusM: 60,
+      maxAccuracyM: 80,
+      spawnTtlSeconds: 600,
+      spawnCooldownSeconds: 120,
+      spawnDailyCapMonPerPlayer: "0.05",
+    }));
+  }
+
   async function save() {
     setBusy(true);
     setError(null);
@@ -231,6 +258,22 @@ export function HuntSettingsForm({
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-300">
           Verifier rules
         </h3>
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={applyVenuePreset}
+            className="border-hull-line text-ink-dim hover:text-ink min-h-11 rounded-xl border px-3 font-mono text-xs tracking-wide"
+          >
+            Venue preset (indoor)
+          </button>
+          <p className="text-ink-faint mt-1 text-[11px] leading-snug">
+            Fills the spawn radii, the GPS gate and a per-player daily cap for a
+            hunt played inside one building. Nothing is saved until you press
+            Save, and it does not activate the hunt. Set an end date before you
+            do — without one this sits in every hunter&rsquo;s list, worldwide,
+            and these settings can be farmed without walking.
+          </p>
+        </div>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <Field
             label="Max GPS accuracy (m)"

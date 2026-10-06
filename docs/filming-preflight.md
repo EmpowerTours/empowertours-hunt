@@ -90,7 +90,7 @@ from `/api/cota/mon-moved`; nine bounties claimed on `/judge`.
 
 ---
 
-# Filming indoors at a venue
+# Running a hunt indoors at a venue (Monad Open)
 
 The default hunt places drops in an annulus **80–600 m** from your verified
 position, deliberately, so that collecting one always requires real movement.
@@ -135,7 +135,7 @@ await fetch("/api/admin/hunts", {
   headers: { "content-type": "application/json" },
   credentials: "same-origin",
   body: JSON.stringify({
-    name: "Venue — TOKEN2049",
+    name: "Venue — Monad Open",
     description: "Indoor demo hunt. Short spawn radius, loose GPS gate.",
     // Drops land INSIDE the building. Default is 80-600m, which is the street.
     spawnMinRadiusM: 30,
@@ -154,8 +154,9 @@ await fetch("/api/admin/hunts", {
     // THE IMPORTANT ONE. The player-facing hunt list has NO geo filter: every
     // active, unexpired hunt is offered to every hunter on earth. Without an
     // end date this farmable hunt sits in the Mexico players' list forever.
-    // Set it to the hour the conference ends; the list filters on endsAt.
-    endsAt: "2026-10-08T12:00:00Z",
+    // Set it to the hour the EVENT ends, in UTC. Not a guess — this is the
+    // control that retires the hunt without anyone remembering to.
+    endsAt: "YYYY-MM-DDTHH:MM:00Z",
     // Caps what one person can take in a day. Enforced in the collect route,
     // and only when above 0.
     spawnDailyCapMonPerPlayer: "0.05",
