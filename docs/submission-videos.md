@@ -2,15 +2,15 @@
 
 Deadline 13 Oct 21:59 CST. Both are required deliverables for every track.
 
-Judging weights, which decide what these videos are *for*:
+Judging weights, which decide what these videos are _for_:
 
-| | |
-|---|---|
+|                            |        |
+| -------------------------- | ------ |
 | Founder & Market Readiness | **25** |
-| Technical Execution | 20 |
-| Design & Craft | 20 |
-| Traction & Path Forward | **20** |
-| Originality | 15 |
+| Technical Execution        | 20     |
+| Design & Craft             | 20     |
+| Traction & Path Forward    | **20** |
+| Originality                | 15     |
 
 **45% of the score is the two things code cannot demonstrate.** The demo video
 carries Technical Execution and Design; the pitch video carries Founder
@@ -35,88 +35,103 @@ subtitles.
 
 # Video 1 — technical demo, 3:00
 
+**Rewritten 2026-10-06.** The 24 Sep version told you to fill a leash form with
+market, leverage, size and daily loss on camera. That form is gone: `/cota` now
+renders `OneClickPanel` — "Put my MON to work", a percentage row, and a
+long/short pair. The bound is still signed and still anchored, but the press
+generates it rather than you typing it (`DEFAULT_LEASH` in
+`lib/cota/oneclick-steps.ts`). Shooting the old script would film a screen that
+no longer exists.
+
 Screen recording of a phone, real account, real money. No slides at any point.
 
-### 0:00–0:20 — the thing that is actually different
+### 0:00–0:25 — one press, four things
 
-Open on `/cota` already signed in. Say what the product is in one sentence
-while the leash form is on screen:
+Open on `/cota`, signed in, with a real MON balance. The panel says "How much
+of your MON?" above 5 / 30 / 80 buttons.
 
-> "This is Cota. Before any software trades for you, you sign the limits it can
-> never exceed — the market, the leverage, the size, and how much you're willing
-> to lose in a day."
+> "This is Cota. One press turns MON you earned on foot into a position on a
+> perps venue — and it signs the limits that press can never exceed."
 
-Fill the form on camera. Real numbers, small ones.
+Tap **30%**. Let the "One press will:" list sit on screen for two seconds —
+that list is the architecture, in the product's own words.
 
-### 0:20–0:45 — sign it, anchor it
+### 0:25–1:00 — the press, and what it actually does
 
-Face ID. The signature happens.
+Press **Put my MON to work**. One Face ID. Then narrate over the live steps as
+they tick:
 
-> "That's a passkey — Face ID, no seed phrase, no extension, no app install.
-> The wallet *is* the passkey. And the bound is now EIP-712 typed data, anchored
-> on chain."
+> "Four things, one signature. It sells MON for AUSD on Kuru's order book. It
+> deposits to Perpl. It signs the leash as EIP-712 typed data and anchors it on
+> Monad. Then it opens the position."
 
-Show the anchor transaction. Let the hash be visible for two seconds.
+Let the anchor hash be visible for two seconds.
 
-### 0:45–1:15 — the refusal
+> "The wallet is a passkey — Face ID, no seed phrase, no extension, no install.
+> The key that trades is derived from the passkey's PRF, so those four steps
+> cost one prompt, not four."
 
-**This is the most important shot in the video.** Ask the agent for a trade
-outside the bound.
+### 1:00–1:35 — the refusal
 
-> "Now I'll ask it to trade bigger than my own limit."
+**This is still the most important shot in the video.** Go to `/judge` and open
+**"Read what the leash actually refused."**
 
-Show the refusal, with the reason, in plain language.
+> "Here is the part I care about. Ask for more than the bound and it never
+> reaches the venue."
 
-> "It never reached the venue. The check is a pure function — no clock, no
-> database, no network — and it fails closed. And the trading key can open and
-> close positions but cannot withdraw. Perpl enforces that, not us. A fully
-> compromised agent is still bounded to what I signed."
+Show the refusal and its reason — `notional_exceeded`, `leverage_exceeded` or
+`trade_count_exceeded`, from `lib/cota/enforce.ts`.
 
-### 1:15–2:00 — the money is real and it came from another chain
+> "That check is a pure function. No clock, no database, no network, and it
+> fails closed. And the trading key can open and close but cannot withdraw —
+> Perpl enforces that, not us. A fully compromised agent is still bounded to
+> what I signed."
 
-Cut to `/cota/onramp`.
+### 1:35–2:15 — the money is real and it came from another chain
 
-> "Funding works from any chain. This address is permanent, and yesterday I sent
-> two dollars of USDC from Base to it."
+Cut to `/cota/onramp`. The address is permanent.
+
+> "Funding works from any chain. This address doesn't expire, and I sent USDC
+> from Base to it."
 
 Show the arrivals list with both rows — departure and arrival.
 
-> "Fourteen seconds, Base to Monad, through Aurora Intents. It lands as MON, so
-> a new user can pay their own gas the moment they arrive — that was a dead end
-> we found and closed."
+> "Base to Monad through Aurora Intents, and it lands as MON, so a new user can
+> pay their own gas the moment they arrive. That was a dead end we found and
+> closed."
 
-Show the balance panel. The numbers are real; say so.
+### 2:15–2:40 — the loop
 
-### 2:00–2:35 — the leg that makes it collateral
+Back to `/cota`, then one beat on Hunt.
 
-Run the swap to AUSD on camera, live.
+> "The MON funding all of this is earned on foot. Players walk to real GPS
+> points in Mexico and get paid on Monad mainnet. Hunt earns you a wallet and a
+> balance; Cota is where you put it to work under a leash you control."
 
-> "Perpl settles in AUSD, so this converts through Kuru's order book and a
-> Uniswap v4 pool. Same wallet, same passkey."
+### 2:40–3:00 — the honest close
 
-Show the resulting AUSD balance.
+Do not oversell. One true sentence:
 
-### 2:35–3:00 — the loop, and the honest limit
-
-Back to `/cota`.
-
-> "The MON that funds all this is earned on foot — players walk to real GPS
-> locations in Mexico and get paid on Monad mainnet. Hunt earns you a wallet and
-> a balance; Cota is where you put it to work under a leash you control."
-
-Close on one true sentence about the state of it. Do not oversell:
-
-> "It's live on mainnet today, with a small number of real players and one
-> funded trading account. Everything you just saw is production."
+> "It's live on mainnet today. Everything you just saw is production, and
+> this wallet has moved about four thousand nine hundred MON through it."
 
 ### Shots to get before you start
 
-- The leash form with real numbers typed
-- The Face ID prompt firing
+- The percentage row with 30% selected, and the "One press will:" list
+- The single Face ID prompt firing
 - The anchor tx hash on screen
-- **The refusal message** — get this twice, it is the whole video
+- **The refusal and its reason** — get this twice, it is the whole video
 - `/cota/onramp` arrivals list showing the two rows
-- The swap completing and the AUSD balance changing
+- The position appearing after the press
+
+### Do NOT say
+
+- **That Chainlink CRE drives the agent.** It was never deployed — deploy access
+  is gated behind Early Access. `cre/agent-scheduler/` is built and _simulated_.
+  The judge page was corrected once already for claiming otherwise; do not put
+  it back in a video.
+- **That anything works offline.** It does not. There is no service worker.
+- Any player count you have not counted today.
 
 ---
 
@@ -149,15 +164,34 @@ Face to camera. This one is about you, not the product.
 
 Do not inflate this. Judges have seen a hundred inflated numbers today.
 
-> "Where it actually is: live on Monad mainnet, a small group of real players in
-> Mexico, one funded trading account, real payouts on chain. Small, and every
-> number is real."
+> "Where it actually is: live on Monad mainnet, one funded trading account, and
+> about four thousand nine hundred MON moved through it. Real players in Mexico,
+> and now Thailand and Singapore, because the thing travels with me. Small, and
+> every number is real."
 
 ### 1:45–2:00 — the path forward
 
 > "Next is The Trading Festival in Mexico City in November, in a room with
 > traders and prop firms — which is exactly the audience for a rulebook nobody
 > can bend."
+
+## Numbers — verified, and the ones only you can verify
+
+Checked 2026-10-06 against production, safe to say out loud:
+
+- **4,927 MON moved** by the trading wallet in the TOKEN2049 contest window
+  (`GET /api/cota/mon-moved`, one wallet, `complete: true`). Chain-derived.
+- **Nine bounties** are claimed on `/judge`, each with its own step.
+- Live on Monad mainnet, chain 143.
+
+**Do not say these until you have checked them on the day** — I could not:
+
+- Any player or hunter count. Nobody has counted it this week.
+- "The Trading Festival in Mexico City in November." Confirm it is still on and
+  that you are going, or cut the line. A judge who knows the event and finds it
+  moved has just learned to discount everything else you said.
+- Total MON paid out to players. Different number from MON moved, and not
+  measured here.
 
 ## Tone notes
 
