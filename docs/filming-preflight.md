@@ -117,6 +117,64 @@ under a roof and surrounded by steel, a phone reports far worse than the ±33 m
 it gives you on a street. At ±40 m the check-in will refuse and nothing will
 spawn at all.
 
+## Ready to paste
+
+Creation **forces** `active: false` and `spawnEnabled: false` — activation is
+its own audited edit — so this is two steps, not one. And `spawnEnabled` with
+a zero budget is rejected outright, so the budget goes in at step 1.
+
+Log in at `/admin`, open the browser console on that page, and paste. It is a
+same-origin fetch on the `SameSite=Strict` session cookie; there is no token to
+copy.
+
+**Step 1 — create it.** Prints the new hunt id.
+
+```js
+await fetch("/api/admin/hunts", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  credentials: "same-origin",
+  body: JSON.stringify({
+    name: "Venue — TOKEN2049",
+    description: "Indoor demo hunt. Short spawn radius, loose GPS gate.",
+    // Drops land INSIDE the building. Default is 80-600m, which is the street.
+    spawnMinRadiusM: 30,
+    spawnMaxRadiusM: 60,
+    unsurveyedSpawnRadiusM: 60,
+    // Indoors a phone reports far worse than the +-33m it gives on a street.
+    // At the 40m gate, check-in refuses and NOTHING spawns.
+    maxAccuracyM: 80,
+    // A demo queue, not a day's walking.
+    spawnTtlSeconds: 600,
+    spawnCooldownSeconds: 120,
+    spawnMinMon: "0.0005",
+    spawnMaxMon: "0.0015",
+    // Required: spawnEnabled is refused while this is 0.
+    budgetMon: "5",
+  }),
+}).then((r) => r.json());
+```
+
+**Step 2 — switch it on.** Replace `HUNT_ID` with the id step 1 printed.
+
+```js
+await fetch("/api/admin/hunts/HUNT_ID", {
+  method: "PATCH",
+  headers: { "content-type": "application/json" },
+  credentials: "same-origin",
+  body: JSON.stringify({ active: true, spawnEnabled: true }),
+}).then((r) => r.json());
+```
+
+Why these numbers: `spawnMinRadiusM` 30 against a 25 m claim radius leaves a
+~5 m walk — enough that the drop is not already collectable from the chair you
+are sitting in, short enough to stay in one room. 60 m keeps it in the
+building. Both are checked: `spawnMinRadiusM < spawnMaxRadiusM` is enforced and
+equal values are rejected.
+
+Auto-approval is forced to 0 at creation, so payouts queue for a human. Leave
+it that way for a venue hunt full of strangers.
+
 **Know what you are trading away.** The annulus is an anti-spoofing control —
 it is what stops someone collecting from a chair. A venue hunt with a 60 m
 radius and an 80 m accuracy gate can be farmed by anyone in the building, and
