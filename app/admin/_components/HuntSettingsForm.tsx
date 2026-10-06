@@ -15,6 +15,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminPost } from "@/app/admin/_components/api";
+import { commitNumberDraft } from "@/lib/admin/number-draft";
 
 export interface HuntFormValues {
   name: string;
@@ -45,6 +46,47 @@ export interface HuntFormValues {
   editionCooldownSeconds: number;
   editionFirstDelaySeconds: number;
   editionRequireAffordable: boolean;
+}
+
+/**
+ * A number box that does not rewrite what you are typing.
+ *
+ * `value={number}` with `onChange={Number(e.target.value)}` looks right and is
+ * not: clearing the box gives "", Number("") is 0, so the controlled input
+ * re-renders as "0" and the next keystroke appends to it. Typing 40 over a
+ * cleared field produced "040". Reported from the admin form 2026-10-06, and
+ * every number field here had it.
+ *
+ * So the draft is held as TEXT while the box is being edited and only parsed
+ * when it parses. An empty box is a transient edit, not a zero. On blur the
+ * draft is dropped and the canonical number renders, which also normalises
+ * something like "040" back to "40".
+ */
+function NumberInput({
+  value,
+  onValueChange,
+  className,
+}: {
+  value: number;
+  onValueChange: (next: number) => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      type="number"
+      className={className}
+      value={draft ?? String(value)}
+      onChange={(e) => {
+        const next = e.target.value;
+        setDraft(next);
+        // Leave the committed value alone until there is a number to commit.
+        const parsed = commitNumberDraft(next);
+        if (parsed !== null) onValueChange(parsed);
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
 }
 
 function Field({
@@ -194,46 +236,40 @@ export function HuntSettingsForm({
             label="Max GPS accuracy (m)"
             explain="Claims whose reported accuracy is worse than this are rejected. Raising it accepts vaguer fixes — which is also what a spoofed fix looks like when it is trying to stay plausible. Lowering it turns away honest players indoors and under tree cover."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.maxAccuracyM}
-              onChange={(e) => set("maxAccuracyM", Number(e.target.value))}
+              onValueChange={(n) => set("maxAccuracyM", n)}
             />
           </Field>
           <Field
             label="Max speed (km/h)"
             explain="The teleport check: distance from the last verified position over elapsed time. This is the single most load-bearing anti-spoofing number here. 60 km/h already permits a car. Raising it towards aircraft speed effectively turns the check off."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.maxSpeedKmh}
-              onChange={(e) => set("maxSpeedKmh", Number(e.target.value))}
+              onValueChange={(n) => set("maxSpeedKmh", n)}
             />
           </Field>
           <Field
             label="Cooldown (s)"
             explain="Minimum gap between claim attempts from one player. Bounds how fast an automated client can sweep, and how fast a probe can walk a hint boundary."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.cooldownSeconds}
-              onChange={(e) => set("cooldownSeconds", Number(e.target.value))}
+              onValueChange={(n) => set("cooldownSeconds", n)}
             />
           </Field>
           <Field
             label="Max clock skew (s)"
             explain="How far a player's signed timestamp may differ from the server's. Also the TTL on the single-use signature nonce, so widening it widens the replay window."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.maxClockSkewSeconds}
-              onChange={(e) =>
-                set("maxClockSkewSeconds", Number(e.target.value))
-              }
+              onValueChange={(n) => set("maxClockSkewSeconds", n)}
             />
           </Field>
         </div>
@@ -258,11 +294,10 @@ export function HuntSettingsForm({
             label="Max finds per player"
             explain="0 disables the cap. Belt-and-braces against one wallet farming the whole hunt; enforced on an atomic per-(hunt, player) counter, never by counting rows."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.maxFindsPerPlayer}
-              onChange={(e) => set("maxFindsPerPlayer", Number(e.target.value))}
+              onValueChange={(n) => set("maxFindsPerPlayer", n)}
             />
           </Field>
         </div>
@@ -299,37 +334,30 @@ export function HuntSettingsForm({
             label="Card TTL (seconds)"
             explain="How long a card stands before it expires. The price is fixed for this whole window and the relayer absorbs any movement at the venue inside it, so a longer TTL is a longer bet."
           >
-            <input
+            <NumberInput
               className={inputClass}
-              type="number"
               value={v.editionTtlSeconds}
-              onChange={(e) => set("editionTtlSeconds", Number(e.target.value))}
+              onValueChange={(n) => set("editionTtlSeconds", n)}
             />
           </Field>
           <Field
             label="Cooldown (seconds)"
             explain="Minimum gap between one player's encounters. An edition asks for money, so this is deliberately far slower than the spawn cadence."
           >
-            <input
+            <NumberInput
               className={inputClass}
-              type="number"
               value={v.editionCooldownSeconds}
-              onChange={(e) =>
-                set("editionCooldownSeconds", Number(e.target.value))
-              }
+              onValueChange={(n) => set("editionCooldownSeconds", n)}
             />
           </Field>
           <Field
             label="Warm-up (seconds)"
             explain="How long after arriving before the first encounter of an outing may appear. The cooldown does not cover this — it is measured from the last edition, so without a warm-up a returning player gets a buy card on their first poll. 0 disables it."
           >
-            <input
+            <NumberInput
               className={inputClass}
-              type="number"
               value={v.editionFirstDelaySeconds}
-              onChange={(e) =>
-                set("editionFirstDelaySeconds", Number(e.target.value))
-              }
+              onValueChange={(n) => set("editionFirstDelaySeconds", n)}
             />
           </Field>
           <Field
@@ -412,59 +440,50 @@ export function HuntSettingsForm({
             label="Spawn TTL (s)"
             explain="How long a spawn survives. Short is a control: a spoofer needs a plausible movement track to reach one in time, and an expired spawn cannot be banked and swept in a burst."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.spawnTtlSeconds}
-              onChange={(e) => set("spawnTtlSeconds", Number(e.target.value))}
+              onValueChange={(n) => set("spawnTtlSeconds", n)}
             />
           </Field>
           <Field
             label="Min radius (m)"
             explain="Inner edge of the annulus around the player's last VERIFIED position. Must be greater than zero — a spawn on top of the player is a payout for standing still."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.spawnMinRadiusM}
-              onChange={(e) => set("spawnMinRadiusM", Number(e.target.value))}
+              onValueChange={(n) => set("spawnMinRadiusM", n)}
             />
           </Field>
           <Field
             label="Max radius (m)"
             explain="Outer edge of the annulus. Must be strictly greater than the minimum. Wide radii make spawns harder to reach in the TTL, which is a difficulty knob and an anti-spoofing one at the same time."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.spawnMaxRadiusM}
-              onChange={(e) => set("spawnMaxRadiusM", Number(e.target.value))}
+              onValueChange={(n) => set("spawnMaxRadiusM", n)}
             />
           </Field>
           <Field
             label="Play-anywhere radius (m)"
             explain="Drop spawns within this radius of the player even where the hunt is NOT surveyed — so any city works out of the box. 0 = surveyed-only. Surveyed streets always override this where they exist; it is the fallback for players off the grid."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.unsurveyedSpawnRadiusM}
-              onChange={(e) =>
-                set("unsurveyedSpawnRadiusM", Number(e.target.value))
-              }
+              onValueChange={(n) => set("unsurveyedSpawnRadiusM", n)}
             />
           </Field>
           <Field
             label="Spawn cooldown (s)"
             explain="Minimum seconds between spawns granted to the same player. Directly caps their maximum earn rate."
           >
-            <input
-              type="number"
+            <NumberInput
               className={inputClass}
               value={v.spawnCooldownSeconds}
-              onChange={(e) =>
-                set("spawnCooldownSeconds", Number(e.target.value))
-              }
+              onValueChange={(n) => set("spawnCooldownSeconds", n)}
             />
           </Field>
         </div>
