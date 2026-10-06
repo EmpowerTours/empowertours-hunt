@@ -189,9 +189,9 @@ export function HuntSettingsForm({
    * reads them and presses Save. The one that keeps it bounded is `endsAt`,
    * which is left for you to set, because only you know when the event ends.
    */
-  function applyVenuePreset() {
-    setV((prev) => ({
-      ...prev,
+  async function applyVenuePreset() {
+    const next: HuntFormValues = {
+      ...v,
       spawnMinRadiusM: 30,
       spawnMaxRadiusM: 60,
       unsurveyedSpawnRadiusM: 60,
@@ -199,7 +199,40 @@ export function HuntSettingsForm({
       spawnTtlSeconds: 600,
       spawnCooldownSeconds: 120,
       spawnDailyCapMonPerPlayer: "0.05",
-    }));
+    };
+    if (
+      !window.confirm(
+        "Apply indoor venue settings and save now?\n\n" +
+          "GPS gate 80 m, drops 30-60 m away, 0.05 MON per player per day.\n\n" +
+          "This weakens the anti-spoofing control: at these numbers a drop can " +
+          "be collected without walking. Use it on a venue hunt, never on one " +
+          "paying real players.",
+      )
+    ) {
+      return;
+    }
+    // Saves `next` rather than filling the form and waiting for a separate
+    // press. Filling alone kept being lost: the operator tapped the preset,
+    // then reloaded or saved a different field, and the hunt stayed on its old
+    // settings while the form showed the new ones. It also sends `next`
+    // directly rather than reading state back, because setV has not committed
+    // by the time this line runs and save() would post the stale values.
+    setV(next);
+    setBusy(true);
+    setError(null);
+    setChanges(null);
+    const res = await adminPost<{ changes?: string[] }>(
+      `/api/admin/hunts/${huntId}`,
+      next,
+      "PATCH",
+    );
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setChanges(res.data.changes ?? []);
+    router.refresh();
   }
 
   async function save() {
@@ -345,17 +378,19 @@ export function HuntSettingsForm({
         <div className="mb-3">
           <button
             type="button"
-            onClick={applyVenuePreset}
+            onClick={() => void applyVenuePreset()}
+            disabled={busy}
             className="border-hull-line text-ink-dim hover:text-ink min-h-11 rounded-xl border px-3 font-mono text-xs tracking-wide"
           >
-            Venue preset (indoor)
+            {busy ? "Saving…" : "Venue preset (indoor) — apply & save"}
           </button>
           <p className="text-ink-faint mt-1 text-[11px] leading-snug">
-            Fills the spawn radii, the GPS gate and a per-player daily cap for a
-            hunt played inside one building. Nothing is saved until you press
-            Save, and it does not activate the hunt. Set an end date before you
-            do — without one this sits in every hunter&rsquo;s list, worldwide,
-            and these settings can be farmed without walking.
+            Sets the spawn radii, the GPS gate and a per-player daily cap for a
+            hunt played inside one building, and saves immediately after you
+            confirm. It does <strong>not</strong> activate the hunt. Set an end
+            date — without one this sits in every hunter&rsquo;s list,
+            worldwide, and at these settings a drop can be collected without
+            walking.
           </p>
         </div>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
