@@ -33,6 +33,38 @@ subtitles.
 
 ---
 
+## The one idea the demo has to land
+
+Everything else is context for this: **software refusing an instruction because
+of a number its owner signed, where neither the owner nor the operator can
+override it.** Anyone can show a chart. Nobody else at this hackathon is
+showing a machine saying no.
+
+Open on a human so a judge cares, spend the middle on the refusal so they
+remember, close on the loop so it reads as a product rather than a trick.
+
+## If someone is filming with you
+
+A second person is worth more than any amount of editing, for one reason: it
+turns "the founder narrating his own screen" into "a stranger using it." That
+is the Traction and Founder score, which is 45 of 100, and it cannot be
+narrated into existence.
+
+Give them these jobs, in order of value:
+
+1. **Be the new user, on camera.** Their hands, their face unlocking a wallet
+   they have never had before. No seed phrase, no extension, no app install.
+   This is the single most valuable shot available and it cannot be faked.
+2. **Hold the second phone** for the world shot — you walking, the drop
+   appearing, a thumb hitting COLLECT outdoors. Ten to fifteen seconds, no
+   more.
+3. **Put you in frame for the pitch video.** A face talking to camera outscores
+   a voice over slides, and you cannot hold the phone and be in shot.
+
+**Ask permission before filming anyone, and say where it is going.** This is a
+public submission. If they would rather not be identifiable, shoot hands only —
+it loses nothing, because the point is the gesture, not the person.
+
 # Video 1 — technical demo, 3:00
 
 **Rewritten 2026-10-06.** The 24 Sep version told you to fill a leash form with
@@ -45,7 +77,29 @@ no longer exists.
 
 Screen recording of a phone, real account, real money. No slides at any point.
 
-### 0:00–0:25 — one press, four things
+### 0:00–0:20 — a stranger, a face, a wallet
+
+Not your screen. Someone else's hands.
+
+> "She has never owned crypto. No seed phrase, no extension, nothing to
+> install."
+
+They tap, use their face, and the wallet exists. Let the silence do the work —
+do not talk over the biometric prompt.
+
+### 0:20–0:40 — it pays, on foot and on mainnet
+
+Radar, a drop, the walk, COLLECT. Real MON, Monad mainnet.
+
+> "She walks to a point on a map and gets paid in real MON. That is the
+> onboarding — it asks for nothing she does not have."
+
+If you have the Monad Open footage, use it here: she claimed an NFT at a kiosk,
+sent it to the wallet her face had just made, and it is in her wallet now.
+
+> "This arrived from an event kiosk. Same wallet, no import, no seed phrase."
+
+### 0:40–1:05 — one press, four things
 
 Open on `/cota`, signed in, with a real MON balance. The panel says "How much
 of your MON?" above 5 / 30 / 80 buttons.
@@ -56,7 +110,7 @@ of your MON?" above 5 / 30 / 80 buttons.
 Tap **30%**. Let the "One press will:" list sit on screen for two seconds —
 that list is the architecture, in the product's own words.
 
-### 0:25–1:00 — the press, and what it actually does
+### 1:05–1:30 — the press, and what it actually does
 
 Press **Put my MON to work**. One Face ID. Then narrate over the live steps as
 they tick:
@@ -71,7 +125,7 @@ Let the anchor hash be visible for two seconds.
 > The key that trades is derived from the passkey's PRF, so those four steps
 > cost one prompt, not four."
 
-### 1:00–1:35 — the refusal
+### 1:30–2:10 — the refusal (the longest beat on purpose)
 
 **This is still the most important shot in the video.** Go to `/judge` and open
 **"Read what the leash actually refused."**
@@ -87,7 +141,7 @@ Show the refusal and its reason — `notional_exceeded`, `leverage_exceeded` or
 > Perpl enforces that, not us. A fully compromised agent is still bounded to
 > what I signed."
 
-### 1:35–2:15 — the money is real and it came from another chain
+### 2:10–2:35 — the money is real and it came from another chain
 
 Cut to `/cota/onramp`. The address is permanent.
 
@@ -100,7 +154,7 @@ Show the arrivals list with both rows — departure and arrival.
 > pay their own gas the moment they arrive. That was a dead end we found and
 > closed."
 
-### 2:15–2:40 — the loop
+### 2:35–2:50 — the loop
 
 Back to `/cota`, then one beat on Hunt.
 
@@ -108,7 +162,7 @@ Back to `/cota`, then one beat on Hunt.
 > points in Mexico and get paid on Monad mainnet. Hunt earns you a wallet and a
 > balance; Cota is where you put it to work under a leash you control."
 
-### 2:40–3:00 — the honest close
+### 2:50–3:00 — the honest close
 
 Do not oversell. One true sentence:
 
