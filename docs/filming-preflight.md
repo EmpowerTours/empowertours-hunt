@@ -151,6 +151,14 @@ await fetch("/api/admin/hunts", {
     spawnMaxMon: "0.0015",
     // Required: spawnEnabled is refused while this is 0.
     budgetMon: "5",
+    // THE IMPORTANT ONE. The player-facing hunt list has NO geo filter: every
+    // active, unexpired hunt is offered to every hunter on earth. Without an
+    // end date this farmable hunt sits in the Mexico players' list forever.
+    // Set it to the hour the conference ends; the list filters on endsAt.
+    endsAt: "2026-10-08T12:00:00Z",
+    // Caps what one person can take in a day. Enforced in the collect route,
+    // and only when above 0.
+    spawnDailyCapMonPerPlayer: "0.05",
   }),
 }).then((r) => r.json());
 ```
@@ -174,6 +182,44 @@ equal values are rejected.
 
 Auto-approval is forced to 0 at creation, so payouts queue for a human. Leave
 it that way for a venue hunt full of strangers.
+
+## How hunters find it, and how you stop it
+
+**Hunters choose.** They browse `/hunt`, pick one, and play at
+`/hunt/<huntId>`. Nothing is automatic and nothing is assigned. Spawns are
+per-hunt — being in one hunt never grants another's drops.
+
+**But the list is not geo-filtered.** `GET /api/hunts` returns every hunt with
+`active: true` that has not passed its `endsAt`, ordered by start date, to
+anyone who asks. There is no distance test. So a venue hunt with a 60 m spawn
+radius and an 80 m accuracy gate appears in the list of every hunter in
+Guerrero, and it can be farmed from a chair anywhere on earth.
+
+Three things keep that bounded, and you want all three:
+
+1. **`endsAt`** — the list filters on it, so the hunt retires itself. This is
+   the control that works even if you forget.
+2. **`budgetMon: "5"`** — the hard ceiling on total loss.
+3. **`spawnDailyCapMonPerPlayer`** — caps one person's daily take. Enforced in
+   the collect route's SQL, and only when above 0.
+
+Auto-approval is forced to 0 at creation, so payouts queue for a human. You can
+simply not approve anything that looks farmed.
+
+### Turning it off
+
+```js
+await fetch("/api/admin/hunts/HUNT_ID", {
+  method: "PATCH",
+  headers: { "content-type": "application/json" },
+  credentials: "same-origin",
+  body: JSON.stringify({ active: false, spawnEnabled: false }),
+}).then((r) => r.json());
+```
+
+`active: false` takes effect immediately — `lib/hunt/spawn.ts` checks it on
+every spawn and denies with `hunt_not_active`. It also drops out of the browse
+list. Already-granted spawns expire on their own TTL.
 
 **Know what you are trading away.** The annulus is an anti-spoofing control —
 it is what stops someone collecting from a chair. A venue hunt with a 60 m
