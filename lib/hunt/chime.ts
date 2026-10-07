@@ -114,6 +114,25 @@ export function unlockAudio(): void {
   const ctx = context();
   if (ctx === null) return;
   try {
+    // THE SILENT SWITCH. On iPhone, Web Audio obeys the hardware Ring/Silent
+    // toggle, so every sound here is inaudible on a phone set to silent —
+    // which, at an event, is every phone. There is no way to read the switch
+    // and nothing in the page looks wrong, so this presents as "the sound
+    // feature does not work".
+    //
+    // Safari 16.4+ exposes an audio session. Declaring "playback" says this is
+    // content the user asked for rather than an incidental beep, and iOS then
+    // plays it through the silent switch. Wrapped because it exists nowhere
+    // else and must never break the unlock on a browser that lacks it.
+    const session = (
+      navigator as unknown as { audioSession?: { type: string } }
+    ).audioSession;
+    if (session) session.type = "playback";
+  } catch {
+    // Older Safari, or a browser that defines it read-only. Sound still works
+    // with the ringer on.
+  }
+  try {
     if (ctx.state === "suspended") void ctx.resume().catch(() => {});
   } catch {
     // Nothing to recover: the player simply gets no sound.
