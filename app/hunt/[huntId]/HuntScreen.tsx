@@ -121,6 +121,10 @@ export function HuntScreen({ huntId }: { huntId: string }) {
 
   /* --- Spawns ----------------------------------------------------------- */
   const [spawns, setSpawns] = useState<PublicSpawn[]>([]);
+  // Spawn ids already announced. A ref, not state: it must not cause a render,
+  // and the effect that reads it has to see the previous value, not a queued
+  // one.
+  const announced = useRef<Set<string>>(new Set());
   const [scanReason, setScanReason] = useState<string | null>(null);
   const [scanStopped, setScanStopped] = useState(false);
   // A REASON, not a sentence.
@@ -465,6 +469,32 @@ export function HuntScreen({ huntId }: { huntId: string }) {
       if (!controller.signal.aborted) setPhase("idle");
     }
   }, [fix, gate.ready, signer, huntId, cooldownSeconds, hint]);
+
+  // A spawn arrives from a poll, which is not a user gesture, and iOS will not
+  // start an AudioContext outside one. So the FIRST touch anywhere on this
+  // screen unlocks it — by the time a drop appears, the player has invariably
+  // tapped something. Without this the alert is silent on every iPhone until
+  // the player happens to collect, which is exactly when they no longer need
+  // telling.
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, []);
+
+  // Announce a drop the player has not been told about yet.
+  //
+  // Keyed on spawn id rather than on the list length: a list that goes 1 -> 1
+  // because one expired and another appeared is a new drop and must sound,
+  // while a re-render with the same drop must not. Collecting removes the id
+  // from `spawns`, so a re-spawn of the same id would sound again, which is
+  // correct — it is a new drop to walk to.
+  useEffect(() => {
+    const fresh = spawns.filter((s) => !announced.current.has(s.id));
+    if (fresh.length === 0) return;
+    for (const s of spawns) announced.current.add(s.id);
+    playChime("spawn");
+  }, [spawns]);
 
   const onCollect = useCallback(
     async (spawnId: string) => {

@@ -27,7 +27,7 @@
  * reason to lose the player's collect.
  */
 
-type Tone = "success" | "held";
+type Tone = "success" | "held" | "spawn";
 
 /** Opt out with `localStorage.setItem("hunt.sound", "off")`. */
 const MUTE_KEY = "hunt.sound";
@@ -148,6 +148,8 @@ function note(
  * `success` — the payout was released: a rising major triad, the "it landed"
  * sound. `held` — collected, but the payout is held, so it resolves lower and
  * stops short rather than celebrating something that has not happened yet.
+ * `spawn` — a drop has appeared: two quiet low notes, meant to be heard from
+ * a pocket without making anybody jump.
  */
 export function playChime(tone: Tone): void {
   const ctx = context();
@@ -160,6 +162,15 @@ export function playChime(tone: Tone): void {
       note(ctx, 880.0, t, 0.11, 0.18);
       note(ctx, 1108.7, t + 0.055, 0.11, 0.16);
       note(ctx, 1318.5, t + 0.11, 0.22, 0.2);
+    } else if (tone === "spawn") {
+      // A drop has appeared and the player may be looking at the street
+      // rather than the screen. Deliberately NOT an alarm: two low notes a
+      // perfect fifth apart, quiet, with a slow decay — noticeable in a
+      // pocket, not startling in a cafe, and nothing like the collect chime
+      // so the two are never confused. This one repeats as often as spawns
+      // do, which is the whole reason it is gentle.
+      note(ctx, 392.0, t, 0.3, 0.09);
+      note(ctx, 587.3, t + 0.16, 0.42, 0.07);
     } else {
       note(ctx, 660.0, t, 0.14, 0.13);
       note(ctx, 740.0, t + 0.07, 0.16, 0.1);

@@ -224,3 +224,54 @@ describe("the toggle's translations", () => {
     }
   });
 });
+
+describe("the spawn alert", () => {
+  it("is quieter and lower than the collect chime", () => {
+    // It fires every time a drop appears, so it has to be noticeable from a
+    // pocket without being an alarm. The collect chime is the celebration;
+    // confusing the two would train people to ignore both.
+    const sp = fakeContext();
+    __setAudioContextFactory(() => sp.ctx as unknown as AudioContext);
+    playChime("spawn");
+    const spawnFreqs = [...sp.freqs];
+
+    __setAudioContextFactory(null);
+    const su = fakeContext();
+    __setAudioContextFactory(() => su.ctx as unknown as AudioContext);
+    playChime("success");
+
+    expect(Math.max(...spawnFreqs)).toBeLessThan(Math.max(...su.freqs));
+    expect(spawnFreqs).toHaveLength(2);
+  });
+
+  it("is silenced by the same mute as everything else", () => {
+    const f = fakeContext();
+    __setAudioContextFactory(() => f.ctx as unknown as AudioContext);
+    globalThis.localStorage.setItem("hunt.sound", "off");
+    playChime("spawn");
+    expect(f.started).toHaveLength(0);
+  });
+});
+
+describe("the iOS unlock, which the spawn alert depends on", () => {
+  const SRC = readFileSync(
+    new URL("../../app/hunt/[huntId]/HuntScreen.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("unlocks audio on a touch, not only inside collect", () => {
+    // A spawn arrives from a poll. iOS will not start an AudioContext outside
+    // a gesture, so without a screen-wide unlock the alert is silent on every
+    // iPhone until the player collects — which is after they needed telling.
+    expect(SRC).toContain('addEventListener("pointerdown"');
+    expect(SRC).toContain("unlockAudio");
+  });
+
+  it("announces by spawn id, not by how many there are", () => {
+    // One expiring as another appears leaves the count at 1 and is still a
+    // new drop. A length check would stay silent for it.
+    expect(SRC).toContain("announced.current.has");
+    expect(SRC).toContain("announced.current.add");
+    expect(SRC).toContain('playChime("spawn")');
+  });
+});
