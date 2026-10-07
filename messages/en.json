@@ -43,7 +43,7 @@
   "gps": {
     "accuracy": "GPS accuracy",
     "compass": "Turn on the compass",
-    "denied": "Location permission is off. The hunt cannot verify a claim without it — enable it in your browser's site settings, then retry.",
+    "denied": "Location permission is off, and the hunt cannot verify a claim without it. Your browser will not ask again — you have to switch it back on yourself:",
     "idle": "Waiting for GPS.",
     "locating": "Finding you…",
     "locatingCountdown": "Getting your hunt ready — {seconds}s",
@@ -53,7 +53,13 @@
     "retry": "Retry",
     "timeout": "Your phone has stopped reporting a GPS reading. Keep the screen on and retry.",
     "unavailable": "Your device could not get a GPS reading. Step outside, away from buildings, and retry.",
-    "unsupported": "This browser cannot report a location. A hunt needs GPS — try Safari or Chrome over HTTPS."
+    "unsupported": "This browser cannot report a location. A hunt needs GPS — try Safari or Chrome over HTTPS.",
+    "denied_ios_safari": "Tap “aA” in the address bar → Website Settings → Location → Allow. If it is not there: Settings → Apps → Safari → Location → Ask or Allow.",
+    "denied_ios_other": "Tap the ⋮ or ⋯ menu → Settings → Site settings → Location → Allow. If it is not there: Settings → Privacy & Security → Location Services, and switch this browser on.",
+    "denied_android_chrome": "Tap the icon left of the address → Permissions → Location → Allow. If Location is missing, check Android Settings → Location is on.",
+    "denied_android_other": "Open your browser’s menu → Settings → Site settings → Location, allow it for this site, then check Android Settings → Location is on.",
+    "denied_desktop": "Click the icon left of the address bar → Location → Allow, then reload.",
+    "deniedThenReload": "Then reload this page."
   },
   "payout": {
     "released": "You claimed {amount} MON 🎉 — it settles on chain in a moment.",

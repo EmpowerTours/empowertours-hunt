@@ -43,7 +43,7 @@
   "gps": {
     "accuracy": "Precisión del GPS",
     "compass": "Activar la brújula",
-    "denied": "El permiso de ubicación está apagado. La búsqueda no puede verificar nada sin él: actívalo en la configuración del sitio en tu navegador y vuelve a intentar.",
+    "denied": "El permiso de ubicación está apagado y la búsqueda no puede verificar un reclamo sin él. Tu navegador ya no volverá a preguntar — tienes que activarlo tú:",
     "idle": "Esperando el GPS.",
     "locating": "Ubicándote…",
     "locatingCountdown": "Preparando tu búsqueda — {seconds}s",
@@ -53,7 +53,13 @@
     "retry": "Reintentar",
     "timeout": "Tu teléfono dejó de reportar lecturas del GPS. Mantén la pantalla encendida y vuelve a intentar.",
     "unavailable": "Tu dispositivo no pudo obtener una lectura del GPS. Sal a cielo abierto, lejos de los edificios, y vuelve a intentar.",
-    "unsupported": "Este navegador no puede reportar tu ubicación. La búsqueda necesita GPS: prueba con Safari o Chrome por HTTPS."
+    "unsupported": "Este navegador no puede reportar tu ubicación. La búsqueda necesita GPS: prueba con Safari o Chrome por HTTPS.",
+    "denied_ios_safari": "Toca “aA” en la barra de direcciones → Ajustes del sitio web → Ubicación → Permitir. Si no aparece: Ajustes → Apps → Safari → Ubicación → Preguntar o Permitir.",
+    "denied_ios_other": "Toca el menú ⋮ o ⋯ → Configuración → Configuración de sitios → Ubicación → Permitir. Si no aparece: Ajustes → Privacidad y seguridad → Localización, y activa este navegador.",
+    "denied_android_chrome": "Toca el ícono a la izquierda de la dirección → Permisos → Ubicación → Permitir. Si no aparece Ubicación, revisa que Ajustes de Android → Ubicación esté encendida.",
+    "denied_android_other": "Abre el menú del navegador → Configuración → Configuración de sitios → Ubicación, permítelo para este sitio, y revisa que Ajustes de Android → Ubicación esté encendida.",
+    "denied_desktop": "Haz clic en el ícono a la izquierda de la barra de direcciones → Ubicación → Permitir, y recarga.",
+    "deniedThenReload": "Después recarga esta página."
   },
   "payout": {
     "released": "¡Reclamaste {amount} MON! 🎉 Se confirma en la cadena en un momento.",

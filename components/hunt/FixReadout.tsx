@@ -1,6 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import {
+  detectPlatform,
+  helpKey,
+  type LocationPlatform,
+} from "@/lib/hunt/location-help";
 import { formatAge } from "./format";
 import type { GeoFix, GeoStatus } from "./types";
 import { Note } from "@/components/ui/primitives";
@@ -86,6 +92,12 @@ export function FixReadout({
 }) {
   const t = useTranslations("fix");
   const tGps = useTranslations("gps");
+  // Read once on mount: the user agent cannot change under us, and reading it
+  // during render would differ between server and client and hydration-warn.
+  const [platform, setPlatform] = useState<LocationPlatform>("desktop");
+  useEffect(() => {
+    setPlatform(detectPlatform(navigator.userAgent));
+  }, []);
   const quality = fixQuality(fix, maxAccuracyM);
   const color = QUALITY_COLOR[quality];
   const blocking =
@@ -201,6 +213,23 @@ export function FixReadout({
       {message ? (
         <Note tone={blocking ? "stop" : "warn"} title={t(TITLE_KEY[status])}>
           {message}
+          {/* A denied permission is a dead end, not a retry: the browser will
+              not prompt again, so "enable it in your site settings" is true
+              and unusable to a stranger holding the phone. These are the
+              actual taps, for the browser they are actually in — guessing
+              wrong is worse than silence, because a menu that does not exist
+              reads as the app being broken. Lost a real onboarding to this at
+              Monad Open, 2026-10-07. */}
+          {status === "denied" ? (
+            <>
+              <span className="text-ink mt-2 block text-sm">
+                {tGps(helpKey(platform))}
+              </span>
+              <span className="text-ink-dim mt-2 block text-sm">
+                {tGps("deniedThenReload")}
+              </span>
+            </>
+          ) : null}
         </Note>
       ) : null}
 
