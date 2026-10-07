@@ -198,8 +198,20 @@ export function playChime(tone: Tone): boolean {
       // pocket, not startling in a cafe, and nothing like the collect chime
       // so the two are never confused. This one repeats as often as spawns
       // do, which is the whole reason it is gentle.
-      note(ctx, 392.0, t, 0.3, 0.09);
-      note(ctx, 587.3, t + 0.16, 0.42, 0.07);
+      // LOUD ENOUGH TO HEAR OUTDOORS. The first version ran at 0.09 and 0.07
+      // peak against the collect chime's 0.20, chasing "mellow, not
+      // annoying" — and mellow turned into inaudible on a phone speaker in a
+      // pocket at an event. Reported as no sound at all, which it effectively
+      // was. Mellow is the TIMBRE: low notes, slow decay, no sharp attack.
+      // Volume is not what makes an alert annoying, repetition is, and that
+      // is handled by only firing on the edge.
+      //
+      // Twice, with a gap, because one short sound outdoors is missable and a
+      // pair reads as deliberate rather than as a stray noise.
+      note(ctx, 392.0, t, 0.34, 0.26);
+      note(ctx, 587.3, t + 0.18, 0.46, 0.22);
+      note(ctx, 392.0, t + 0.66, 0.34, 0.24);
+      note(ctx, 587.3, t + 0.84, 0.5, 0.2);
     } else {
       note(ctx, 660.0, t, 0.14, 0.13);
       note(ctx, 740.0, t + 0.07, 0.16, 0.1);

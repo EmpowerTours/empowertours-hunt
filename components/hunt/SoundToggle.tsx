@@ -55,7 +55,13 @@ export function SoundToggle({
       // iOS start the audio context, and the player gets to hear what they
       // just switched on.
       unlockAudio();
-      playChime("success");
+      // The ALERT, not the collect chime. Turning sound on is the one moment
+      // a player is deliberately testing audio, and the sound they need to
+      // trust is the one that fires while the phone is in a pocket — the
+      // collect chime is loud and plays in the hand, so it proved nothing.
+      // A whole evening was spent chasing "no alarm sound" with a working
+      // toggle, because the toggle was demonstrating a different sound.
+      playChime("spawn");
     }
   }
 

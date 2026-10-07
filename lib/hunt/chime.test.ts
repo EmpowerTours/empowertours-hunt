@@ -226,7 +226,7 @@ describe("the toggle's translations", () => {
 });
 
 describe("the spawn alert", () => {
-  it("is quieter and lower than the collect chime", () => {
+  it("is lower than the collect chime, and sounds twice", () => {
     // It fires every time a drop appears, so it has to be noticeable from a
     // pocket without being an alarm. The collect chime is the celebration;
     // confusing the two would train people to ignore both.
@@ -240,8 +240,11 @@ describe("the spawn alert", () => {
     __setAudioContextFactory(() => su.ctx as unknown as AudioContext);
     playChime("success");
 
+    // Lower in PITCH, which is what makes it read as a different event. It is
+    // deliberately NOT quieter: the first version was, at a third of the
+    // chime's gain, and was inaudible on a phone outdoors.
     expect(Math.max(...spawnFreqs)).toBeLessThan(Math.max(...su.freqs));
-    expect(spawnFreqs).toHaveLength(2);
+    expect(spawnFreqs).toHaveLength(4);
   });
 
   it("is silenced by the same mute as everything else", () => {
