@@ -294,12 +294,65 @@ describe("the cache band alert", () => {
   it("sounds on ENTERING burning, not on every poll inside it", () => {
     // The band is recomputed continuously. Without the edge check this is an
     // alarm that repeats until the player either claims or force-quits.
-    expect(SRC).toContain("burning && !wasBurning.current");
+    expect(SRC).toContain("if (wasBurning.current) return;");
   });
 
   it("re-arms when the player cools off", () => {
     // Stepping out and back in is a new "you are on it", so the flag has to
     // be cleared rather than latched forever.
-    expect(SRC).toContain("wasBurning.current = burning");
+    expect(SRC).toContain("wasBurning.current = false;");
+  });
+});
+
+describe("playChime reports whether it was audible", () => {
+  it("returns false on a suspended context, which makes no sound", () => {
+    // THE BUG. A suspended context accepts every call silently. Reporting
+    // success let the caller mark the moment announced, so the cache alert
+    // fired once into the void on page load — before any tap had unlocked
+    // audio — and never again while the player stood on the cache.
+    const f = fakeContext("suspended");
+    __setAudioContextFactory(() => f.ctx as unknown as AudioContext);
+    expect(playChime("spawn")).toBe(false);
+    expect(f.started).toHaveLength(0);
+  });
+
+  it("returns true when it actually schedules notes", () => {
+    const f = fakeContext("running");
+    __setAudioContextFactory(() => f.ctx as unknown as AudioContext);
+    expect(playChime("spawn")).toBe(true);
+    expect(f.started.length).toBeGreaterThan(0);
+  });
+
+  it("returns false when muted, and when there is no audio at all", () => {
+    const f = fakeContext("running");
+    __setAudioContextFactory(() => f.ctx as unknown as AudioContext);
+    globalThis.localStorage.setItem("hunt.sound", "off");
+    expect(playChime("spawn")).toBe(false);
+    globalThis.localStorage.removeItem("hunt.sound");
+    __setAudioContextFactory(() => null);
+    expect(playChime("spawn")).toBe(false);
+  });
+});
+
+describe("the callers only latch on an audible alert", () => {
+  const SRC = readFileSync(
+    new URL("../../app/hunt/[huntId]/HuntScreen.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("the cache band latches the return value, not true", () => {
+    expect(SRC).toContain('wasBurning.current = playChime("spawn")');
+  });
+
+  it("the spawn list returns early when nothing was heard", () => {
+    expect(SRC).toContain('if (!playChime("spawn")) return;');
+  });
+
+  it("both retry on the clock, not only when the value changes", () => {
+    // Unlocking happens on a tap, which changes neither hint.band nor the
+    // spawn list. Without `now` in the deps the effect never re-runs and the
+    // retry never happens.
+    expect(SRC).toContain("[hint.band, now]");
+    expect(SRC).toContain("[spawns, now]");
   });
 });

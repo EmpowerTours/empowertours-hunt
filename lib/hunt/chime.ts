@@ -169,10 +169,20 @@ function note(
  * stops short rather than celebrating something that has not happened yet.
  * `spawn` — a drop has appeared: two quiet low notes, meant to be heard from
  * a pocket without making anybody jump.
+ *
+ * RETURNS whether a sound was actually scheduled. False means muted, no audio,
+ * or a context iOS has not released yet — and a caller that latches "already
+ * announced" on a false has just thrown the announcement away.
  */
-export function playChime(tone: Tone): void {
+export function playChime(tone: Tone): boolean {
   const ctx = context();
-  if (ctx === null) return;
+  if (ctx === null) return false;
+  // A SUSPENDED context accepts every call and makes no sound. Reporting that
+  // as success is what broke the cache alert: the caller marked the moment as
+  // announced, the player heard nothing, and it never fired again because the
+  // moment had already "happened". The caller needs to know, so it can try
+  // again on the next reading once a tap has unlocked audio.
+  if (ctx.state !== "running") return false;
   try {
     const t = ctx.currentTime;
     if (tone === "success") {
@@ -194,8 +204,10 @@ export function playChime(tone: Tone): void {
       note(ctx, 660.0, t, 0.14, 0.13);
       note(ctx, 740.0, t + 0.07, 0.16, 0.1);
     }
+    return true;
   } catch {
     // An AudioContext can be closed or refused mid-flight. Silence is fine.
+    return false;
   }
 }
 

@@ -497,9 +497,19 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   const wasBurning = useRef(false);
   useEffect(() => {
     const burning = hint.band === "burning";
-    if (burning && !wasBurning.current) playChime("spawn");
-    wasBurning.current = burning;
-  }, [hint.band]);
+    if (!burning) {
+      // Cooled off: re-arm, so walking back in sounds again.
+      wasBurning.current = false;
+      return;
+    }
+    if (wasBurning.current) return;
+    // Latch ONLY if a sound actually came out. On load the player is often
+    // already burning and has tapped nothing, so iOS has not released audio
+    // and the chime is dropped. Latching anyway consumed the announcement and
+    // the alert never fired again while they stood there — which is exactly
+    // how this was reported.
+    wasBurning.current = playChime("spawn");
+  }, [hint.band, now]);
 
   // Announce a drop the player has not been told about yet.
   //
@@ -511,9 +521,12 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   useEffect(() => {
     const fresh = spawns.filter((s) => !announced.current.has(s.id));
     if (fresh.length === 0) return;
+    // Same rule as the band: only count it as announced if it was audible.
+    // Otherwise a drop that lands before the first tap is silently marked
+    // told-about and never sounds.
+    if (!playChime("spawn")) return;
     for (const s of spawns) announced.current.add(s.id);
-    playChime("spawn");
-  }, [spawns]);
+  }, [spawns, now]);
 
   const onCollect = useCallback(
     async (spawnId: string) => {
