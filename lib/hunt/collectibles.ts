@@ -54,6 +54,14 @@ export const COLLECTIONS: readonly Collection[] = [
     name: "r3tards",
     fromBlock: 110_000_000n,
   },
+  // EmpowerTours' own. Not reachable through EditionClaim, because a passport
+  // is minted rather than claimed, so it has to be named here or it is
+  // invisible in the wallet it belongs to.
+  {
+    address: "0x4d5533e29cf190131885dc7dbef22e31f4252410",
+    name: "EmpowerTours Passport",
+    fromBlock: 90_000_000n,
+  },
 ] as const;
 
 /** `Transfer(address,address,uint256)` */
@@ -102,11 +110,25 @@ export function tokenIdsFromLogs(
 }
 
 /**
+ * The gateway `ipfs://` is rewritten through.
+ *
+ * NOT ipfs.io. As of 2026-10-06 it no longer serves content at all — a request
+ * returns the string "This IPFS gateway is switching to a service worker
+ * gateway only" with a 200, so the fetch SUCCEEDS and the JSON parse fails, and
+ * every edition rendered as an untitled black square. The project's own Pinata
+ * gateway returns the metadata in about a second, and `lib/editions/thumb.ts`
+ * can already ask it to resize.
+ */
+export const IPFS_GATEWAY =
+  process.env.IPFS_GATEWAY?.replace(/\/+$/, "") ??
+  "https://harlequin-used-hare-224.mypinata.cloud/ipfs";
+
+/**
  * A tokenURI or image field turned into something a browser will load.
  *
  * MetaMask will not resolve `ipfs://` on Monad, and neither will an <img>, so
  * anything ipfs has to go through a gateway or it renders blank. r3tards
- * happens to serve https already; the next collection will not.
+ * happens to serve https already; the editions do not.
  */
 export function toHttpUrl(uri: string | null | undefined): string | null {
   if (!uri) return null;
@@ -114,7 +136,7 @@ export function toHttpUrl(uri: string | null | undefined): string | null {
   if (trimmed === "") return null;
   if (trimmed.startsWith("ipfs://")) {
     const path = trimmed.slice("ipfs://".length).replace(/^ipfs\//, "");
-    return `https://ipfs.io/ipfs/${path}`;
+    return `${IPFS_GATEWAY}/${path}`;
   }
   if (trimmed.startsWith("ar://")) {
     return `https://arweave.net/${trimmed.slice("ar://".length)}`;

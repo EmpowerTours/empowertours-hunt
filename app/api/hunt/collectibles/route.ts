@@ -19,6 +19,7 @@ export const dynamic = "force-dynamic";
 const ERC721 = parseAbi([
   "function ownerOf(uint256) view returns (address)",
   "function tokenURI(uint256) view returns (string)",
+  "function name() view returns (string)",
 ]);
 
 /**
@@ -61,6 +62,23 @@ export async function GET(req: Request) {
   const items: Collectible[] = [];
 
   for (const collection of collectionsForPlayer(claimed)) {
+    // Ask the contract what it is called. A collection discovered through a
+    // claim is labelled "Editions", which told the owner of three of them
+    // nothing about what they were. name() is the collection's own answer.
+    let label = collection.name;
+    try {
+      const onChain = await client.readContract({
+        address: collection.address,
+        abi: ERC721,
+        functionName: "name",
+      });
+      if (typeof onChain === "string" && onChain.trim() !== "") {
+        label = onChain.trim();
+      }
+    } catch {
+      // Not every ERC-721 implements name(). Keep the configured label.
+    }
+
     let candidates: bigint[];
     try {
       const logs = (await client.request({
@@ -116,7 +134,7 @@ export async function GET(req: Request) {
         }
 
         items.push({
-          collection: collection.name,
+          collection: label,
           contract: collection.address,
           tokenId: tokenId.toString(),
           name,

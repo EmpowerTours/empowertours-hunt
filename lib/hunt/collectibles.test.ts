@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COLLECTIONS,
+  IPFS_GATEWAY,
   DEFAULT_FROM_BLOCK,
   collectionsForPlayer,
   addressTopic,
@@ -50,11 +51,23 @@ describe("toHttpUrl", () => {
   it("sends ipfs through a gateway, because an img tag cannot load ipfs://", () => {
     // MetaMask will not resolve ipfs:// on Monad and neither will the browser.
     expect(toHttpUrl("ipfs://bafyabc/1.png")).toBe(
-      "https://ipfs.io/ipfs/bafyabc/1.png",
+      `${IPFS_GATEWAY}/bafyabc/1.png`,
     );
-    expect(toHttpUrl("ipfs://ipfs/bafyabc")).toBe(
-      "https://ipfs.io/ipfs/bafyabc",
-    );
+    expect(toHttpUrl("ipfs://ipfs/bafyabc")).toBe(`${IPFS_GATEWAY}/bafyabc`);
+  });
+
+  it("does NOT use ipfs.io, which stopped serving content", () => {
+    // 2026-10-06: ipfs.io answers 200 with "This IPFS gateway is switching to
+    // a service worker gateway only" instead of the file. The fetch succeeds,
+    // the JSON parse fails, and every edition renders as an untitled black
+    // square — which is exactly how this was found.
+    expect(IPFS_GATEWAY).not.toContain("ipfs.io");
+    expect(toHttpUrl("ipfs://abc")).not.toContain("ipfs.io");
+  });
+
+  it("has a gateway with no trailing slash, so URLs do not double up", () => {
+    expect(IPFS_GATEWAY.endsWith("/")).toBe(false);
+    expect(toHttpUrl("ipfs://abc")).not.toContain("//abc");
   });
 
   it("passes https straight through", () => {
@@ -82,7 +95,7 @@ describe("readMetadata", () => {
   it("reads name and image, including the image_url spelling", () => {
     expect(
       readMetadata({ name: "r3tards #936", image: "ipfs://a/b.png" }),
-    ).toEqual({ name: "r3tards #936", image: "https://ipfs.io/ipfs/a/b.png" });
+    ).toEqual({ name: "r3tards #936", image: `${IPFS_GATEWAY}/a/b.png` });
     expect(readMetadata({ image_url: "https://x/y.png" }).image).toBe(
       "https://x/y.png",
     );
@@ -112,6 +125,13 @@ describe("addressTopic", () => {
 });
 
 describe("the collection list", () => {
+  it("names the EmpowerTours passport, which no claim row reaches", () => {
+    // A passport is minted, not claimed, so collectionsForPlayer never
+    // discovers it. Verified on mainnet: name() "EmpowerTours Passport V4".
+    const pass = COLLECTIONS.find((c) => c.name.includes("Passport"));
+    expect(pass?.address).toBe("0x4d5533e29cf190131885dc7dbef22e31f4252410");
+  });
+
   it("holds r3tards at its verified mainnet address", () => {
     // Confirmed on Monad 2026-10-06: name() "r3tards", symbol() "R3TARDS",
     // ownerOf(936) is the hunter's passkey wallet.
