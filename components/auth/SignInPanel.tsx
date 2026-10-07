@@ -89,17 +89,42 @@ export function SignInPanel() {
     <div className="space-y-3">
       {auth.canSignIn ? (
         <>
+          {/* NEW PLAYERS FIRST, and the choice is made with words rather than
+              by a failure.
+
+              This used to be one button, "Continue with your phone", which
+              attempted a sign-in. Someone with no passkey therefore met the
+              platform's assertion sheet — "Scan QR code", "Use security key" —
+              before anything had explained what a wallet was, and the button
+              that actually suited them stayed hidden until that failed. Two
+              people were lost to it in one day at Monad Open, 2026-10-07.
+
+              Sign-in is still OFFERED FIRST in prominence terms for a reason
+              the old comment recorded: someone who already has a passkey on
+              another device must not casually mint a second wallet and split
+              their balance. The protection is now the LABEL — "I already have
+              a wallet" is not a button you press by accident — instead of a
+              hidden one. */}
           <Button
+            tone="primary"
+            type="button"
+            onClick={() => void run("create")}
+            disabled={busy}
+          >
+            {busy ? "WAITING…" : "CREATE MY WALLET"}
+          </Button>
+          <p className="text-ink-faint px-2 text-center text-xs leading-snug">
+            Your face or fingerprint makes it. No seed phrase, nothing to write
+            down, nothing to install.
+          </p>
+          <Button
+            tone="ghost"
             type="button"
             onClick={() => void run("sign-in")}
             disabled={busy}
           >
-            {busy ? "WAITING…" : "CONTINUE WITH YOUR PHONE"}
+            {busy ? "WAITING…" : "I ALREADY HAVE A WALLET"}
           </Button>
-          <p className="text-ink-faint px-2 text-center text-xs leading-snug">
-            A passkey lives in your phone&apos;s secure enclave. There is no
-            seed phrase to lose and nothing to write down.
-          </p>
         </>
       ) : (
         <Note title="Sign-in not available yet">
@@ -119,15 +144,14 @@ export function SignInPanel() {
           says what the button does, because the alternative — a wallet appearing
           because the player tapped sign-in a third time — is how someone with a
           passkey on another device ends up with two wallets and half a balance. */}
+      {/* Was the only way to reach `create`. Now that creating is the primary
+          button, re-offering it here would be the same control twice; the
+          message is what the player needs after an assertion found nothing. */}
       {offerCreate ? (
-        <Button
-          tone="primary"
-          type="button"
-          onClick={() => void run("create")}
-          disabled={busy}
-        >
-          {busy ? "WAITING…" : "MAKE A NEW HUNT WALLET"}
-        </Button>
+        <Note title="No wallet on this phone yet">
+          Nothing to sign in with here. Use <strong>Create my wallet</strong>{" "}
+          above — or if your wallet is on another device, open this page there.
+        </Note>
       ) : null}
 
       <LinkButton href="/hunt">Browse hunts</LinkButton>
