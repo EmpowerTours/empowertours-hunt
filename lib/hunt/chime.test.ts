@@ -275,3 +275,31 @@ describe("the iOS unlock, which the spawn alert depends on", () => {
     expect(SRC).toContain('playChime("spawn")');
   });
 });
+
+describe("the cache band alert", () => {
+  const SRC = readFileSync(
+    new URL("../../app/hunt/[huntId]/HuntScreen.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("sounds when the band reaches burning", () => {
+    // RadarScope draws no cache marker on purpose — a blip at a buried cache
+    // would give away the thing the player is meant to find. The instrument
+    // turning red IS the signal, and a player walking with the phone down
+    // never sees it.
+    expect(SRC).toContain('hint.band === "burning"');
+    expect(SRC).toContain("wasBurning");
+  });
+
+  it("sounds on ENTERING burning, not on every poll inside it", () => {
+    // The band is recomputed continuously. Without the edge check this is an
+    // alarm that repeats until the player either claims or force-quits.
+    expect(SRC).toContain("burning && !wasBurning.current");
+  });
+
+  it("re-arms when the player cools off", () => {
+    // Stepping out and back in is a new "you are on it", so the flag has to
+    // be cleared rather than latched forever.
+    expect(SRC).toContain("wasBurning.current = burning");
+  });
+});

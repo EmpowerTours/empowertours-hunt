@@ -482,6 +482,25 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     return () => window.removeEventListener("pointerdown", unlock);
   }, []);
 
+  // The cache band, when it first goes BURNING.
+  //
+  // There is no cache marker on the scope on purpose — drawing a blip at a
+  // buried cache would give away the thing the player is meant to find. The
+  // whole instrument turning red IS the signal, and a player walking with the
+  // phone down never sees it. So the hottest band gets the same quiet two
+  // notes a spawn gets.
+  //
+  // Only on ENTERING burning, not for every poll while inside it: the band is
+  // recomputed continuously and a sound on each one would be an alarm. It
+  // re-arms as soon as the player cools off, so stepping out and back in
+  // sounds again, which is the correct reading of "you are on it now".
+  const wasBurning = useRef(false);
+  useEffect(() => {
+    const burning = hint.band === "burning";
+    if (burning && !wasBurning.current) playChime("spawn");
+    wasBurning.current = burning;
+  }, [hint.band]);
+
   // Announce a drop the player has not been told about yet.
   //
   // Keyed on spawn id rather than on the list length: a list that goes 1 -> 1
