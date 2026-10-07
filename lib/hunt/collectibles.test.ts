@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   COLLECTIONS,
@@ -146,18 +147,31 @@ describe("the collection list", () => {
 });
 
 describe("collectionsForPlayer", () => {
-  it("adds the collections this hunter claimed an edition from", () => {
-    // Editions are not one contract — EditionClaim.collection is per row,
-    // because each work belongs to its artist's own collection.
+  it("scans only the named collections by default", () => {
+    // The wallet showed every edition twice: once in "Your collection", with
+    // the price, the date and a receipt, and again here with none of that.
+    // The editions panel is the better of the two, so this one stops.
+    expect(collectionsForPlayer()).toEqual([...COLLECTIONS]);
+  });
+
+  it("still accepts claimed collections when a caller opts in", () => {
     const out = collectionsForPlayer([
       { collection: "0xAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaaAAaa" },
     ]);
     expect(out.map((c) => c.address)).toContain(
       "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     );
-    expect(out.map((c) => c.address)).toContain(
-      "0x200723a706de0013316e5cd8eba2b3f53dd90c29",
+  });
+
+  it("is not what the wallet route calls — it passes nothing", () => {
+    // Pins the fix rather than the capability: re-adding the claim lookup in
+    // the route would bring the duplicates straight back.
+    const src = readFileSync(
+      new URL("../../app/api/hunt/collectibles/route.ts", import.meta.url),
+      "utf8",
     );
+    expect(src).toContain("collectionsForPlayer()");
+    expect(src).not.toContain("editionClaim");
   });
 
   it("never scans the same contract twice", () => {

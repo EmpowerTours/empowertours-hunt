@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, http, parseAbi } from "viem";
 import { requirePlayer, AuthError } from "@/lib/auth";
-import { prisma } from "@/lib/db/prisma";
 import { monad } from "@/lib/monad";
 import {
   TRANSFER_TOPIC,
@@ -36,11 +35,8 @@ const LOG_RPC = "https://rpc1.monad.xyz";
 
 export async function GET(req: Request) {
   let wallet: string;
-  let playerId: string;
   try {
-    const player = await requirePlayer(req);
-    wallet = player.walletAddress;
-    playerId = player.id;
+    wallet = (await requirePlayer(req)).walletAddress;
   } catch (e) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: "sign in first" }, { status: 401 });
@@ -48,20 +44,15 @@ export async function GET(req: Request) {
     throw e;
   }
 
-  // Editions are not one contract: each work lives in its artist's own
-  // collection, so the addresses come from this hunter's own claims rather
-  // than a list. Nobody is scanned against collections they never touched.
-  const claimed = await prisma.editionClaim.findMany({
-    where: { playerId },
-    select: { collection: true },
-    distinct: ["collection"],
-  });
+  // No edition collections here on purpose: ProgressPanel's "Your collection"
+  // already lists them, with the price, the date, the receipt and the
+  // not-yet-minted ones this scan cannot see. See collectionsForPlayer.
 
   const client = createPublicClient({ chain: monad, transport: http(LOG_RPC) });
   const owner = addressTopic(wallet);
   const items: Collectible[] = [];
 
-  for (const collection of collectionsForPlayer(claimed)) {
+  for (const collection of collectionsForPlayer()) {
     // Ask the contract what it is called. A collection discovered through a
     // claim is labelled "Editions", which told the owner of three of them
     // nothing about what they were. name() is the collection's own answer.

@@ -168,16 +168,21 @@ export function readMetadata(raw: unknown): {
 }
 
 /**
- * Every collection worth scanning for one hunter: the named ones, plus the
- * collections they personally claimed an edition from.
+ * Every collection worth scanning for one hunter.
  *
- * Editions are NOT one contract. `EditionClaim.collection` is per row, because
- * each work belongs to its artist's own collection, so there is no single
- * address to add to the list above. Deriving it from the hunter's own claims
- * also means nobody is scanned against collections they never touched.
+ * EDITION COLLECTIONS ARE DELIBERATELY EXCLUDED. The wallet already has a
+ * panel for them — "Your collection" in ProgressPanel — and it knows things
+ * the chain does not: what was paid, when, a receipt link, and "on its way"
+ * for an edition claimed but not yet minted, which has no token to find. A
+ * second list of the same covers, with less on them, is worse than no second
+ * list. Reported as duplicates 2026-10-06.
+ *
+ * `claimed` is still accepted so a caller can opt in — a collection a hunter
+ * claimed from may hold tokens the editions panel does not track — but the
+ * default is off, and the wallet route passes nothing.
  */
 export function collectionsForPlayer(
-  claimed: readonly { collection: string }[],
+  claimed: readonly { collection: string }[] = [],
   base: readonly Collection[] = COLLECTIONS,
 ): Collection[] {
   const out: Collection[] = [];
