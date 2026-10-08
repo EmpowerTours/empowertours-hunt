@@ -159,7 +159,7 @@ per trade, built from receipts rather than from what the browser remembered.
 
 ### Chainlink — Best workflow with CRE _(0 of 2)_
 
-**SUBMIT THIS — the build is real. Just do not imply it is deployed.**
+**QUALIFIES. The bounty says "Build, simulate, or deploy" — simulate is an accepted path.**
 
 `cre/agent-scheduler/` contains a CRE workflow that schedules the Cota agent:
 `main.ts`, `workflow.yaml`, staging and production config, and `SIMULATION.md`
@@ -238,14 +238,21 @@ has no spending authority by construction.
 
 ## TWO BOUNTIES TO DECIDE BEFORE SUBMITTING
 
-**Chainlink CRE — submit it.** The workflow is real work: main.ts,
-workflow.yaml, staging and production config, and a genuine
-`cre workflow simulate` run that makes a live HTTPS call. Re-verified
-2026-10-08: `cre whoami` still reports "Deploy Access: Not enabled" and
-`cre account access` still returns "Deployment access is not yet enabled for
-your organization". That is Chainlink's gate, not a gap in the build, and the
-answer above says so without claiming it runs. The judge page had to be
-corrected once for implying it drives the agent; do not reintroduce that.
+**Chainlink CRE — it qualifies, submit it.** The bounty's own wording is
+"Build, **simulate**, or deploy a Chainlink Runtime Environment (CRE) Workflow
+used as an orchestration layer". Simulate is one of three accepted routes, not
+a fallback, so a simulated workflow meets the requirement as written — read
+off the Tracks & Bounties page 2026-10-08.
+
+What exists: main.ts, workflow.yaml, staging and production config, and
+SIMULATION.md recording a real `cre workflow simulate` run that makes a live
+HTTPS call to the agent endpoint. Deploy access is separately gated —
+`cre whoami` reports "Deploy Access: Not enabled" — but that is Chainlink's
+Early Access gate and the bounty does not require clearing it.
+
+State it plainly as simulated. The only thing to avoid is implying it is
+deployed and driving the agent in production, which the judge page claimed
+once and had to be corrected.
 
 **Kimi.** There is no Kimi integration anywhere in this repository. If you did
 not build with it, remove the bounty rather than submit a link to something
