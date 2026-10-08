@@ -422,3 +422,46 @@ describe("the screen reports a missed alert", () => {
     expect(SRC).toContain("useState<SilenceReason>(null)");
   });
 });
+
+describe("the beep survives the screen sleeping", () => {
+  const SRC = readFileSync(
+    new URL("../../app/hunt/[huntId]/HuntScreen.tsx", import.meta.url),
+    "utf8",
+  );
+  const HOOK = readFileSync(
+    new URL("../../components/hooks/useScreenAwake.ts", import.meta.url),
+    "utf8",
+  );
+
+  it("holds the screen awake while hunting", () => {
+    // A sleeping screen suspends setInterval and the AudioContext, so the
+    // beep stops on its own after a minute or two no matter what the trigger
+    // does. Reported as "it beeped for a longer time then it stopped again".
+    expect(SRC).toContain("useScreenAwake(scanEnabled && hasFix)");
+    expect(HOOK).toContain('request("screen")');
+  });
+
+  it("re-acquires the lock after the tab is hidden", () => {
+    // The browser releases it on hide and never restores it. Without this,
+    // one glance at a message leaves the screen sleeping for the rest of the
+    // hunt.
+    expect(HOOK).toContain('addEventListener("visibilitychange"');
+    expect(HOOK).toContain("void acquire();");
+  });
+
+  it("releases it when the player stops hunting", () => {
+    // Otherwise the screen stays lit on the hunt list, on a phone that has
+    // spent all day in the teens.
+    expect(HOOK).toContain("sentinel?.release()");
+  });
+
+  it("recovers a suspended context without waiting for a tap", () => {
+    // Returning from a locked screen leaves the context suspended, and
+    // resuming needs no gesture once the page is visible — so the timer can
+    // fix itself instead of the player having to notice.
+    const start = SRC.indexOf("const beep = () =>");
+    const beep = SRC.slice(start, SRC.indexOf("};", start));
+    expect(beep).toContain("unlockAudio()");
+    expect(beep.split('playChime("near")').length - 1).toBe(2);
+  });
+});

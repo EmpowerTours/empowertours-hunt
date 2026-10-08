@@ -12,6 +12,7 @@ import { useGeolocation } from "@/components/hooks/useGeolocation";
 import { useHeading } from "@/components/hooks/useHeading";
 import { useHint } from "@/components/hooks/useHint";
 import { useTicker } from "@/components/hooks/useTicker";
+import { useScreenAwake } from "@/components/hooks/useScreenAwake";
 import { BandReadout } from "@/components/hunt/BandReadout";
 import {
   ClaimButton,
@@ -500,6 +501,11 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   // re-arms as soon as the player cools off, so stepping out and back in
   // sounds again, which is the correct reading of "you are on it now".
   const [silence, setSilence] = useState<SilenceReason>(null);
+
+  // Hold the screen on while there is a fix and the hunt is live. A sleeping
+  // screen suspends every timer on this page — the beep, the spawn scan, the
+  // expiry countdown — and the player is holding a dead instrument.
+  useScreenAwake(scanEnabled && hasFix);
   useEffect(() => {
     if (hint.band !== "burning") return;
 
@@ -514,7 +520,15 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     // per-reading call: hint readings are throttled and irregular, and a
     // sound tied to them stutters.
     const beep = () => {
-      const played = playChime("near");
+      let played = playChime("near");
+      if (!played) {
+        // Coming back from a locked screen, iOS leaves the context suspended
+        // and every beep is dropped silently. Resuming needs no gesture once
+        // the page is visible again, so the timer can recover on its own
+        // rather than waiting for the player to notice and tap.
+        unlockAudio();
+        played = playChime("near");
+      }
       setSilence(played ? null : whySilent());
     };
     beep();
