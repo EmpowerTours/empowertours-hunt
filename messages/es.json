@@ -173,7 +173,10 @@
     "surveyedBy": "Explorado por",
     "detailsUnavailableTitle": "Detalles de la búsqueda no disponibles",
     "detailsUnavailableBody": "GET /api/hunt/{huntId} todavía no está construido, así que esta pantalla usa los valores por defecto del esquema: precisión de ±{accuracy} m y un enfriamiento de {cooldown} s. El servidor sigue decidiendo cada reclamo.",
-    "unsignedBuild": "En esta versión los reclamos no van firmados y no se puede recoger premios — el firmante EIP-712 todavía no está registrado. El servidor sigue siendo lo único que decide si algo paga."
+    "unsignedBuild": "En esta versión los reclamos no van firmados y no se puede recoger premios — el firmante EIP-712 todavía no está registrado. El servidor sigue siendo lo único que decide si algo paga.",
+    "soundLocked": "El sonido está listo pero tu navegador aún no lo ha activado. Toca aquí para encender la alerta.",
+    "soundMuted": "La alerta está silenciada. Toca el botón ♪ de arriba para volver a activar el sonido.",
+    "soundUnavailable": "Este navegador no reproduce sonido. El radar sigue funcionando — fíjate en la banda roja."
   },
   "refusal": {
     "no_find_here": {

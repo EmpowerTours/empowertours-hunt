@@ -173,7 +173,10 @@
     "surveyedBy": "Surveyed by",
     "detailsUnavailableTitle": "Hunt details unavailable",
     "detailsUnavailableBody": "GET /api/hunt/{huntId} is not built yet, so this screen is using the schema defaults: ±{accuracy} m accuracy and a {cooldown}s cooldown. The server still decides every claim.",
-    "unsignedBuild": "Claims are unsigned in this build and spawn collection is unavailable — the EIP-712 signer has not been registered yet. The server remains the only thing that decides whether anything pays."
+    "unsignedBuild": "Claims are unsigned in this build and spawn collection is unavailable — the EIP-712 signer has not been registered yet. The server remains the only thing that decides whether anything pays.",
+    "soundLocked": "Sound is ready but your browser has not released audio yet. Tap here to turn the alert on.",
+    "soundMuted": "The alert is muted. Tap the ♪ button at the top to turn sound back on.",
+    "soundUnavailable": "This browser will not play sound. The radar still works — watch for the red band."
   },
   "refusal": {
     "no_find_here": {

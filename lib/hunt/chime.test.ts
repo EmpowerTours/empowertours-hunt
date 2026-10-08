@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __setAudioContextFactory,
+  whySilent,
   isMuted,
   isMutedOnServer,
   playChime,
@@ -344,7 +345,10 @@ describe("the callers only latch on an audible alert", () => {
   );
 
   it("the cache band latches the return value, not true", () => {
-    expect(SRC).toContain('wasBurning.current = playChime("spawn")');
+    // Still the return value, just via a named const now that the reason is
+    // also recorded. The invariant is that an inaudible attempt does not latch.
+    expect(SRC).toContain('const played = playChime("spawn")');
+    expect(SRC).toContain("wasBurning.current = played;");
   });
 
   it("the spawn list returns early when nothing was heard", () => {
@@ -357,5 +361,56 @@ describe("the callers only latch on an audible alert", () => {
     // retry never happens.
     expect(SRC).toContain("[hint.band, now]");
     expect(SRC).toContain("[spawns, now]");
+  });
+});
+
+describe("whySilent names the cause instead of leaving silence ambiguous", () => {
+  it("says locked when the context has not been released", () => {
+    // The common one, and one tap fixes it. Without a name, a player decides
+    // the alert is broken and so does anyone debugging it remotely — which is
+    // what happened for four rounds.
+    const f = fakeContext("suspended");
+    __setAudioContextFactory(() => f.ctx as unknown as AudioContext);
+    expect(whySilent()).toBe("locked");
+  });
+
+  it("says muted when the player turned it off", () => {
+    const f = fakeContext("running");
+    __setAudioContextFactory(() => f.ctx as unknown as AudioContext);
+    globalThis.localStorage.setItem("hunt.sound", "off");
+    expect(whySilent()).toBe("muted");
+  });
+
+  it("says no-audio when the browser has none", () => {
+    __setAudioContextFactory(() => null);
+    expect(whySilent()).toBe("no-audio");
+    __setAudioContextFactory(() => {
+      throw new Error("blocked");
+    });
+    expect(whySilent()).toBe("no-audio");
+  });
+
+  it("says nothing is wrong when the context is running", () => {
+    const f = fakeContext("running");
+    __setAudioContextFactory(() => f.ctx as unknown as AudioContext);
+    expect(whySilent()).toBeNull();
+  });
+});
+
+describe("the screen reports a missed alert", () => {
+  const SRC = readFileSync(
+    new URL("../../app/hunt/[huntId]/HuntScreen.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("records why, and offers the tap that fixes it", () => {
+    expect(SRC).toContain("setSilence(played ? null : whySilent())");
+    expect(SRC).toContain("soundLocked");
+  });
+
+  it("shows it only after an alert was actually missed", () => {
+    // Starting non-null would nag every player who has simply not been near
+    // a cache yet.
+    expect(SRC).toContain("useState<SilenceReason>(null)");
   });
 });

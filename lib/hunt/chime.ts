@@ -236,3 +236,25 @@ export function __setAudioContextFactory(f: ContextFactory | null): void {
       return cached;
     });
 }
+
+/**
+ * Why the last sound did not play, or null if it did.
+ *
+ * Exposed because silence is indistinguishable from a broken feature. A
+ * player hears nothing and concludes the alert does not work; the operator
+ * hears nothing and starts rewriting the trigger. Neither can see that the
+ * context is suspended, which is the usual answer and is fixed by one tap.
+ */
+export type SilenceReason = "muted" | "no-audio" | "locked" | null;
+
+export function whySilent(): SilenceReason {
+  if (muted()) return "muted";
+  let ctx: AudioContext | null;
+  try {
+    ctx = factory();
+  } catch {
+    return "no-audio";
+  }
+  if (ctx === null) return "no-audio";
+  return ctx.state === "running" ? null : "locked";
+}

@@ -25,7 +25,12 @@ import {
   type EditionOfferView,
 } from "@/components/hunt/EditionCard";
 import { payFromPasskey } from "@/lib/auth/signIn";
-import { playChime, unlockAudio } from "@/lib/hunt/chime";
+import {
+  playChime,
+  unlockAudio,
+  whySilent,
+  type SilenceReason,
+} from "@/lib/hunt/chime";
 import { SpawnPanel } from "@/components/hunt/SpawnPanel";
 import {
   ApiError,
@@ -495,6 +500,7 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   // re-arms as soon as the player cools off, so stepping out and back in
   // sounds again, which is the correct reading of "you are on it now".
   const wasBurning = useRef(false);
+  const [silence, setSilence] = useState<SilenceReason>(null);
   useEffect(() => {
     const burning = hint.band === "burning";
     if (!burning) {
@@ -508,7 +514,13 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     // and the chime is dropped. Latching anyway consumed the announcement and
     // the alert never fired again while they stood there — which is exactly
     // how this was reported.
-    wasBurning.current = playChime("spawn");
+    const played = playChime("spawn");
+    wasBurning.current = played;
+    // Silence is indistinguishable from a broken feature, so say which it is.
+    // "locked" is the common one and one tap fixes it; without this the
+    // player concludes the alert does not work, and so does everybody trying
+    // to debug it from a distance.
+    setSilence(played ? null : whySilent());
   }, [hint.band, now]);
 
   // Announce a drop the player has not been told about yet.
@@ -760,6 +772,27 @@ export function HuntScreen({ huntId }: { huntId: string }) {
           <Note tone="warn" title={tHunt("claimNotSentTitle")}>
             {claimError}
           </Note>
+        ) : null}
+
+        {/* Why the alert was silent, and the tap that fixes it.
+            Shown only after an alert has actually been missed, so it never
+            nags someone who has heard nothing because nothing has happened. */}
+        {silence ? (
+          <button
+            type="button"
+            onClick={() => {
+              unlockAudio();
+              if (playChime("spawn")) setSilence(null);
+              else setSilence(whySilent());
+            }}
+            className="border-band-hot text-band-hot w-full rounded-xl border px-3 py-3 text-left text-xs"
+          >
+            {silence === "muted"
+              ? tHunt("soundMuted")
+              : silence === "no-audio"
+                ? tHunt("soundUnavailable")
+                : tHunt("soundLocked")}
+          </button>
         ) : null}
 
         <LanguageSwitch className="flex justify-end pb-1" />
