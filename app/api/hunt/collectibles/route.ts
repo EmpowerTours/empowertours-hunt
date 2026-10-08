@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createPublicClient, http, parseAbi } from "viem";
 import { requirePlayer, AuthError } from "@/lib/auth";
 import { monad } from "@/lib/monad";
+import { BLOCKVISION_BASE, parseBlockVisionNfts } from "@/lib/hunt/blockvision";
 import {
   TRANSFER_TOPIC,
   collectionsForPlayer,
@@ -47,6 +48,33 @@ export async function GET(req: Request) {
   // No edition collections here on purpose: ProgressPanel's "Your collection"
   // already lists them, with the price, the date, the receipt and the
   // not-yet-minted ones this scan cannot see. See collectionsForPlayer.
+
+  // BLOCKVISION FIRST, when a key is configured. It answers "what does this
+  // address own" in one call — the question an RPC cannot answer at all, and
+  // the reason the fallback below is limited to a named list.
+  const bvKey = process.env.BLOCKVISION_API_KEY;
+  if (bvKey) {
+    try {
+      const res = await fetch(
+        `${BLOCKVISION_BASE}/account/nfts?address=${encodeURIComponent(wallet)}&pageIndex=1`,
+        {
+          headers: { "x-api-key": bvKey },
+          signal: AbortSignal.timeout(8_000),
+        },
+      );
+      if (res.ok) {
+        const parsed = parseBlockVisionNfts(await res.json());
+        // An EMPTY list is a real answer — a hunter with no NFTs — so it is
+        // returned rather than falling through to a slower scan that would
+        // also find nothing.
+        return NextResponse.json({ items: parsed, source: "indexer" });
+      }
+    } catch {
+      // Rate limited, expired key, or their API is down. Fall through to the
+      // log scan: a wallet that empties itself when a hackathon perk lapses
+      // is worse than one showing a named list.
+    }
+  }
 
   const client = createPublicClient({ chain: monad, transport: http(LOG_RPC) });
   const owner = addressTopic(wallet);
@@ -138,5 +166,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ items });
+  return NextResponse.json({ items, source: "chain" });
 }
