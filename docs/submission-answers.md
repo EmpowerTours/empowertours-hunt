@@ -159,7 +159,7 @@ per trade, built from receipts rather than from what the browser remembered.
 
 ### Chainlink — Best workflow with CRE _(0 of 2)_
 
-**ANSWER HONESTLY OR REMOVE THIS BOUNTY — see note below.**
+**SUBMIT THIS — the build is real. Just do not imply it is deployed.**
 
 `cre/agent-scheduler/` contains a CRE workflow that schedules the Cota agent:
 `main.ts`, `workflow.yaml`, staging and production config, and `SIMULATION.md`
@@ -238,11 +238,14 @@ has no spending authority by construction.
 
 ## TWO BOUNTIES TO DECIDE BEFORE SUBMITTING
 
-**Chainlink CRE.** The workflow is built and simulated, never deployed,
-because access is gated. Judges can check `cre account access` output as
-easily as we can. Either answer it exactly as written above — which is honest
-and may still score for the build — or remove the bounty. Do not imply it
-runs. The judge page already had to be corrected once for exactly that.
+**Chainlink CRE — submit it.** The workflow is real work: main.ts,
+workflow.yaml, staging and production config, and a genuine
+`cre workflow simulate` run that makes a live HTTPS call. Re-verified
+2026-10-08: `cre whoami` still reports "Deploy Access: Not enabled" and
+`cre account access` still returns "Deployment access is not yet enabled for
+your organization". That is Chainlink's gate, not a gap in the build, and the
+answer above says so without claiming it runs. The judge page had to be
+corrected once for implying it drives the agent; do not reintroduce that.
 
 **Kimi.** There is no Kimi integration anywhere in this repository. If you did
 not build with it, remove the bounty rather than submit a link to something
