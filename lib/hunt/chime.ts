@@ -27,7 +27,7 @@
  * reason to lose the player's collect.
  */
 
-type Tone = "success" | "held" | "spawn";
+type Tone = "success" | "held" | "spawn" | "near";
 
 /** Opt out with `localStorage.setItem("hunt.sound", "off")`. */
 const MUTE_KEY = "hunt.sound";
@@ -170,6 +170,8 @@ function note(
  * `spawn` — a drop has appeared: two quiet low notes, meant to be heard from
  * a pocket without making anybody jump.
  *
+ * `near` — still on the cache: one pair, repeated by the caller on a timer.
+ *
  * RETURNS whether a sound was actually scheduled. False means muted, no audio,
  * or a context iOS has not released yet — and a caller that latches "already
  * announced" on a false has just thrown the announcement away.
@@ -212,6 +214,14 @@ export function playChime(tone: Tone): boolean {
       note(ctx, 587.3, t + 0.18, 0.46, 0.22);
       note(ctx, 392.0, t + 0.66, 0.34, 0.24);
       note(ctx, 587.3, t + 0.84, 0.5, 0.2);
+    } else if (tone === "near") {
+      // The repeat, while standing in the burning band. ONE pair, not two:
+      // this fires every few seconds until the cache is claimed or the player
+      // walks off, and the four-note version at that cadence is a car alarm.
+      // Same two pitches as `spawn`, so it reads as the same event
+      // continuing rather than as a second, different thing.
+      note(ctx, 392.0, t, 0.3, 0.24);
+      note(ctx, 587.3, t + 0.17, 0.4, 0.2);
     } else {
       note(ctx, 660.0, t, 0.14, 0.13);
       note(ctx, 740.0, t + 0.07, 0.16, 0.1);

@@ -499,29 +499,31 @@ export function HuntScreen({ huntId }: { huntId: string }) {
   // recomputed continuously and a sound on each one would be an alarm. It
   // re-arms as soon as the player cools off, so stepping out and back in
   // sounds again, which is the correct reading of "you are on it now".
-  const wasBurning = useRef(false);
   const [silence, setSilence] = useState<SilenceReason>(null);
   useEffect(() => {
-    const burning = hint.band === "burning";
-    if (!burning) {
-      // Cooled off: re-arm, so walking back in sounds again.
-      wasBurning.current = false;
-      return;
-    }
-    if (wasBurning.current) return;
-    // Latch ONLY if a sound actually came out. On load the player is often
-    // already burning and has tapped nothing, so iOS has not released audio
-    // and the chime is dropped. Latching anyway consumed the announcement and
-    // the alert never fired again while they stood there — which is exactly
-    // how this was reported.
-    const played = playChime("spawn");
-    wasBurning.current = played;
-    // Silence is indistinguishable from a broken feature, so say which it is.
-    // "locked" is the common one and one tap fixes it; without this the
-    // player concludes the alert does not work, and so does everybody trying
-    // to debug it from a distance.
-    setSilence(played ? null : whySilent());
-  }, [hint.band, now]);
+    if (hint.band !== "burning") return;
+
+    // KEEPS BEEPING while the player is on it, like a detector. A single
+    // announcement was the first design and it is wrong for a cache: the
+    // cache has no marker on the scope, so the sound is not an alert that
+    // something happened, it is the instrument the player sweeps with. One
+    // beep tells you a cache is near; a repeat tells you whether the step you
+    // just took was the right one.
+    //
+    // The first pair fires immediately, then one every 2.5s. Interval, not a
+    // per-reading call: hint readings are throttled and irregular, and a
+    // sound tied to them stutters.
+    const beep = () => {
+      const played = playChime("near");
+      setSilence(played ? null : whySilent());
+    };
+    beep();
+    const id = window.setInterval(beep, 2_500);
+    // Stops the moment the band changes or the screen unmounts. Nothing else
+    // clears it, which is why leaving the band has to tear the timer down
+    // rather than set a flag.
+    return () => window.clearInterval(id);
+  }, [hint.band]);
 
   // Announce a drop the player has not been told about yet.
   //

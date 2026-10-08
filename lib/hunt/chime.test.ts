@@ -286,25 +286,32 @@ describe("the cache band alert", () => {
     "utf8",
   );
 
-  it("sounds when the band reaches burning", () => {
-    // RadarScope draws no cache marker on purpose — a blip at a buried cache
-    // would give away the thing the player is meant to find. The instrument
-    // turning red IS the signal, and a player walking with the phone down
-    // never sees it.
-    expect(SRC).toContain('hint.band === "burning"');
-    expect(SRC).toContain("wasBurning");
+  it("keeps beeping while the player is on the cache", () => {
+    // A cache has no marker on the scope, so the sound is not an alert that
+    // something happened — it is the instrument the player sweeps with. One
+    // beep says a cache is near; the repeat says whether the last step was
+    // the right one. Reported as "it should be constant beeping".
+    expect(SRC).toContain('playChime("near")');
+    expect(SRC).toContain("setInterval(beep, 2_500)");
   });
 
-  it("sounds on ENTERING burning, not on every poll inside it", () => {
-    // The band is recomputed continuously. Without the edge check this is an
-    // alarm that repeats until the player either claims or force-quits.
-    expect(SRC).toContain("if (wasBurning.current) return;");
+  it("beeps once immediately, not only after the first interval", () => {
+    // Otherwise the player stands on the cache in silence for 2.5 seconds
+    // and concludes it is broken, which is where this whole thread started.
+    expect(SRC).toContain("beep();\n    const id = window.setInterval");
   });
 
-  it("re-arms when the player cools off", () => {
-    // Stepping out and back in is a new "you are on it", so the flag has to
-    // be cleared rather than latched forever.
-    expect(SRC).toContain("wasBurning.current = false;");
+  it("tears the timer down when the band changes", () => {
+    // Scoped to THIS effect, not the file. There is another setInterval in
+    // HuntScreen for the spawn scan, so a file-wide search for
+    // clearInterval passes even when the beep timer leaks — which it did,
+    // and the mutation that should have caught it hit the other one.
+    const start = SRC.indexOf('if (hint.band !== "burning") return;');
+    expect(start).toBeGreaterThan(-1);
+    const effect = SRC.slice(start, SRC.indexOf("}, [hint.band]);", start));
+    expect(effect).toContain("window.clearInterval(id)");
+    // A leaked timer keeps beeping across the whole city.
+    expect(effect).toContain("return () =>");
   });
 });
 
@@ -347,19 +354,20 @@ describe("the callers only latch on an audible alert", () => {
   it("the cache band latches the return value, not true", () => {
     // Still the return value, just via a named const now that the reason is
     // also recorded. The invariant is that an inaudible attempt does not latch.
-    expect(SRC).toContain('const played = playChime("spawn")');
-    expect(SRC).toContain("wasBurning.current = played;");
+    // The spawn list still latches on the return value; the cache band now
+    // repeats on a timer instead of latching at all.
+    expect(SRC).toContain('if (!playChime("spawn")) return;');
   });
 
   it("the spawn list returns early when nothing was heard", () => {
     expect(SRC).toContain('if (!playChime("spawn")) return;');
   });
 
-  it("both retry on the clock, not only when the value changes", () => {
+  it("the spawn alert retries on the clock, not only on a list change", () => {
     // Unlocking happens on a tap, which changes neither hint.band nor the
-    // spawn list. Without `now` in the deps the effect never re-runs and the
-    // retry never happens.
-    expect(SRC).toContain("[hint.band, now]");
+    // spawn list. Without `now` in the deps the effect never re-runs and an
+    // alert missed before the first tap is never retried. The cache band no
+    // longer needs this — it beeps on its own interval.
     expect(SRC).toContain("[spawns, now]");
   });
 });
