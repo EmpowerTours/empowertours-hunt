@@ -263,12 +263,30 @@ describe("the iOS unlock, which the spawn alert depends on", () => {
     "utf8",
   );
 
-  it("unlocks audio on a touch, not only inside collect", () => {
-    // A spawn arrives from a poll. iOS will not start an AudioContext outside
-    // a gesture, so without a screen-wide unlock the alert is silent on every
-    // iPhone until the player collects — which is after they needed telling.
-    expect(SRC).toContain('addEventListener("pointerdown"');
-    expect(SRC).toContain("unlockAudio");
+  it("listens for the unlocking tap APP-WIDE, not on the hunt screen", () => {
+    // The gesture that matters is the tap that OPENS a hunt, on the hunt
+    // list, before HuntScreen exists. A listener mounted with the hunt screen
+    // never sees it, and a player who then just walks never taps again — so
+    // the beep stayed silent until they poked the screen, which is the thing
+    // they are not doing while looking at the street.
+    const PROVIDERS = readFileSync(
+      new URL("../../app/providers.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(PROVIDERS).toContain("listenForUnlock()");
+    expect(SRC).not.toContain('addEventListener("pointerdown"');
+  });
+
+  it("keeps listening until the context is genuinely running", () => {
+    // resume() is async, so a tap can land before it takes. Detaching on an
+    // unverified resume is how this fails silently.
+    const CHIME = readFileSync(new URL("./chime.ts", import.meta.url), "utf8");
+    expect(CHIME).toContain("if (whySilent() === null) detach();");
+    // The registrations themselves must carry no `once`, which would detach
+    // after a tap that did not actually unlock anything. Checked on the call
+    // rather than the file, because the comment above it says "once" too.
+    expect(CHIME).toContain('addEventListener("pointerdown", attempt);');
+    expect(CHIME).toContain('addEventListener("touchend", attempt);');
   });
 
   it("announces by spawn id, not by how many there are", () => {

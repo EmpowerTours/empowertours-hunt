@@ -476,17 +476,10 @@ export function HuntScreen({ huntId }: { huntId: string }) {
     }
   }, [fix, gate.ready, signer, huntId, cooldownSeconds, hint]);
 
-  // A spawn arrives from a poll, which is not a user gesture, and iOS will not
-  // start an AudioContext outside one. So the FIRST touch anywhere on this
-  // screen unlocks it — by the time a drop appears, the player has invariably
-  // tapped something. Without this the alert is silent on every iPhone until
-  // the player happens to collect, which is exactly when they no longer need
-  // telling.
-  useEffect(() => {
-    const unlock = () => unlockAudio();
-    window.addEventListener("pointerdown", unlock, { once: true });
-    return () => window.removeEventListener("pointerdown", unlock);
-  }, []);
+  // The unlock listener lives in app/providers.tsx, not here. The gesture
+  // that matters is the tap that OPENS a hunt, which happens on the hunt list
+  // before this component exists — a listener mounted here never sees it, and
+  // a player who then simply walks never taps again.
 
   // The cache band, when it first goes BURNING.
   //

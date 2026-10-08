@@ -1,5 +1,7 @@
 "use client";
 
+import { listenForUnlock } from "@/lib/hunt/chime";
+
 import {
   createContext,
   useCallback,
@@ -160,6 +162,12 @@ export function Providers({
   /** Registered by the auth lane. Absent means MON collection is disabled. */
   signer?: ClaimSigner;
 }) {
+  // Audio on iOS starts only from a gesture, and the one that counts is
+  // usually the tap that opens a hunt — on the hunt LIST, before the hunt
+  // screen mounts. Listening from here means that tap counts, so a player who
+  // opens a hunt and then just walks still gets the cache beep.
+  useEffect(() => listenForUnlock(), []);
+
   const session = useSession();
   const { refresh } = session;
 

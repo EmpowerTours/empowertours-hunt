@@ -268,3 +268,42 @@ export function whySilent(): SilenceReason {
   if (ctx === null) return "no-audio";
   return ctx.state === "running" ? null : "locked";
 }
+
+/**
+ * Unlock audio on the first touch ANYWHERE in the app, and keep trying until
+ * it takes.
+ *
+ * iOS only starts an AudioContext from a user gesture, and the gesture that
+ * matters is usually the tap that OPENS a hunt — which happens on the hunt
+ * list, in the same document, before the hunt screen exists. A listener
+ * mounted with the hunt screen never sees it, and a player who then simply
+ * walks never taps again. The beep was therefore silent until they tapped
+ * something, which is a thing nobody does while looking at the street.
+ *
+ * Not `{ once: true }`: the first tap can land while the context is still
+ * being created, or be refused outright. It detaches itself once the context
+ * is genuinely running, and not before.
+ *
+ * Returns a teardown, so a caller can stop listening.
+ */
+export function listenForUnlock(): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  const attempt = () => {
+    unlockAudio();
+    // resume() is async, so the state is checked on the NEXT tap rather than
+    // here. Detaching on an unverified resume is how this fails silently.
+    if (whySilent() === null) detach();
+  };
+  const detach = () => {
+    window.removeEventListener("pointerdown", attempt);
+    window.removeEventListener("touchend", attempt);
+    window.removeEventListener("keydown", attempt);
+  };
+
+  window.addEventListener("pointerdown", attempt);
+  // pointerdown does not fire in every iOS WebView; touchend always does.
+  window.addEventListener("touchend", attempt);
+  window.addEventListener("keydown", attempt);
+  return detach;
+}
