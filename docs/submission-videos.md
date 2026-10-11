@@ -77,6 +77,24 @@ no longer exists.
 
 Screen recording of a phone, real account, real money. No slides at any point.
 
+### Before you roll: the balance decides whether the percentages are honest
+
+Checked 10 Oct: the wallet holds **457.9 MON**, and MON has fallen to
+**$0.025263** — down 14% in four days. At that price a 30% tap is $3.47, which
+is under Perpl's $10 floor, so the press silently sells **$10 worth** instead.
+On camera that reads as the app ignoring the button you just pressed.
+
+**You need about 1,350 MON** for the 30% tap to mean 30%. The requirement rose
+as the price fell — it was ~1,200 MON on 6 Oct. Re-compute on the day:
+
+```
+npm run check:rpc   # unrelated, but confirms the chain is healthy
+```
+
+and read the live price from `/api/cota/markets`. If you cannot top up, film
+the **80%** button instead and never touch 5% — it lies at any balance under
+roughly $200.
+
 ### 0:00–0:20 — a stranger, a face, a wallet
 
 Not your screen. Someone else's hands.
@@ -167,7 +185,14 @@ Back to `/cota`, then one beat on Hunt.
 Do not oversell. One true sentence:
 
 > "It's live on mainnet today. Everything you just saw is production, and
-> this wallet has moved about four thousand nine hundred MON through it."
+> this wallet has moved about five thousand eight hundred MON through it."
+
+**Re-check that number on the day.** It was 4,927 on 6 Oct and 5,862 on 10 Oct;
+it moves every time the agent trades. One command:
+
+```
+curl -s https://hunt.empowertours.xyz/api/cota/mon-moved | python3 -m json.tool
+```
 
 ### Shots to get before you start
 
