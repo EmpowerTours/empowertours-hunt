@@ -1,6 +1,11 @@
 // ---------------------------------------------------------------------------
-// Aurora Intents — any asset on any of 31+ chains into USDC on Monad, through
-// one persistent deposit address per hunter.
+// Aurora Intents — any asset on any of 31+ chains into Monad, through one
+// persistent deposit address per hunter.
+//
+// UPDATE (37b7199): the default destination asset is now MON, not USDC (see
+// DEFAULT_ASSET in app/api/cota/aurora/route.ts), so a newcomer has gas to
+// move their own money. USDC is still a supported destination; the notes
+// below about USDC describe that path.
 //
 // WHY THIS EXISTS. The README's own "what does not work yet" section leads with
 // it: a hunter who holds value anywhere other than Monad has no way in. The
