@@ -5,6 +5,7 @@ import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
+import { swapHrefFor } from "@/lib/cota/aurora-saved";
 
 // ---------------------------------------------------------------------------
 // Funding from any chain — one address, no wallet to connect.
@@ -50,6 +51,7 @@ interface Deposit {
 interface AddressState {
   address: string | null;
   depositChain: string;
+  destinationAsset?: string;
   recipient?: string;
   deposits?: Deposit[];
 }
@@ -77,6 +79,11 @@ const COPY = {
     upstream:
       "Aurora no respondió. Tu dirección, si ya tienes una, sigue siendo válida — vuelve a intentarlo.",
     swap: "Cambiar MON → AUSD →",
+    leadUsdc:
+      "Te damos una dirección. Envía desde otra red EVM, un exchange o tu wallet — llega como USDC en Monad.",
+    notAusdUsdc:
+      "Llega como USDC en Monad, no como AUSD. Perpl cobra en AUSD, así que después pasa por Cambiar USDC → AUSD.",
+    swapUsdc: "Cambiar USDC → AUSD →",
     back: "← Cota",
     arrivals: "Lo que ha llegado",
     nothingYet:
@@ -114,6 +121,11 @@ const COPY = {
     upstream:
       "Aurora did not answer. Any address you already have is still valid — try again.",
     swap: "Swap MON → AUSD →",
+    leadUsdc:
+      "We give you an address. Send from another EVM chain, an exchange or your wallet — it arrives as USDC on Monad.",
+    notAusdUsdc:
+      "This arrives as USDC on Monad, not AUSD. Perpl settles in AUSD, so you then swap USDC → AUSD.",
+    swapUsdc: "Swap USDC → AUSD →",
     back: "← Cota",
     arrivals: "What has arrived",
     nothingYet:
@@ -144,9 +156,10 @@ export default function OnrampPage() {
   const [detail, setDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [options, setOptions] = useState<
-    Array<{ chain: string; symbols: string[] }> | null
-  >(null);
+  const [options, setOptions] = useState<Array<{
+    chain: string;
+    symbols: string[];
+  }> | null>(null);
   const [holdings, setHoldings] = useState<Holding[] | null>(null);
 
   // A GET never calls Aurora — it only reads what we already issued — so this
@@ -248,6 +261,8 @@ export default function OnrampPage() {
   }, []);
 
   const address = state?.address ?? null;
+  const isUsdc = state?.destinationAsset === "USDC";
+  const lead = isUsdc ? t.leadUsdc : t.lead;
   const copy = useCallback(async () => {
     if (address == null) return;
     try {
@@ -279,7 +294,7 @@ export default function OnrampPage() {
           {t.back}
         </a>
         <h1 className="text-ink text-xl font-semibold">{t.title}</h1>
-        <p className="text-ink/70 text-sm">{t.lead}</p>
+        <p className="text-ink/70 text-sm">{lead}</p>
         <SignInPrompt label={lang === "es" ? "Inicia sesión" : "Sign in"} />
       </main>
     );
@@ -291,7 +306,7 @@ export default function OnrampPage() {
         {t.back}
       </a>
       <h1 className="text-ink text-xl font-semibold">{t.title}</h1>
-      <p className="text-ink/70 text-sm">{t.lead}</p>
+      <p className="text-ink/70 text-sm">{lead}</p>
 
       {error === "unconfigured" ? (
         <Note>{t.unconfigured}</Note>
@@ -328,7 +343,9 @@ export default function OnrampPage() {
             </Panel>
           )}
 
-          {address == null || holdings === null || holdings.length === 0 ? null : (
+          {address == null ||
+          holdings === null ||
+          holdings.length === 0 ? null : (
             <Panel>
               <p className="text-ink/60 text-xs uppercase">{t.holdings}</p>
               <ul className="mt-2 space-y-1">
@@ -340,7 +357,10 @@ export default function OnrampPage() {
                     <span>
                       <span className="font-mono">{h.amount}</span> {h.symbol}
                       {h.chain === "monad" ? null : (
-                        <span className="text-ink/50 text-xs"> · {h.chain}</span>
+                        <span className="text-ink/50 text-xs">
+                          {" "}
+                          · {h.chain}
+                        </span>
                       )}
                     </span>
                     {h.valueUsd === null ? null : (
@@ -378,7 +398,7 @@ export default function OnrampPage() {
                       <span className="font-mono">
                         {d.amountFormatted ?? "?"}
                       </span>{" "}
-                      USDC{" "}
+                      {state?.destinationAsset ?? "MON"}{" "}
                       <span className="text-ink/60">
                         {d.status === "SUCCESS"
                           ? t.arrived
@@ -416,12 +436,12 @@ export default function OnrampPage() {
             )}
           </Panel>
 
-          <Note>{t.notAusd}</Note>
+          <Note>{isUsdc ? t.notAusdUsdc : t.notAusd}</Note>
           <a
-            href="/cota/swap"
+            href={swapHrefFor(state?.destinationAsset)}
             className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
           >
-            {t.swap}
+            {isUsdc ? t.swapUsdc : t.swap}
           </a>
         </>
       )}

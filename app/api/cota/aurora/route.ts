@@ -12,6 +12,7 @@ import {
   type DepositChain,
   type DestinationAsset,
 } from "@/lib/cota/aurora";
+import { pickSavedAddress } from "@/lib/cota/aurora-saved";
 
 // ---------------------------------------------------------------------------
 // GET/POST /api/cota/aurora — the hunter's any-chain deposit address.
@@ -125,15 +126,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "bad_asset" }, { status: 400 });
     }
 
-    const row = await prisma.auroraDepositAddress.findUnique({
-      where: {
-        playerId_depositChain_destinationAsset: {
-          playerId: player.id,
-          depositChain: chain,
-          destinationAsset: asset,
-        },
-      },
-    });
+    // Falls back to an address saved under another asset (e.g. a USDC one
+    // issued before the default became MON) rather than reporting none.
+    const row = pickSavedAddress(
+      await prisma.auroraDepositAddress.findMany({
+        where: { playerId: player.id, depositChain: chain },
+      }),
+      asset,
+    );
     if (row === null) {
       return NextResponse.json({
         address: null,
@@ -195,33 +195,56 @@ export async function POST(req: Request) {
     const depositChain = body.data.depositChain ?? DEFAULT_CHAIN;
     const destinationAsset = body.data.destinationAsset ?? DEFAULT_ASSET;
 
-    const existing = await prisma.auroraDepositAddress.findUnique({
-      where: {
-        playerId_depositChain_destinationAsset: {
-          playerId: player.id,
-          depositChain,
-          destinationAsset,
-        },
-      },
-    });
+    // Any address we already issued this hunter on this chain wins — the
+    // requested asset first, then USDC (the pre-37b7199 default), then any.
+    // Only when none exists do we ask Aurora to create one.
     // The recipient is checked, not just the presence of a row: an address that
     // pays a wallet this hunter no longer uses is worse than no address.
-    if (existing !== null && existing.recipient === player.walletAddress) {
+    const saved = await prisma.auroraDepositAddress.findMany({
+      where: { playerId: player.id, depositChain },
+    });
+    const existing = pickSavedAddress(
+      saved,
+      destinationAsset,
+      player.walletAddress,
+    );
+    if (existing !== null) {
       return NextResponse.json({
         address: existing.depositAddress,
         depositChain,
-        destinationAsset,
+        destinationAsset: existing.destinationAsset,
         recipient: existing.recipient,
         fresh: false,
       });
     }
 
-    const issued = await requestPersistentDepositAddress({
-      recipient: player.walletAddress,
-      sender: senderFor(player.walletAddress),
-      depositChain,
-      destinationAsset,
-    });
+    let issued;
+    try {
+      issued = await requestPersistentDepositAddress({
+        recipient: player.walletAddress,
+        sender: senderFor(player.walletAddress),
+        depositChain,
+        destinationAsset,
+      });
+    } catch (err) {
+      // Aurora refusing to create (403) is not a reason to hide an address we
+      // already hold, even one paying an older wallet record.
+      const fallback = pickSavedAddress(saved, destinationAsset);
+      if (
+        err instanceof AuroraError &&
+        err.status === 403 &&
+        fallback !== null
+      ) {
+        return NextResponse.json({
+          address: fallback.depositAddress,
+          depositChain,
+          destinationAsset: fallback.destinationAsset,
+          recipient: fallback.recipient,
+          fresh: false,
+        });
+      }
+      throw err;
+    }
 
     const row = await prisma.auroraDepositAddress.upsert({
       where: {
