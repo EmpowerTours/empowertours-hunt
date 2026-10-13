@@ -532,3 +532,19 @@ describe("a non-2xx from Aurora keeps Aurora's reason", () => {
     expect(body.destinationChain).toBe("monad");
   });
 });
+
+describe("readTimestamp", () => {
+  it("normalises ISO, unix seconds and ms, across field names", async () => {
+    const { readTimestamp } = await import("./aurora");
+    expect(readTimestamp({ created_at: "2026-10-13T04:00:00Z" })).toBe(
+      "2026-10-13T04:00:00.000Z",
+    );
+    expect(readTimestamp({ timestamp: 1760328000 })).toBe(
+      "2025-10-13T04:00:00.000Z",
+    );
+    expect(readTimestamp({ updatedAt: "1760328000000" })).toBe(
+      "2025-10-13T04:00:00.000Z",
+    );
+    expect(readTimestamp({})).toBeNull();
+  });
+});

@@ -143,6 +143,17 @@ const COPY = {
   },
 } as const;
 
+/** A row's time in the reader's own timezone; null when Aurora gave none. */
+function formatWhen(iso: string | null, lang: Lang): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString(lang === "es" ? "es" : "en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export default function OnrampPage() {
   const lang = (useLocale() as Lang) ?? "en";
   const t = COPY[lang] ?? COPY.en;
@@ -276,10 +287,17 @@ export default function OnrampPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/cota/aurora?type=all", {
-        cache: "no-store",
-      });
+      const [res, bal] = await Promise.all([
+        fetch("/api/cota/aurora?type=all", { cache: "no-store" }),
+        // The balance must follow the arrivals: refreshing only the list left
+        // "Your balance" showing the pre-deposit figure next to a delivery.
+        fetch("/api/cota/zerion", { cache: "no-store" }).catch(() => null),
+      ]);
       if (res.ok) setState((await res.json()) as AddressState);
+      if (bal?.ok) {
+        const body = (await bal.json()) as { holdings?: Holding[] };
+        setHoldings(body.holdings ?? []);
+      }
     } catch {
       // A failed refresh leaves the last known list on screen rather than
       // blanking it: an empty list here reads as "nothing arrived", and that is
@@ -404,6 +422,11 @@ export default function OnrampPage() {
                           ? t.arrived
                           : `${t.left} ${d.chain ?? "?"}`}
                       </span>
+                      {formatWhen(d.createdAt, lang) ? (
+                        <span className="text-ink/50 block text-xs">
+                          {formatWhen(d.createdAt, lang)}
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

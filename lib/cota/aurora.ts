@@ -619,8 +619,37 @@ export function parsePersistentDeposits(
           : null,
       depositAddress: r.deposit_address,
       recipient: typeof r.recipient === "string" ? r.recipient : null,
-      createdAt: typeof r.created_at === "string" ? r.created_at : null,
+      createdAt: readTimestamp(r),
     });
   }
   return out;
+}
+
+/**
+ * Aurora's row timestamp, normalised to ISO. The field name and form are not
+ * documented, so accept the plausible ones: ISO strings, or unix seconds/ms.
+ */
+export function readTimestamp(r: Record<string, unknown>): string | null {
+  for (const k of [
+    "created_at",
+    "createdAt",
+    "updated_at",
+    "updatedAt",
+    "timestamp",
+    "time",
+  ]) {
+    const v = r[k];
+    let ms: number | null = null;
+    if (typeof v === "number" && Number.isFinite(v)) {
+      ms = v < 1e12 ? v * 1000 : v;
+    } else if (typeof v === "string" && v.length > 0) {
+      ms = /^\d+$/.test(v)
+        ? Number(v) < 1e12
+          ? Number(v) * 1000
+          : Number(v)
+        : Date.parse(v);
+    }
+    if (ms !== null && Number.isFinite(ms)) return new Date(ms).toISOString();
+  }
+  return null;
 }
