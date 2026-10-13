@@ -33,8 +33,8 @@ const MOONSHOT_BASE = "https://api.moonshot.ai/v1";
 // suspension that failed every request first.
 //
 // k2.6 over k2.7-code: this asks for a trading judgement in JSON, not code.
-// UNVERIFIED end to end — the account was suspended for insufficient balance
-// when this was chosen, so no completion has actually returned through it.
+// Verified: the account is funded and the `hunt` key bills kimi-k2.6
+// completions (Moonshot console, 2026-10-13).
 const DEFAULT_MODEL = "kimi-k2.6";
 
 /** One market's state, the context Kimi reasons over. */

@@ -201,7 +201,13 @@ rather than presenting a timestamp we cannot stand behind.
 
 ### Kimi — Best Builds Powered by KIMI _(link required)_
 
-**REMOVE THIS BOUNTY unless you actually used Kimi.** See note below.
+Kimi (`kimi-k2.6` via Moonshot) is the agent's proposer. `lib/cota/propose.ts`
+asks Kimi for one order within the hunter's leash; `/api/cota/propose` and
+`/api/cota/agent/run` call it, and "Suggest with Kimi" on `/cota/trade` fills
+the form from its proposal. Every proposal then goes through the same
+fail-closed `mayOpen` gate — the model proposes, the function decides.
+
+Article: `docs/kimi.md`.
 
 ### Monad Foundation — Best Mera-Powered UX _(1 of 2)_
 
@@ -234,9 +240,9 @@ has no spending authority by construction.
 2. **Technical demo video** — up to 3 min. Script: `docs/submission-videos.md`.
 3. **Pitch video** — up to 2 min. Same file.
 4. **Share the private repo** with `metropolis@hackathon.monad.xyz`.
-5. **Decide on Chainlink and Kimi** (below).
+5. **Chainlink and Kimi** — both are claimed; notes below.
 
-## TWO BOUNTIES TO DECIDE BEFORE SUBMITTING
+## NOTES ON CHAINLINK AND KIMI
 
 **Chainlink CRE — it qualifies, submit it.** The bounty's own wording is
 "Build, **simulate**, or deploy a Chainlink Runtime Environment (CRE) Workflow
@@ -254,7 +260,7 @@ State it plainly as simulated. The only thing to avoid is implying it is
 deployed and driving the agent in production, which the judge page claimed
 once and had to be corrected.
 
-**Kimi.** There is no Kimi integration anywhere in this repository. If you did
-not build with it, remove the bounty rather than submit a link to something
-unrelated. An empty claim next to eight real ones is the thing a judge
-remembers.
+**Kimi — it is used, submit it.** `lib/cota/propose.ts` is the Kimi
+proposer behind `/api/cota/propose`, `/api/cota/agent/run` and "Suggest with
+Kimi". The Moonshot `hunt` key is funded and billing kimi-k2.6 completions
+(checked 2026-10-13). Link the article at `docs/kimi.md`.
