@@ -29,7 +29,8 @@ DOGE because the Cota did not name that market, then BTC twice for exceeding
 leverage and size. Those rows are at /judge/record, written by the executor, not
 staged for judging. Four real fills on Perpl sit underneath them.
 
-**Getting in is the other half.** Our players are in Guerrero, Mexico. They have
+**Getting in is the other half.** Hunt works anywhere in the world, and it
+launched first in Guerrero, Mexico, where our first players are. They have
 never opened an exchange and never will, so the wallet is a face: one passkey
 tap, no seed phrase, no extension, no email, no KYC queue. Mera is the entire
 account layer — we deleted the embedded-wallet SDK rather than leave a second
@@ -39,7 +40,8 @@ of assets, and delivers MON on Monad so a newcomer can pay their own gas the
 moment they land. A real 2 USDC transfer from Base settled in fourteen seconds.
 
 **How the money is earned.** MON caches sit at GPS locations along walkable
-corridors. Players walk there, check in by GPS (each cache shows its photo when found), and are paid on
+corridors, anywhere in the world; Guerrero, Mexico is where Hunt launched first.
+Players walk there, check in by GPS (each cache shows its photo when found), and are paid on
 Monad mainnet. Hunt earns you a wallet and a balance; Cota is where you put it
 to work under a leash you control.
 

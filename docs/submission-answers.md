@@ -40,7 +40,8 @@ MON on Monad mainnet. The cost of trying us is one walk. That is the entire
 funnel, and it is why it works on people who have never opened an exchange.
 
 **Distribution is physical and local, not an ad budget.** Caches are placed
-along walkable corridors in Guerrero, Mexico. The product spreads the way a
+along walkable corridors anywhere in the world; Hunt launched first in
+Guerrero, Mexico. The product spreads the way a
 street game spreads: somebody is visibly paid, in public, by their phone, and
 the person next to them asks what that was. We have tested this directly at
 events — onboarding strangers on their own phones, in under a minute, with no

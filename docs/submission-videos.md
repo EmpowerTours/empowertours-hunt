@@ -177,7 +177,7 @@ Show the arrivals list with both rows — departure and arrival.
 Back to `/cota`, then one beat on Hunt.
 
 > "The MON funding all of this is earned on foot. Players walk to real GPS
-> points in Mexico and get paid on Monad mainnet. Hunt earns you a wallet and a
+> points anywhere in the world, starting in Mexico, and get paid on Monad mainnet. Hunt earns you a wallet and a
 > balance; Cota is where you put it to work under a leash you control."
 
 ### 2:50–3:00 — the honest close
