@@ -19,9 +19,8 @@ is `docs/submission-description.md`. **Re-read the numbers in it before you
 save** — several are counts from production that move.
 
 **GitHub repository** — `https://github.com/EmpowerTours/empowertours-hunt`
-The LICENSE is proprietary, so it must be shared with
-`metropolis@hackathon.monad.xyz` rather than made public. Do that in GitHub →
-Settings → Collaborators before you submit, or the judges hit a 404.
+The repo is public under AGPL-3.0 (see LICENSE and package.json), so judges
+can open it directly; no collaborator invite is needed.
 
 **Live product** — `https://hunt.empowertours.xyz` (and `https://cota.empowertours.xyz`
 for the trading side; the judge walkthrough is `https://hunt.empowertours.xyz/judge`).

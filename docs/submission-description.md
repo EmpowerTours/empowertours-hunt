@@ -39,12 +39,12 @@ of assets, and delivers MON on Monad so a newcomer can pay their own gas the
 moment they land. A real 2 USDC transfer from Base settled in fourteen seconds.
 
 **How the money is earned.** MON caches sit at GPS locations along walkable
-corridors. Players walk there, check in with photo and GPS, and are paid on
+corridors. Players walk there, check in by GPS (each cache shows its photo when found), and are paid on
 Monad mainnet. Hunt earns you a wallet and a balance; Cota is where you put it
 to work under a leash you control.
 
-**Where it actually is.** Live on Monad mainnet. Nineteen leashes signed, 2,040
-agent decisions, seventeen orders, seven fills, one funded trading account, a
+**Where it actually is.** Live on Monad mainnet. Nineteen leashes signed, 2,041
+agent decisions, eighteen orders, eight fills, one funded trading account, a
 small group of real players. Small, and every number is real.
 
 **How it sustains itself.** We are a Perpl builder (code 9). The Cota a user
@@ -112,8 +112,8 @@ thing to ask about, and the answer is "use a different device", not a patch.
 Re-read the live numbers first — `/judge/record` is generated from production,
 so leashes, decisions, orders and fills all move.
 
-**Re-verified against /judge/record 2026-10-13:** 19 leashes signed, 2,040
-agent decisions, 17 orders, 7 fills. (As of 2026-10-01, 9 leashes were anchored
+**Re-verified against /judge/record 2026-10-13:** 19 leashes signed, 2,041
+agent decisions, 18 orders, 8 fills. (As of 2026-10-01, 9 leashes were anchored
 on chain.) 22 players. Twelve EVM chains and 61 distinct assets are offered on the
 deposit address, so "twelve EVM chains and dozens of assets" is exact. The
 judge walkthrough has 11 steps, 8 of which are ungated — an earlier revision

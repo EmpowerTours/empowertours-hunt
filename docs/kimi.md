@@ -16,6 +16,6 @@ Early on we sent the model a single spot price and asked it to prefer holding. I
 - If the model is down, that's a reason to hold, not an error. The agent logs `proposer_unavailable` and does nothing.
 
 ## The record
-Every decision is public at hunt.empowertours.xyz/judge/record: 2,040 decisions, 17 orders, 7 fills on Perpl, and 3 refusals, including a DOGE order refused because the user never named that market. The model proposes, and the user's signature decides.
+Every decision is public at hunt.empowertours.xyz/judge/record: 2,041 decisions, 18 orders, 8 fills on Perpl, and 3 refusals, including a DOGE order refused because the user never named that market. The model proposes, and the user's signature decides.
 ```
 

@@ -11,10 +11,10 @@
 //
 //   NOT REVOKED — the only one that was ever right.
 //
-//   ANCHORED — a practice leash is signed but never put on chain and is stored
-//   in this same table with a null anchorTxHash. Without this, signing one in
-//   practice mode silently makes it the authority for real orders. Practice is
-//   the mode that costs nothing and authorises nothing; the anchor is what makes
+//   ANCHORED — every leash is anchored automatically when signed (the old
+//   practice leash mode was removed in 47d6b93), but if the anchor tx fails
+//   (e.g. no gas) the signed row is stored with a null anchorTxHash. Such a
+//   leash must not trade until anchored. The anchor is what makes
 //   a bound verifiable by someone who does not trust this database, which is the
 //   whole claim Cota makes.
 //

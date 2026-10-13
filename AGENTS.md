@@ -9,7 +9,8 @@ A free-roam GPS collection game feeding the TURBO cohort. Two economies:
 
 - **Cache finds** pay **TURBO credit**, denominated in **WMON-wei**, non-withdrawable.
   A discount on a subscription, not cash. `CreditLedger` is the source of truth.
-- **Spawns** pay **real native MON**, small (~0.001 MON), random, visible,
+- **Spawns** pay **real native MON**, drawn per spawn from each hunt's `spawnMinWei`/`spawnMaxWei`
+  (the live hunt is configured at exactly 1 MON; see README), random, visible,
   ephemeral. This is the only path where money leaves the treasury.
 
 `TOURS` is a future consumable (lures, hints, re-rolls). Not built yet — do not

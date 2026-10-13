@@ -12,10 +12,11 @@ import {
 // Enrolling a builder-bound Perpl API key, entirely in the browser.
 //
 // A faithful port of mandate/src/enrollment.py, with one deliberate difference:
-// nothing here is ever stored server-side. The Ed25519 private key is generated
-// on the device, signs the proof-of-possession on the device, and is saved only
-// in this browser. Hunt is the *verifier*, never the key-holder — so a Hunt
-// breach exposes no trading authority, no matter how many users enrol.
+// the Ed25519 private key is generated on the device and signs the
+// proof-of-possession on the device. It is then also handed to the server, which
+// stores it encrypted at rest (lib/cota/keystore.ts) so scheduled runs can place
+// orders. A server breach that also obtains the encryption key could therefore
+// expose trading authority — bounded by the venue (no withdrawals) and the leash.
 //
 // The two-signature handshake (unchanged from Perpl's design):
 //   1. The user's passkey wallet signs the EIP-712 payload  -> proves account

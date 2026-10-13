@@ -22,11 +22,10 @@ describe("governsLiveOrders", () => {
     expect(governsLiveOrders({ ...ok, revokedAt: new Date() })).toBe(false);
   });
 
-  it("rejects a PRACTICE leash — signed, never anchored", () => {
-    // The hole this closes: practice mode is meant to cost nothing and
-    // authorise nothing, and its leash lands in the same table with a null
-    // anchor. Without this it would silently outrank the live leash by being
-    // newer, and govern real money.
+  it("rejects an unanchored leash — signed, anchor tx failed", () => {
+    // The hole this closes: a leash whose anchor tx failed lands in the same
+    // table with a null anchor. Without this it would silently outrank the
+    // anchored live leash by being newer, and govern real money unverifiably.
     expect(governsLiveOrders({ ...ok, anchorTxHash: null })).toBe(false);
   });
 
