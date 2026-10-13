@@ -23,6 +23,11 @@ import {
   type EnrollTerms,
   type PerpPayload,
 } from "@/lib/cota/enroll";
+import {
+  parsePerpKeyStatus,
+  perpKeyCreatedLabel,
+  type PerpKeyStatus,
+} from "@/lib/cota/perp-key-status";
 
 // ---------------------------------------------------------------------------
 // Authorising a Perpl trading key — verifier-only.
@@ -144,6 +149,28 @@ export default function CotaEnrollPage() {
 
   // In-flight secrets live in a ref, out of render state.
   const flight = useRef<Flight | null>(null);
+
+  // Server-side key status: a hunter who already created a key (e.g. on another
+  // device) sees "Perpl key already created on <date>" instead of "Create key".
+  const [serverKey, setServerKey] = useState<PerpKeyStatus | null>(null);
+  const [replacing, setReplacing] = useState(false);
+  useEffect(() => {
+    if (auth.status !== "signed-in") return;
+    let ignore = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/cota/perp-key");
+        if (!res.ok) return;
+        const status = parsePerpKeyStatus(await res.json());
+        if (!ignore) setServerKey(status);
+      } catch {
+        // Status is advisory; fall back to the normal create flow.
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [auth.status]);
 
   // On mount: if this device already holds a live key, show it. Otherwise the
   // phase depends on whether the wallet is available yet.
@@ -330,6 +357,7 @@ export default function CotaEnrollPage() {
   const reenrol = useCallback(() => {
     clearEnrollment();
     setKey(null);
+    setReplacing(true);
     flight.current = null;
     setPhase(auth.status === "signed-in" ? "ready" : "signin");
   }, [auth.status]);
@@ -353,6 +381,11 @@ export default function CotaEnrollPage() {
         <Panel>
           <div className="flex flex-col gap-3">
             <Pill color="#4ade80">{t.haveKey}</Pill>
+            {serverKey?.stored ? (
+              <p className="text-ink-dim text-xs">
+                {perpKeyCreatedLabel(serverKey.createdAt, locale)}
+              </p>
+            ) : null}
             <dl className="text-sm">
               <div className="flex justify-between py-1">
                 <dt className="text-ink-dim">{t.account}</dt>
@@ -386,6 +419,21 @@ export default function CotaEnrollPage() {
           <p className="text-ink-dim text-sm">{t.intro}</p>
           <SignInPrompt label={t.signin} />
         </div>
+      ) : phase === "ready" && serverKey?.stored && !replacing ? (
+        <Panel>
+          <div className="flex flex-col gap-3">
+            <Pill color="#4ade80">
+              {perpKeyCreatedLabel(serverKey.createdAt, locale)}
+            </Pill>
+            <Note tone="info">{t.deviceNote}</Note>
+            <a href="/cota/trade">
+              <Button className="w-full">{t.goTrade}</Button>
+            </a>
+            <Button tone="ghost" onClick={() => setReplacing(true)}>
+              {t.reenrol}
+            </Button>
+          </div>
+        </Panel>
       ) : phase === "ready" ? (
         <div className="flex flex-col gap-4">
           <p className="text-ink-dim text-sm">{t.intro}</p>

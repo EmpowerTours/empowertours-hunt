@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
-import { hasPerpKey, storePerpKey } from "@/lib/cota/keystore";
+import { getPerpKeyStatus, storePerpKey } from "@/lib/cota/keystore";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/perp-key — a hunter hands their enrolled Perpl trading key to
@@ -49,7 +49,11 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   try {
     const player = await requirePlayer(req);
-    return NextResponse.json({ stored: await hasPerpKey(player.id) });
+    const status = await getPerpKeyStatus(player.id);
+    return NextResponse.json({
+      stored: status.stored,
+      createdAt: status.createdAt ? status.createdAt.toISOString() : null,
+    });
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: "sign in first" }, { status: 401 });

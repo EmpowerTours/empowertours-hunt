@@ -93,3 +93,14 @@ export async function hasPerpKey(playerId: string): Promise<boolean> {
   });
   return row !== null;
 }
+
+/** Whether a key is stored and when it was created (never the key itself). */
+export async function getPerpKeyStatus(
+  playerId: string,
+): Promise<{ stored: boolean; createdAt: Date | null }> {
+  const row = await prisma.perpKey.findUnique({
+    where: { playerId },
+    select: { createdAt: true },
+  });
+  return { stored: row !== null, createdAt: row?.createdAt ?? null };
+}
