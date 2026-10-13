@@ -490,3 +490,45 @@ describe("what the idempotency key has to survive", () => {
     expect(new Set(seen).size).toBe(1);
   });
 });
+
+describe("a non-2xx from Aurora keeps Aurora's reason", () => {
+  it("puts status and message in the error, never the key", async () => {
+    const { requestPersistentDepositAddress } = await import("./aurora");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ message: "Application key not found", statusCode: 404 }),
+          { status: 404 },
+        ),
+    );
+    const err = await requestPersistentDepositAddress(
+      {
+        recipient: "0x0000000000000000000000000000000000000001",
+        sender: "0x0000000000000000000000000000000000000001",
+        depositChain: "evm",
+      },
+      { fetch: fetchMock as unknown as typeof fetch, appKey: "SECRETKEY" },
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AuroraError);
+    expect((err as AuroraError).status).toBe(404);
+    expect((err as AuroraError).message).toBe(
+      "aurora: persistent-deposit-address 404: Application key not found",
+    );
+    expect((err as AuroraError).message).not.toContain("SECRETKEY");
+  });
+
+  it("sends the MON asset id by default", async () => {
+    const { requestPersistentDepositAddress } = await import("./aurora");
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ depositAddress: "0xabc" }), { status: 200 }),
+    );
+    await requestPersistentDepositAddress(
+      { recipient: "0x01", sender: "0x01", depositChain: "evm" },
+      { fetch: fetchMock as unknown as typeof fetch, appKey: "k" },
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.destinationAsset).toBe(MONAD_MON_ASSET_ID);
+    expect(body.destinationChain).toBe("monad");
+  });
+});

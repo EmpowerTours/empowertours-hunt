@@ -96,8 +96,15 @@ function fail(err: unknown) {
     // An unset key and a 500 from Aurora are both "this route is not available
     // right now", and neither is the hunter's problem to distinguish.
     const unconfigured = /is not set/.test(err.message);
+    if (unconfigured) {
+      return NextResponse.json({ error: "unconfigured" }, { status: 503 });
+    }
+    // Logged with Aurora's own reason so a failure is diagnosable from the
+    // Railway logs, and echoed as `detail` (never contains the key: the key is
+    // only in the URL, which is not part of the message).
+    console.error("[cota/aurora]", err.message);
     return NextResponse.json(
-      { error: unconfigured ? "unconfigured" : "upstream" },
+      { error: "upstream", detail: err.message, upstreamStatus: err.status },
       { status: 503 },
     );
   }

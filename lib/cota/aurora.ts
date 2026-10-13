@@ -75,10 +75,43 @@ export const MONAD_USDC_ADDRESS =
 export const USDC_DECIMALS = 6;
 
 export class AuroraError extends Error {
-  constructor(message: string) {
+  /** Aurora's HTTP status, when the failure was a non-2xx answer. */
+  readonly status: number | null;
+  constructor(message: string, status: number | null = null) {
     super(message);
     this.name = "AuroraError";
+    this.status = status;
   }
+}
+
+/**
+ * Build the error for a non-2xx answer WITH Aurora's own reason in it.
+ *
+ * Dropping the body left production saying only "Aurora did not answer" while
+ * Aurora had answered, with e.g. `Application key not found` (404) or a 400
+ * naming the bad field. Capped, because it ends up in logs and a JSON reply.
+ */
+export async function auroraHttpError(
+  what: string,
+  res: Response,
+): Promise<AuroraError> {
+  let reason = "";
+  try {
+    const text = await res.text();
+    try {
+      const j = JSON.parse(text) as { message?: unknown };
+      reason = typeof j.message === "string" ? j.message : text;
+    } catch {
+      reason = text;
+    }
+  } catch {
+    // body unreadable; the status alone still says more than nothing
+  }
+  reason = reason.replace(/\s+/g, " ").trim().slice(0, 300);
+  return new AuroraError(
+    `aurora: ${what} ${res.status}${reason ? `: ${reason}` : ""}`,
+    res.status,
+  );
 }
 
 /**
@@ -454,7 +487,7 @@ export async function requestPersistentDepositAddress(
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new AuroraError(`aurora: persistent-deposit-address ${res.status}`);
+    throw await auroraHttpError("persistent-deposit-address", res);
   }
   return parsePersistentAddress(await res.json());
 }
@@ -490,7 +523,7 @@ export async function readPersistentDeposits(
     `?address=${encodeURIComponent(depositAddress)}&type=${type}`;
   const res = await doFetch(url, { signal: deps.signal, cache: "no-store" });
   if (!res.ok) {
-    throw new AuroraError(`aurora: persistent-deposit-status ${res.status}`);
+    throw await auroraHttpError("persistent-deposit-status", res);
   }
   return parsePersistentDeposits(await res.json(), type);
 }

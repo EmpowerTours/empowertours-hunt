@@ -70,6 +70,10 @@ const COPY = {
     copied: "Copiado",
     unconfigured:
       "Esta ruta no está disponible ahora mismo. Usa las otras opciones para fondear.",
+    session:
+      "Tu sesión caducó. Vuelve a iniciar sesión con tu passkey e inténtalo de nuevo.",
+    server:
+      "Algo falló de nuestro lado, no en Aurora. Vuelve a intentarlo en un momento.",
     upstream:
       "Aurora no respondió. Tu dirección, si ya tienes una, sigue siendo válida — vuelve a intentarlo.",
     swap: "Cambiar MON → AUSD →",
@@ -103,6 +107,10 @@ const COPY = {
     copied: "Copied",
     unconfigured:
       "This route is not available right now. Use the other funding options.",
+    session:
+      "Your session expired. Sign in again with your passkey, then try again.",
+    server:
+      "Something failed on our side, not Aurora's. Try again in a moment.",
     upstream:
       "Aurora did not answer. Any address you already have is still valid — try again.",
     swap: "Swap MON → AUSD →",
@@ -130,7 +138,10 @@ export default function OnrampPage() {
   const signedIn = auth.status === "signed-in";
 
   const [state, setState] = useState<AddressState | null>(null);
-  const [error, setError] = useState<"unconfigured" | "upstream" | null>(null);
+  const [error, setError] = useState<
+    "unconfigured" | "upstream" | "session" | "server" | null
+  >(null);
+  const [detail, setDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [options, setOptions] = useState<
@@ -204,6 +215,7 @@ export default function OnrampPage() {
   const issue = useCallback(async () => {
     setBusy(true);
     setError(null);
+    setDetail(null);
     try {
       const res = await fetch("/api/cota/aurora", {
         method: "POST",
@@ -211,12 +223,20 @@ export default function OnrampPage() {
         body: JSON.stringify({}),
       });
       if (res.status === 503) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          detail?: string;
+        };
         setError(body.error === "unconfigured" ? "unconfigured" : "upstream");
+        setDetail(typeof body.detail === "string" ? body.detail : null);
+        return;
+      }
+      if (res.status === 401) {
+        setError("session");
         return;
       }
       if (!res.ok) {
-        setError("upstream");
+        setError("server");
         return;
       }
       setState((await res.json()) as AddressState);
@@ -277,7 +297,14 @@ export default function OnrampPage() {
         <Note>{t.unconfigured}</Note>
       ) : (
         <>
-          {error === "upstream" ? <Note>{t.upstream}</Note> : null}
+          {error === "upstream" ? (
+            <Note>
+              {t.upstream}
+              {detail ? ` (${detail})` : null}
+            </Note>
+          ) : null}
+          {error === "session" ? <Note>{t.session}</Note> : null}
+          {error === "server" ? <Note>{t.server}</Note> : null}
 
           {address == null ? (
             <Button onClick={issue} disabled={busy}>
