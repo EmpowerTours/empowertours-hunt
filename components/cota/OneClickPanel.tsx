@@ -633,6 +633,16 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           {strandedAfter(result, lang) && (
             <span className="mt-1 block">{strandedAfter(result, lang)}</span>
           )}
+          {result.failedAt === "swap" && (
+            <a
+              href="/cota/swap/usdc"
+              className="mt-2 block font-semibold underline"
+            >
+              {lang === "es"
+                ? "Terminar de convertir USDC a AUSD →"
+                : "Finish converting USDC to AUSD →"}
+            </a>
+          )}
         </Note>
       )}
       {result?.ok && (

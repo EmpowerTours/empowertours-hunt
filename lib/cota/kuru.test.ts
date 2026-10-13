@@ -188,3 +188,45 @@ describe("parseQuote — an empty quote is not a quote", () => {
     expect(() => parseQuote({ output: "1" })).toThrow(/missing/i);
   });
 });
+
+import {
+  KURU_EXECUTOR as EXEC,
+  approvalsNeeded,
+  shouldResumeUsdc,
+  spendersFor,
+} from "./kuru";
+
+describe("spendersFor (2026-10-13 router change)", () => {
+  const ROUTER = "0xb3e6778480b2e488385e8205ea05e20060b813cb" as const;
+  it("approves the quote's own `to`, keeping the executor", () => {
+    expect(spendersFor({ to: ROUTER })).toEqual([ROUTER, EXEC]);
+  });
+  it("lowercases and does not duplicate the executor", () => {
+    expect(
+      spendersFor({ to: EXEC.toUpperCase().replace("0X", "0x") as `0x${string}` }),
+    ).toEqual([EXEC]);
+  });
+  it("tops up only the spenders short of the amount", () => {
+    // The failing wallet: 0.05 USDC to the router, plenty to the executor.
+    expect(
+      approvalsNeeded(
+        [
+          { spender: ROUTER, allowance: 50_000n },
+          { spender: EXEC, allowance: 10n ** 12n },
+        ],
+        47_680_000n,
+      ),
+    ).toEqual([ROUTER]);
+  });
+});
+
+describe("shouldResumeUsdc", () => {
+  it("offers to finish when USDC is held and no AUSD", () => {
+    expect(shouldResumeUsdc(47_680_000n, 0n)).toBe(true);
+  });
+  it("stays quiet on dust, unknown balances, or AUSD already held", () => {
+    expect(shouldResumeUsdc(9_999n, 0n)).toBe(false);
+    expect(shouldResumeUsdc(null, 0n)).toBe(false);
+    expect(shouldResumeUsdc(47_680_000n, 10_000_000n)).toBe(false);
+  });
+});

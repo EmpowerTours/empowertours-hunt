@@ -4,8 +4,9 @@ import type { LocalAccount } from "viem";
 import { publicClient, walletClientFor } from "./swap";
 import {
   AUSD,
-  KURU_EXECUTOR,
   USDC,
+  approvalsNeeded,
+  spendersFor,
   kuruQuote,
   kuruToken,
   type KuruQuote,
@@ -17,7 +18,7 @@ import {
 // Three transactions, and the shape is forced rather than chosen:
 //
 //   1. MON  -> USDC   on Kuru's ORDER BOOK          <- the trade
-//   2. approve USDC   to Kuru's EXECUTOR            <- only if allowance short
+//   2. approve USDC   to the quote's spender(s)      <- only if allowance short
 //   3. USDC -> AUSD   stable hop                    <- the conversion
 //
 // Step 1 is the one that matters. Measured on mainnet, a MON->USDC quote
@@ -133,6 +134,8 @@ async function quoteThatExecutes(args: {
   tokenOut: string;
   amount: bigint;
   attempts?: number;
+  /** Runs before each simulation — used to approve the quote's own spender. */
+  prepare?: (q: KuruQuote) => Promise<void>;
 }): Promise<KuruQuote> {
   const pc = publicClient();
   const attempts = args.attempts ?? 4;
@@ -162,6 +165,7 @@ async function quoteThatExecutes(args: {
       amount,
     });
     try {
+      await args.prepare?.(q);
       // The simulation IS the check. Monad charges the full gas limit on a
       // revert, so a route that fails here must never be signed.
       await pc.call({
@@ -280,10 +284,8 @@ export interface UsdcConversion {
  * USDC -> AUSD: the approval and the conversion, and nothing else.
  *
  * Pulled out of the MON path rather than duplicated because of what lives in
- * it. The spender is KURU_EXECUTOR, not the address the transaction is sent
- * to — established by elimination on mainnet, absent from Kuru's
- * documentation, and worth exactly one copy. A second implementation that
- * approved the entrypoint would look right and revert 0x5264a63f.
+ * it. The spender comes from the quote (spendersFor): the quote's own `to`,
+ * plus KURU_EXECUTOR for routes that still delegate the pull to it.
  *
  * A hunter arriving from /cota/onramp starts HERE: Aurora already delivered
  * their USDC, so the order-book leg that buys it has nothing to do.
@@ -301,50 +303,53 @@ export async function convertUsdcToAusd(args: {
   const user = account.address;
   const token = args.token ?? (await kuruToken(user));
 
-  // --- allowance, only if it is short -------------------------------------
+  // --- allowance for whoever the quote says will pull ---------------------
   //
-  // THE SPENDER IS NOT THE ADDRESS THE TRANSACTION IS SENT TO. Approving the
-  // entrypoint that `to` names is the obvious thing and it does not work: the
-  // swap reverts 0x5264a63f with a correct allowance in place. Kuru's
-  // entrypoint delegates the pull to its executor, and that is what needs the
-  // approval.
-  //
-  // Established by elimination on mainnet rather than from documentation,
-  // which does not mention the executor at all. Simulating from an address
-  // holding USDC with NO allowance reverts 0x7939f424 — Solady's
-  // TransferFromFailed — while ours reverted with something else, which is
-  // what proved the transfer was already succeeding and the failure was
-  // downstream. Approving KURU_EXECUTOR then made the same call return
-  // 0.497674 AUSD.
-  const allowance = (await pc.readContract({
-    address: USDC,
-    abi: ERC20_ABI,
-    functionName: "allowance",
-    args: [user, KURU_EXECUTOR],
-  })) as bigint;
-  if (allowance < usdcAmount) {
-    step("approving");
-    // Exactly what this swap needs, not an unbounded approval. A hunter's
-    // wallet is their whole balance here and there is no reason to leave a
-    // standing claim on it to save one signature later.
-    const approveHash = await walletClientFor(account).writeContract({
-      address: USDC,
-      abi: ERC20_ABI,
-      functionName: "approve",
-      args: [KURU_EXECUTOR, usdcAmount],
-    });
-    const r = await pc.waitForTransactionReceipt({ hash: approveHash });
-    if (r.status !== "success") throw new Error("kuru: USDC approval reverted");
-  }
+  // Formerly hard-coded to KURU_EXECUTOR. Kuru's quote now addresses a router
+  // (0xb3e6…13cb) that calls transferFrom itself, so the executor-only
+  // approval reverted 0x7939f424 (TransferFromFailed). The spender set is now
+  // read from each quote (spendersFor) and topped up — exactly to this swap's
+  // amount, never unbounded — BEFORE the quote is simulated, since a
+  // simulation without the allowance can only fail.
+  const approved = new Set<string>();
+  const ensureAllowance = async (q: KuruQuote) => {
+    const spenders = spendersFor(q).filter((s) => !approved.has(s));
+    const allowances = await Promise.all(
+      spenders.map(async (spender) => ({
+        spender,
+        allowance: (await pc.readContract({
+          address: USDC,
+          abi: ERC20_ABI,
+          functionName: "allowance",
+          args: [user, spender],
+        })) as bigint,
+      })),
+    );
+    for (const spender of approvalsNeeded(allowances, usdcAmount)) {
+      step("approving");
+      const approveHash = await walletClientFor(account).writeContract({
+        address: USDC,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [spender, usdcAmount],
+      });
+      const r = await pc.waitForTransactionReceipt({ hash: approveHash });
+      if (r.status !== "success") throw new Error("kuru: USDC approval reverted");
+    }
+    spenders.forEach((s) => approved.add(s));
+  };
 
   // --- the conversion, quoted from the amount actually held ---------------
-  step("converting");
   const leg2 = await quoteThatExecutes({
     account,
     token,
     tokenIn: USDC,
     tokenOut: AUSD,
     amount: usdcAmount,
+    prepare: async (q) => {
+      await ensureAllowance(q);
+      step("converting");
+    },
   });
   const ausdBefore = (await pc.readContract({
     address: AUSD,

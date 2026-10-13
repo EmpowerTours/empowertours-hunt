@@ -58,6 +58,41 @@ export const KURU_MON_USDC_MARKET =
 export const KURU_EXECUTOR =
   "0x2f84fb8982073f39ba47c7fcc29119af074abbcb" as const;
 
+/**
+ * Every address an ERC-20 leg of this quote may pull tokens through.
+ *
+ * Kuru moved: on 2026-10-13 a USDC->AUSD quote was addressed to router
+ * 0xb3e6778480b2e488385e8205ea05e20060b813cb, which calls transferFrom ITSELF.
+ * Approving only KURU_EXECUTOR left that leg reverting 0x7939f424
+ * (TransferFromFailed) with 47.68 USDC sitting in the wallet. Which contract
+ * pulls depends on the route, so the quote's own `to` is always approved, and
+ * the executor is kept for the routes that still delegate to it.
+ */
+export function spendersFor(q: Pick<KuruQuote, "to">): `0x${string}`[] {
+  const to = q.to.toLowerCase() as `0x${string}`;
+  return to === KURU_EXECUTOR ? [to] : [to, KURU_EXECUTOR];
+}
+
+/** Spenders whose current allowance is below `amount` — the approvals to send. */
+export function approvalsNeeded(
+  allowances: ReadonlyArray<{ spender: `0x${string}`; allowance: bigint }>,
+  amount: bigint,
+): `0x${string}`[] {
+  return allowances.filter((a) => a.allowance < amount).map((a) => a.spender);
+}
+
+/** Smallest USDC (6dp) worth offering to finish converting: one cent. */
+export const RESUME_USDC_MIN = 10_000n;
+
+/**
+ * Should the swap screen offer "Finish converting USDC to AUSD"?
+ * True when leg 1 has left USDC in the wallet and there is no AUSD yet.
+ */
+export function shouldResumeUsdc(usdc: bigint | null, ausd: bigint | null): boolean {
+  if (usdc === null) return false;
+  return usdc >= RESUME_USDC_MIN && (ausd ?? 0n) < RESUME_USDC_MIN;
+}
+
 /** Uniswap v4's PoolManager on Monad. Present in leg 2, absent from leg 1. */
 export const UNISWAP_V4_POOL_MANAGER =
   "0x188d586ddcf52439676ca21a244753fa19f9ea8e" as const;

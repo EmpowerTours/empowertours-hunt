@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { trackFeature } from "@/components/analytics/track";
 import { useLocale } from "next-intl";
-import { formatEther, parseEther } from "viem";
+import { formatEther, formatUnits, parseEther } from "viem";
 import { useAuthSlot } from "@/app/providers";
 import { Button, Note, Panel, Pill } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
@@ -24,8 +24,19 @@ import {
   AUSD as AUSD_TOKEN,
   kuruQuote,
   kuruToken,
+  shouldResumeUsdc,
   USDC,
 } from "@/lib/cota/kuru";
+
+const BAL_ABI = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
 
 // ---------------------------------------------------------------------------
 // MON -> AUSD. A hunter who only has MON turns it into AUSD here to fund a Perpl
@@ -75,6 +86,10 @@ const T = {
     stepApprove: "2/3 Autorizando USDC…",
     stepConvert: "3/3 Convirtiendo a AUSD…",
     viewBookTx: "Ver la operación en el libro",
+    resumeTitle: "Tienes USDC sin convertir",
+    resumeBody: (usdc: string) =>
+      `Tu MON ya se vendió por ${usdc} USDC, pero la conversión a AUSD no terminó. No vuelvas a cambiar MON: termina solo el paso USDC → AUSD.`,
+    resumeCta: "Terminar de convertir USDC a AUSD →",
     viaPool: "Vía Kuru (ruta por pool)",
     poolNote:
       "Kuru enrutó esta cantidad por un pool en vez del libro, porque ahí el precio es mejor para ti. Siguen siendo tres firmas.",
@@ -114,6 +129,10 @@ const T = {
     stepApprove: "2/3 Approving USDC…",
     stepConvert: "3/3 Converting to AUSD…",
     viewBookTx: "View the order-book trade",
+    resumeTitle: "You have unconverted USDC",
+    resumeBody: (usdc: string) =>
+      `Your MON already sold for ${usdc} USDC, but the conversion to AUSD did not finish. Don't swap MON again — just finish the USDC → AUSD step.`,
+    resumeCta: "Finish converting USDC to AUSD →",
     viaPool: "Via Kuru (routed through a pool)",
     poolNote:
       "Kuru routed this size through a pool rather than the order book, because the price there is better for you. Still three signatures.",
@@ -153,6 +172,8 @@ export default function SwapPage() {
   );
   const [step, setStep] = useState<KuruStep | null>(null);
   const [bookTx, setBookTx] = useState<string | null>(null);
+  const [usdcBalance, setUsdcBalance] = useState<bigint | null>(null);
+  const [ausdBalance, setAusdBalance] = useState<bigint | null>(null);
 
   const address = auth.walletAddress;
 
@@ -175,6 +196,21 @@ export default function SwapPage() {
             await pc.getBalance({ address: address as `0x${string}` }),
           );
           setGasPrice(await pc.getGasPrice());
+          // Leg 1 may have landed and leg 2 not: USDC with no AUSD. Read both
+          // so the screen can offer to finish rather than sell more MON.
+          const [u, a] = await Promise.all(
+            [USDC, AUSD_TOKEN].map(
+              (token) =>
+                pc.readContract({
+                  address: token,
+                  abi: BAL_ABI,
+                  functionName: "balanceOf",
+                  args: [address as `0x${string}`],
+                }) as Promise<bigint>,
+            ),
+          );
+          setUsdcBalance(u);
+          setAusdBalance(a);
         }
         return;
       } catch {
@@ -391,6 +427,19 @@ export default function SwapPage() {
         </Panel>
       ) : (
         <>
+          {shouldResumeUsdc(usdcBalance, ausdBalance) && usdcBalance !== null && (
+            <Note tone="warn" title={t.resumeTitle}>
+              <span className="block">
+                {t.resumeBody(Number(formatUnits(usdcBalance, 6)).toFixed(2))}
+              </span>
+              <a
+                href="/cota/swap/usdc"
+                className="mt-2 block font-semibold underline"
+              >
+                {t.resumeCta}
+              </a>
+            </Note>
+          )}
           <Panel className="space-y-2">
             <p className="text-ink-dim text-xs tracking-wide uppercase">
               {t.wallet}
