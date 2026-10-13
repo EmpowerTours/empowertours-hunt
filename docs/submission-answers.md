@@ -19,7 +19,8 @@ is `docs/submission-description.md`. **Re-read the numbers in it before you
 save** — several are counts from production that move.
 
 **GitHub repository** — `https://github.com/EmpowerTours/empowertours-hunt`
-The repo is public under AGPL-3.0 (see LICENSE and package.json), so judges
+The repo is public and dual licensed: AGPL-3.0 (see LICENSE) or a commercial
+licence from EmpowerTours (see README), so judges
 can open it directly; no collaborator invite is needed.
 
 **Live product** — `https://hunt.empowertours.xyz` (and `https://cota.empowertours.xyz`
