@@ -17,6 +17,9 @@ import {
   SWAP_ADDRESS,
   swapGasReserveWei,
   explainSwapError,
+  belowDeskMinimum,
+  formatMonCeil,
+  minMonForDesk,
   walletClientFor,
 } from "@/lib/cota/swap";
 import { swapMonToAusdViaKuru, type KuruStep } from "@/lib/cota/kuru-swap";
@@ -65,6 +68,11 @@ const T = {
     done: "¡Listo! Recibiste",
     deskLow: "La caja no tiene suficiente AUSD para eso ahora.",
     tooLittle: "Ingresa una cantidad de MON.",
+    deskMin: (mon: string) => `Mínimo para la caja: ${mon} MON.`,
+    belowMin: (mon: string) =>
+      `Es muy poco MON para la caja. Cambia al menos ${mon} MON.`,
+    minUnknown:
+      "No pudimos leer el mínimo de la caja. Intenta de nuevo en un momento.",
     noMon:
       "No tienes MON en tu billetera Cota. Envía MON a la dirección de arriba.",
     viewTx: "Ver transacción",
@@ -109,6 +117,10 @@ const T = {
     done: "Done! You received",
     deskLow: "The desk doesn't have enough AUSD for that right now.",
     tooLittle: "Enter an amount of MON.",
+    deskMin: (mon: string) => `Desk minimum: ${mon} MON.`,
+    belowMin: (mon: string) =>
+      `That's too little MON for the desk. Swap at least ${mon} MON.`,
+    minUnknown: "We couldn't read the desk minimum. Try again in a moment.",
     noMon: "No MON in your Cota wallet. Send MON to the address above.",
     viewTx: "View transaction",
     next: "Now deposit the AUSD to Perpl and trade on Cota.",
@@ -233,6 +245,50 @@ export default function SwapPage() {
       clearInterval(id);
     };
   }, [refreshBalances]);
+
+  // Desk minimum, from the desk's own live quote and minSwapAusd — never a
+  // constant, because the MON that clears 1 AUSD moves with the MON price.
+  // null + deskMinFailed = we could not read it, so say "try again" rather
+  // than show a number we cannot vouch for.
+  const [deskMinMon, setDeskMinMon] = useState<bigint | null>(null);
+  const [deskMinFailed, setDeskMinFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const read = async () => {
+      try {
+        const pc = publicClient();
+        const [min, perMon] = await Promise.all([
+          pc.readContract({
+            address: SWAP_ADDRESS,
+            abi: SWAP_ABI,
+            functionName: "minSwapAusd",
+          }) as Promise<bigint>,
+          pc.readContract({
+            address: SWAP_ADDRESS,
+            abi: SWAP_ABI,
+            functionName: "quote",
+            args: [10n ** 18n],
+          }) as Promise<bigint>,
+        ]);
+        const m = minMonForDesk(min, perMon);
+        if (live) {
+          setDeskMinMon(m);
+          setDeskMinFailed(m === null);
+        }
+      } catch {
+        if (live) {
+          setDeskMinMon(null);
+          setDeskMinFailed(true);
+        }
+      }
+    };
+    void read();
+    const id = setInterval(() => void read(), 60000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, []);
 
   // Live quote, debounced. All setState happens inside the delayed callback —
   // never synchronously in the effect body (react-hooks/set-state-in-effect).
@@ -381,13 +437,13 @@ export default function SwapPage() {
       trackFeature("swap_mon_to_ausd");
       void refreshBalances();
     } catch (e) {
-      setError(explainSwapError(e, lang));
+      setError(explainSwapError(e, lang, deskMinMon));
       setPhase("error");
       // Otherwise a failure at leg 3 leaves "2/3 Approving USDC…" on screen
       // next to an error, which reads as the app still working.
       setStep(null);
     }
-  }, [monInput, lang, t.tooLittle, t.reverted, refreshBalances, route]);
+  }, [monInput, lang, t.tooLittle, t.reverted, refreshBalances, route, deskMinMon]);
 
   const deskLow = quote !== null && available !== null && quote > available;
   const noMon = monBalance !== null && monBalance === 0n;
@@ -401,6 +457,15 @@ export default function SwapPage() {
     monBalance !== null && monBalance > gasReserve
       ? monBalance - gasReserve
       : 0n;
+  let inputWei = 0n;
+  try {
+    inputWei = monInput.trim() === "" ? 0n : parseEther(monInput);
+  } catch {
+    inputWei = 0n;
+  }
+  // Only the DESK route has this floor; Kuru has none.
+  const belowMin =
+    route === "desk" && inputWei > 0n && belowDeskMinimum(inputWei, deskMinMon);
   let overMax = false;
   try {
     overMax = monInput.trim() !== "" && parseEther(monInput) > maxSwap;
@@ -565,6 +630,17 @@ export default function SwapPage() {
               {route === "desk" && deskLow && (
                 <Note tone="warn">{t.deskLow}</Note>
               )}
+              {route === "desk" && deskMinMon !== null && (
+                <p className="text-ink-faint text-xs">
+                  {t.deskMin(formatMonCeil(deskMinMon))}
+                </p>
+              )}
+              {route === "desk" && deskMinFailed && (
+                <Note tone="warn">{t.minUnknown}</Note>
+              )}
+              {belowMin && deskMinMon !== null && (
+                <Note tone="warn">{t.belowMin(formatMonCeil(deskMinMon))}</Note>
+              )}
               {noMon && <Note tone="warn">{t.noMon}</Note>}
               {overMax && <Note tone="warn">{t.overMax}</Note>}
               {error && <Note tone="warn">{error}</Note>}
@@ -577,6 +653,7 @@ export default function SwapPage() {
                   phase === "swapping" ||
                   quote === null ||
                   (route === "desk" && deskLow) ||
+                  belowMin ||
                   noMon ||
                   overMax
                 }

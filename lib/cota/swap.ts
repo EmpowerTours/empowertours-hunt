@@ -4,7 +4,7 @@ import {
   formatUnits,
   type LocalAccount,
 } from "viem";
-import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
+import { monad, monadTransport } from "@/lib/monad";
 
 // ---------------------------------------------------------------------------
 // MON -> AUSD swap desk (MonAusdSwapOracle), live on Monad mainnet. A hunter
@@ -45,6 +45,13 @@ export const SWAP_ABI = [
   },
   {
     type: "function",
+    name: "minSwapAusd",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "swap",
     stateMutability: "payable",
     inputs: [{ name: "minAusdOut", type: "uint256" }],
@@ -76,12 +83,52 @@ export function minOut(quote: bigint, slippageBps = 100n): bigint {
   return (quote * (10_000n - slippageBps)) / 10_000n;
 }
 
+/**
+ * The least MON the desk will accept, from the desk's own live numbers.
+ *
+ * The desk reverts "below minimum" when a payout is under `minSwapAusd`. The
+ * MON that clears it moves with the MON price, so it cannot be a constant: a
+ * hard-coded "about 44 MON" went wrong when MON fell to $0.021316, where 44 MON
+ * quotes 0.928727 AUSD against a 1 AUSD floor (mainnet fork, 2026-10-27).
+ *
+ *   minMon = ceil(minSwapAusd * 1e18 / quote(1 MON)) * 1.01   (rounded up)
+ *
+ * The 1% is headroom for the price moving between this read and the swap.
+ * Returns null when there is no usable quote, so the page says "try again"
+ * instead of showing a number it cannot vouch for.
+ */
+export function minMonForDesk(
+  minSwapAusd: bigint,
+  ausdPerMon: bigint,
+  headroomBps = 100n,
+): bigint | null {
+  if (ausdPerMon <= 0n || minSwapAusd <= 0n) return null;
+  const ONE = 10n ** 18n;
+  const raw = (minSwapAusd * ONE + ausdPerMon - 1n) / ausdPerMon;
+  return (raw * (10_000n + headroomBps) + 9_999n) / 10_000n;
+}
+
+/** True when `monWei` is under the desk minimum. Unknown minimum = not blocked here; the simulate step still guards. */
+export function belowDeskMinimum(monWei: bigint, minMon: bigint | null): boolean {
+  return minMon !== null && monWei < minMon;
+}
+
+/** "47.86" — a MON amount rounded UP to 2dp, so the number shown always clears the floor. */
+export function formatMonCeil(wei: bigint): string {
+  const cents = (wei + 10n ** 16n - 1n) / 10n ** 16n;
+  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
+}
+
 export function formatAusd(amount6dp: bigint): string {
   return formatUnits(amount6dp, AUSD_DECIMALS);
 }
 
 /** Turn a revert/RPC error into one honest sentence for the hunter. */
-export function explainSwapError(err: unknown, lang: "es" | "en"): string {
+export function explainSwapError(
+  err: unknown,
+  lang: "es" | "en",
+  minMon: bigint | null = null,
+): string {
   const msg = String((err as { message?: string })?.message ?? err);
   const es = lang === "es";
   if (/desk out of AUSD/i.test(msg))
@@ -129,8 +176,12 @@ export function explainSwapError(err: unknown, lang: "es" | "en"): string {
   // predecessor's only real swap ever paid out 0.078 AUSD.
   if (/below minimum|amount too small/i.test(msg))
     return es
-      ? "Es muy poco MON — el mínimo es 1 AUSD (unos 44 MON)."
-      : "That's too little MON — the minimum is 1 AUSD (about 44 MON).";
+      ? minMon !== null
+        ? `Es muy poco MON — el mínimo ahora es ${formatMonCeil(minMon)} MON.`
+        : "Es muy poco MON para la caja. No pudimos leer el mínimo actual; intenta de nuevo en un momento."
+      : minMon !== null
+        ? `That's too little MON — the minimum right now is ${formatMonCeil(minMon)} MON.`
+        : "That's too little MON for the desk. We couldn't read the current minimum — try again in a moment.";
 
   if (/transfer amount mismatch/i.test(msg))
     return es

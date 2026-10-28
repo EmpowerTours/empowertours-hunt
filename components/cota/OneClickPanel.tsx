@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Button, Disclosure, Note, Panel } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
@@ -334,7 +335,10 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
   }, [auth.status, auth.walletAddress, pct]);
 
   useEffect(() => {
-    void load();
+    // Deferred a tick so load()'s setState calls run outside the effect body
+    // (react-hooks/set-state-in-effect). Same single load per change.
+    const id = setTimeout(() => void load(), 0);
+    return () => clearTimeout(id);
   }, [load]);
 
   if (auth.status !== "signed-in") {
@@ -430,12 +434,12 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
             />
           </div>
         </div>
-        <a
+        <Link
           href="/hunt"
           className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
         >
           {t.keepHunting}
-        </a>
+        </Link>
         {/* Stated as a requirement, not just as today's gap. A hunter deciding
             whether this is worth walking for needs the entry price of the whole
             mechanic, not only how far off they happen to be this minute. */}

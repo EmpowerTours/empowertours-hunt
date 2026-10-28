@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseBlockVisionNfts } from "./blockvision";
 
@@ -95,7 +96,7 @@ describe("parseBlockVisionNfts", () => {
 
 describe("the route prefers the indexer but keeps the scan", () => {
   const SRC = String(
-    require("node:fs").readFileSync(
+    readFileSync(
       new URL("../../app/api/hunt/collectibles/route.ts", import.meta.url),
       "utf8",
     ),
