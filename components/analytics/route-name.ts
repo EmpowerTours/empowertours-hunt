@@ -32,7 +32,6 @@ const KNOWN = new Set([
   "spot",
   "bridge",
   "onramp",
-  "practice",
   "wallet",
   "judge",
   "record",

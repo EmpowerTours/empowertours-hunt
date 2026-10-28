@@ -163,8 +163,7 @@ export default function CotaPage() {
   // differed only in skipping the on-chain anchor. Nothing on the row recorded
   // which mode it came from, so the leash history correctly showed real
   // leashes to someone who believed they were practising. The paper-trading
-  // simulator at /cota/practice still exists but is no longer linked from
-  // anywhere in the product — see the note on the enrol button below.
+  // simulator that lived at /cota/practice has been removed too.
 
   useEffect(() => {
     let live = true;
