@@ -4,7 +4,7 @@ import {
   formatUnits,
   type LocalAccount,
 } from "viem";
-import { monad, monadRpcUrl, monadTransport } from "@/lib/monad";
+import { monad, monadTransport } from "@/lib/monad";
 
 // ---------------------------------------------------------------------------
 // MON -> AUSD swap desk (MonAusdSwapOracle), live on Monad mainnet. A hunter

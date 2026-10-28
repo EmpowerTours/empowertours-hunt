@@ -96,7 +96,13 @@ export function FixReadout({
   // during render would differ between server and client and hydration-warn.
   const [platform, setPlatform] = useState<LocationPlatform>("desktop");
   useEffect(() => {
-    setPlatform(detectPlatform(navigator.userAgent));
+    // Deferred a tick so the setState is not synchronous in the effect body
+    // (react-hooks/set-state-in-effect); still once, after mount.
+    const id = setTimeout(
+      () => setPlatform(detectPlatform(navigator.userAgent)),
+      0,
+    );
+    return () => clearTimeout(id);
   }, []);
   const quality = fixQuality(fix, maxAccuracyM);
   const color = QUALITY_COLOR[quality];
