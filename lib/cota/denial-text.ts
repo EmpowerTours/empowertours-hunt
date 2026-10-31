@@ -22,7 +22,7 @@ export type ExecRefusal =
   | "account_frozen"
   | "no_collateral"
   | "position_open"
-  | "no_free_margin";
+  | "position_underwater";
 
 export type RefusalReason = DenyReason | ExecRefusal;
 
@@ -113,12 +113,11 @@ const TEXT: Record<RefusalReason, Record<Lang, string>> = {
     en: "You have a position open the other way on this market. Nothing was sent and nothing was spent. Close it on the trade page first if you want to switch sides.",
     es: "Tienes una posición abierta en sentido contrario en este mercado. No se envió nada ni se gastó nada. Ciérrala primero en la página de operar si quieres cambiar de lado.",
   },
-  // The venue's "available" counts margin an open position is already using
-  // (2026-10-31), so the route charges each position itself and refuses an
-  // order the rest cannot back.
-  no_free_margin: {
-    en: "That order needs more margin than is free. Your open positions are holding part of your collateral. Nothing was sent. Pick a smaller size or deposit more.",
-    es: "Esa orden necesita más margen del que está libre. Tus posiciones abiertas retienen parte de tu colateral. No se envió nada. Elige un tamaño menor o deposita más.",
+  // Perpl will not settle an order adding to a position losing more than the
+  // market's order_max_neg_pnl_collat_bps of its collateral (300 on MON).
+  position_underwater: {
+    en: "Perpl won't add to a position that's this far down. Nothing was sent and nothing was spent. You can add again once the price recovers, or after you close the position in profit.",
+    es: "Perpl no suma a una posición que va tan abajo. No se envió nada ni se gastó nada. Podrás sumar cuando el precio se recupere, o cuando cierres la posición con ganancia.",
   },
 };
 

@@ -51,41 +51,72 @@ export function describePositions(
 }
 
 /**
- * Collateral that can back a NEW order, in USD.
+ * How far an open position is down, as basis points of its collateral, or null
+ * when it cannot be priced. Zero when it is not losing.
  *
- * Perpl's account frame said locked 0 and available $26.00 while a 395 MON long
- * was open (2026-10-31), and three orders sized off that $26 were refused at
- * settlement. So "available" is not trusted on its own: each open position is
- * charged its margin at the current mark, plus any loss it is carrying, and the
- * result is capped at what the venue calls available in case it ever does
- * report locked margin. A position we cannot price frees nothing — null.
+ * Collateral is taken as size × entry ÷ leverage. The venue keeps each
+ * position's collateral apart from the account balance (`c` on the mt 26 frame:
+ * 2.504014 on the 214 MON 2x long from 0.023308, i.e. that margin plus its fee),
+ * so this slightly understates it and slightly overstates the ratio.
  */
-export function freeMarginUsd(args: {
-  balanceUsd: number;
-  availableUsd: number;
-  positions: readonly PositionView[];
-  /** Mark per market symbol, e.g. { MON: 0.0192 }. */
-  marks: Readonly<Record<string, number>>;
-}): number | null {
-  let held = 0;
-  for (const p of args.positions) {
-    const mark = args.marks[p.market];
-    if (
-      !p.scaled ||
-      p.side === "unknown" ||
-      p.entryUsd === null ||
-      !(mark > 0) ||
-      !(p.leverageX > 0)
-    ) {
-      return null;
-    }
-    const loss =
-      p.side === "long"
-        ? (p.entryUsd - mark) * p.size
-        : (mark - p.entryUsd) * p.size;
-    held += (p.size * mark) / p.leverageX + Math.max(0, loss);
+export function lossBpsOfCollateral(
+  p: PositionView,
+  markUsd: number,
+): number | null {
+  if (
+    !p.scaled ||
+    p.side === "unknown" ||
+    p.entryUsd === null ||
+    !(p.entryUsd > 0) ||
+    !(markUsd > 0) ||
+    !(p.leverageX > 0)
+  ) {
+    return null;
   }
-  return Math.max(0, Math.min(args.availableUsd, args.balanceUsd - held));
+  const collateral = (p.size * p.entryUsd) / p.leverageX;
+  const loss =
+    p.side === "long"
+      ? (p.entryUsd - markUsd) * p.size
+      : (markUsd - p.entryUsd) * p.size;
+  return Math.max(0, Math.round((loss / collateral) * 10_000));
+}
+
+/**
+ * Whether Perpl will refuse to add to the open position on `market`.
+ *
+ * The market's context carries `order_max_neg_pnl_collat_bps` (300 on MON), and
+ * every order carries a matching `maxNegPnlCollatBPS` (perpl-sdk 0.2.4,
+ * OrderRequest). Five orders adding to a 395 MON long that was 22% down came
+ * back TakerOrderSettlementFailed on 2026-10-31, from $15.85 to $26 against
+ * $26.00 free. Reading the field by its name, a position losing more than that
+ * share of its collateral cannot be added to, at any size. Checked here so the
+ * money is not swapped and deposited first for an order that cannot settle.
+ *
+ * `unknown` when it cannot be judged — no limit published, or a position that
+ * cannot be priced. The caller refuses on that too.
+ */
+export function addBlockedByLoss(args: {
+  positions: readonly PositionView[];
+  market: string;
+  markUsd: number | null;
+  limitBps: number | null;
+}):
+  | { blocked: false }
+  | { blocked: true; lossBps: number; limitBps: number }
+  | { blocked: "unknown" } {
+  const open = args.positions.filter((p) => p.market === args.market);
+  if (open.length === 0) return { blocked: false };
+  if (args.markUsd === null || args.limitBps === null)
+    return { blocked: "unknown" };
+  let worst = 0;
+  for (const p of open) {
+    const bps = lossBpsOfCollateral(p, args.markUsd);
+    if (bps === null) return { blocked: "unknown" };
+    worst = Math.max(worst, bps);
+  }
+  return worst > args.limitBps
+    ? { blocked: true, lossBps: worst, limitBps: args.limitBps }
+    : { blocked: false };
 }
 
 /**

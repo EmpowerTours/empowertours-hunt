@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   opensAgainst,
+  type addBlockedByLoss,
   type PositionView,
 } from "@/lib/cota/venue/position-view";
+
+type AddCheck = ReturnType<typeof addBlockedByLoss>;
 import { Button, Disclosure, Note, Panel } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { formatMon } from "@/components/hunt/format";
@@ -227,7 +230,8 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
   // What is already open at Perpl, read through the hunter's own key — so
   // nobody has to go to app.perpl.xyz to find out what is holding margin.
   const [positions, setPositions] = useState<PositionView[]>([]);
-  const [freeUsd, setFreeUsd] = useState<number | null>(null);
+  // Whether Perpl will settle an order adding to the open MON position.
+  const [addCheck, setAddCheck] = useState<AddCheck>({ blocked: false });
   const [failed, setFailed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState<Step | null>(null);
@@ -310,17 +314,21 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       const b: Balances = {
         walletMonWei: monWei,
         walletAusd6: ausd6,
-        // FREE margin, not available: Perpl's `available` has counted the
-        // margin an open position holds as free (2026-10-31), so the server
-        // charges each position itself (freeMarginUsd). Null — an open
-        // position it could not price — backs nothing.
+        // AVAILABLE, not balance: margin already locked by an open position
+        // or order cannot back a new one, and sizing from the balance would
+        // count it twice. An open position's own collateral is held apart from
+        // this already (`c` on the position frame).
         perplAusd6: BigInt(
-          Math.round((accountRes?.account?.freeUsd ?? 0) * 1e6),
+          Math.round(
+            (accountRes?.account?.availableUsd ??
+              accountRes?.account?.balanceUsd ??
+              0) * 1e6,
+          ),
         ),
       };
       setBalances(b);
       setPositions(accountRes?.account?.positions ?? []);
-      setFreeUsd(accountRes?.account?.freeUsd ?? null);
+      setAddCheck(accountRes?.account?.addCheck ?? { blocked: false });
       setPlan(
         planOneClick(b, {
           enrolled: Boolean(accountRes?.enrolled),
@@ -486,12 +494,13 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
     trade: t.stepTrade,
   };
 
-  // Open positions don't stop a new order on the same side; they shrink it to
-  // the margin left free. They stop it only when it would trade against one,
-  // or when nobody could price them.
+  // An open position doesn't stop a new order on the same side. It stops one
+  // that would trade against it, and one adding to it while it is down more
+  // than Perpl will settle against — checked here because the swap and the
+  // deposit come before the order, and would move the money for nothing.
   const blocked =
     opensAgainst(positions, ONE_CLICK.market, side) ||
-    (positions.length > 0 && freeUsd === null);
+    addCheck.blocked !== false;
 
   return (
     <Panel className="space-y-3" noTranslate>
@@ -705,13 +714,17 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           <span className="mt-1 block">
             {opensAgainst(positions, ONE_CLICK.market, side)
               ? refusalText("position_open", lang)
-              : freeUsd === null
+              : addCheck.blocked === true
                 ? lang === "es"
-                  ? "No se pudo calcular el margen libre, así que no se abre nada."
-                  : "The free margin could not be worked out, so nothing will open."
-                : lang === "es"
-                  ? `Margen libre para sumar: $${freeUsd.toFixed(2)}. Lo demás lo retienen estas posiciones.`
-                  : `Free margin to add with: $${freeUsd.toFixed(2)}. The rest is held by these positions.`}
+                  ? `Perpl no suma a una posición que pierde más del ${(addCheck.limitBps / 100).toFixed(0)}% de su colateral, y esta va ${(addCheck.lossBps / 100).toFixed(1)}% abajo. No se moverá nada. Podrás sumar cuando MON se recupere, o cuando cierres esta posición con ganancia.`
+                  : `Perpl won't add to a position that's down more than ${(addCheck.limitBps / 100).toFixed(0)}% of its collateral, and this one is down ${(addCheck.lossBps / 100).toFixed(1)}%. Nothing will move. You can add again once MON recovers, or after you close this position in profit.`
+                : addCheck.blocked === "unknown"
+                  ? lang === "es"
+                    ? "No se pudo comprobar si Perpl aceptaría sumar a esta posición, así que no se abre nada."
+                    : "Couldn't check whether Perpl would let you add to this position, so nothing will open."
+                  : lang === "es"
+                    ? "Una nueva orden se sumará a esta posición."
+                    : "A new order will add to this position."}
           </span>
           <a href="/cota/trade" className="mt-2 block font-semibold underline">
             {lang === "es" ? "Ir a operar →" : "Go to trade →"}

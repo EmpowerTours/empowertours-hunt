@@ -3,10 +3,10 @@ import { AuthError, requirePlayer } from "@/lib/auth";
 import { loadPerpKey } from "@/lib/cota/keystore";
 import { readAccountPositions } from "@/lib/cota/venue/account-read";
 import { EXECUTABLE_MARKETS } from "@/lib/cota/order";
-import { readMark } from "@/lib/cota/venue/market-data";
+import { readLossCheckInputs } from "@/lib/cota/venue/market-data";
 import {
+  addBlockedByLoss,
   describePositions,
-  freeMarginUsd,
 } from "@/lib/cota/venue/position-view";
 
 // ---------------------------------------------------------------------------
@@ -46,22 +46,20 @@ export async function GET(req: Request) {
     }
 
     const positions = describePositions(read.positions);
-    // What a new order can actually use. Only priced when something is open:
-    // with nothing open it is just `available`, and the mark read is a socket.
-    // A mark that cannot be read leaves it null, never a guess.
-    let freeUsd: number | null = read.account.available / 1e6;
-    if (positions.length > 0) {
-      const marks: Record<string, number> = {};
-      for (const m of Object.values(EXECUTABLE_MARKETS)) {
-        if (!positions.some((p) => p.market === m.symbol)) continue;
-        const mark = await readMark(m.id, m.priceDecimals).catch(() => null);
-        if (mark !== null) marks[m.symbol] = mark;
-      }
-      freeUsd = freeMarginUsd({
-        balanceUsd: read.account.balance / 1e6,
-        availableUsd: read.account.available / 1e6,
+    // Whether Perpl will settle an order ADDING to what is open on MON, the
+    // market one-click trades. One context read, only when something is open.
+    const mon = EXECUTABLE_MARKETS.MON;
+    let addCheck: ReturnType<typeof addBlockedByLoss> = { blocked: false };
+    if (positions.some((p) => p.market === mon.symbol)) {
+      const { markUsd, limitBps } = await readLossCheckInputs(
+        mon.id,
+        mon.priceDecimals,
+      );
+      addCheck = addBlockedByLoss({
         positions,
-        marks,
+        market: mon.symbol,
+        markUsd,
+        limitBps,
       });
     }
 
@@ -79,9 +77,8 @@ export async function GET(req: Request) {
         // Open positions hold margin the order form cannot spend. Shown so a
         // hunter never has to go to app.perpl.xyz to find out what is open.
         positions,
-        // Available minus what the open positions hold (freeMarginUsd). The
-        // venue's own `available` has counted that margin as free.
-        freeUsd,
+        // Can one-click add to the open MON position? See addBlockedByLoss.
+        addCheck,
       },
     });
   } catch (err) {

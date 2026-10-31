@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { markFromFrame, quoteFromContext } from "./market-data";
+import {
+  markFromFrame,
+  maxNegPnlBpsFromContext,
+  quoteFromContext,
+} from "./market-data";
 
 // A real-shaped market-state frame (mt 9): the chain-wide stream carries every
 // market under `d`, keyed by market id (string), each with a scaled `mrk`.
@@ -91,5 +95,26 @@ describe("quoteFromContext", () => {
     expect(q.markUsd).toBeCloseTo(0.027131, 9);
     expect(q.bidUsd).toBeNull();
     expect(q.askUsd).toBeNull();
+  });
+});
+
+describe("maxNegPnlBpsFromContext", () => {
+  // Shape and value read off app.perpl.xyz/api/v1/pub/context, 2026-10-31.
+  const ctx = {
+    markets: [
+      {
+        id: 10,
+        order_max_market_slippage_bps: 100,
+        order_max_neg_pnl_collat_bps: 300,
+      },
+    ],
+  };
+  it("reads MON's limit", () => {
+    expect(maxNegPnlBpsFromContext(ctx, 10)).toBe(300);
+  });
+  it("is null for a market or a field that isn't there", () => {
+    expect(maxNegPnlBpsFromContext(ctx, 11)).toBeNull();
+    expect(maxNegPnlBpsFromContext({ markets: [{ id: 10 }] }, 10)).toBeNull();
+    expect(maxNegPnlBpsFromContext(null, 10)).toBeNull();
   });
 });

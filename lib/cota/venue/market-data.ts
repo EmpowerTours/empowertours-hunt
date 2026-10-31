@@ -266,3 +266,41 @@ export async function readBook(
       : Number(v) / scale;
   return { bidUsd: num(m.state.bid), askUsd: num(m.state.ask) };
 }
+
+/**
+ * `order_max_neg_pnl_collat_bps` for a market, from the public context, or null
+ * when absent or unreadable. See position-view.ts::addBlockedByLoss.
+ */
+export function maxNegPnlBpsFromContext(
+  body: unknown,
+  marketId: number,
+): number | null {
+  const b = body as {
+    markets?: { id?: number; order_max_neg_pnl_collat_bps?: number }[];
+  };
+  const v = b?.markets?.find(
+    (x) => x.id === marketId,
+  )?.order_max_neg_pnl_collat_bps;
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/** The mark and the loss limit for a market from ONE context read. */
+export async function readLossCheckInputs(
+  marketId: number,
+  priceDecimals: number,
+  opts: { signal?: AbortSignal } = {},
+): Promise<{ markUsd: number | null; limitBps: number | null }> {
+  const url =
+    process.env.PERPL_CONTEXT_URL ?? "https://app.perpl.xyz/api/v1/pub/context";
+  try {
+    const res = await fetch(url, { signal: opts.signal, cache: "no-store" });
+    if (!res.ok) return { markUsd: null, limitBps: null };
+    const body: unknown = await res.json();
+    return {
+      markUsd: quoteFromContext(body, marketId, priceDecimals)?.markUsd ?? null,
+      limitBps: maxNegPnlBpsFromContext(body, marketId),
+    };
+  } catch {
+    return { markUsd: null, limitBps: null };
+  }
+}

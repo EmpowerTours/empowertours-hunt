@@ -1,8 +1,9 @@
 import {
   describePositions,
-  freeMarginUsd,
+  addBlockedByLoss,
   opensAgainst,
 } from "@/lib/cota/venue/position-view";
+import { readLossCheckInputs } from "@/lib/cota/venue/market-data";
 import type { OpenPositionFrame } from "@/lib/cota/venue/frames";
 import { NextResponse } from "next/server";
 import { postOnlyResponse } from "@/lib/cota/post-only";
@@ -169,10 +170,10 @@ export async function POST(req: Request) {
     }
 
     // Adding to an open position is allowed; trading against it is not, and
-    // neither is asking for more margin than is actually free. The venue's
-    // account frame reported locked 0 and available $26.00 while a 395 MON long
-    // sat open (2026-10-31), so an order sized off "available" asked for margin
-    // that was not free. freeMarginUsd charges each open position itself.
+    // neither is adding to one Perpl will not settle against: a position losing
+    // more than the market's order_max_neg_pnl_collat_bps of its collateral.
+    // Five orders adding to a 395 MON long 22% down were refused at settlement
+    // on 2026-10-31 at every size (position-view.ts::addBlockedByLoss).
     const positions = describePositions(venuePositions);
     if (opensAgainst(positions, market.symbol, side)) {
       return NextResponse.json({
@@ -184,34 +185,38 @@ export async function POST(req: Request) {
         markUsd,
       });
     }
-    const freeUsd = venueAccount
-      ? freeMarginUsd({
-          balanceUsd: venueAccount.balance / 1e6,
-          availableUsd: venueAccount.available / 1e6,
+    if (positions.some((p) => p.market === market.symbol)) {
+      const { limitBps } = await readLossCheckInputs(
+        market.id,
+        market.priceDecimals,
+      );
+      const check = addBlockedByLoss({
+        positions,
+        market: market.symbol,
+        markUsd,
+        limitBps,
+      });
+      if (check.blocked === "unknown") {
+        return NextResponse.json({
+          allowed: false,
+          reason: "state_unavailable",
+          detail:
+            "could not read Perpl's loss limit or price the open position, so whether it can be added to is unknown; refusing",
           positions,
-          marks: { [market.symbol]: markUsd },
-        })
-      : null;
-    // A null account with nothing open is venuePreflight's call, not ours.
-    if (positions.length > 0 && freeUsd === null) {
-      return NextResponse.json({
-        allowed: false,
-        reason: "state_unavailable",
-        detail:
-          "could not price the open positions, so the free margin is unknown; refusing",
-        positions,
-        markUsd,
-      });
-    }
-    if (freeUsd !== null && targetNotionalUsd / leverageX > freeUsd) {
-      return NextResponse.json({
-        allowed: false,
-        reason: "no_free_margin",
-        detail: `that order needs $${(targetNotionalUsd / leverageX).toFixed(2)} of margin and only $${freeUsd.toFixed(2)} is free`,
-        freeUsd,
-        positions,
-        markUsd,
-      });
+          markUsd,
+        });
+      }
+      if (check.blocked) {
+        return NextResponse.json({
+          allowed: false,
+          reason: "position_underwater",
+          detail: `the open position is down ${(check.lossBps / 100).toFixed(1)}% of its collateral and Perpl settles no order adding to one down more than ${(check.limitBps / 100).toFixed(1)}%`,
+          lossBps: check.lossBps,
+          limitBps: check.limitBps,
+          positions,
+          markUsd,
+        });
+      }
     }
 
     // Null means loss could not be vouched for (the venue holds size we have no
