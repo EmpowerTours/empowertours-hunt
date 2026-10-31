@@ -229,7 +229,7 @@ export function monToYieldAusd(
 }
 
 /** Collateral an order leaves unused for fee, spread and mark drift. See planOneClick. */
-export const ORDER_HEADROOM_BPS = 100n;
+export const ORDER_HEADROOM_BPS = 250n;
 
 /**
  * What one press should do.
@@ -365,13 +365,19 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
 
   const tradeAusd6 = haveAtVenue + depositAusd6;
 
-  // NEVER THE WHOLE COLLATERAL. At 1x an order sized to every last cent of it
-  // leaves nothing for the taker fee, the spread, or a fill above the mark
-  // (Perpl's mark has been seen sitting below the bid), and the venue refuses
-  // to settle it: on 2026-10-31 a 1,344 MON order ($26.0) against $26.002059
-  // available came back Failed / TakerOrderSettlementFailed, nothing filled.
-  // 1% is generous against a measured ~9 bps fee and costs the hunter only a
-  // slightly smaller position; the unused collateral stays theirs at Perpl.
+  // NEVER THE WHOLE COLLATERAL. Perpl reserves margin for the WORST fill a
+  // market order is allowed, not the fill it gets: up to
+  // order_max_market_slippage_bps (100 = 1% for MON) above the mark, plus the
+  // taker fee. At 1x that margin is the whole notional. Both refused orders on
+  // 2026-10-31 (Failed / TakerOrderSettlementFailed, account 5273, $26.002059
+  // available, mark ~$0.019394) fit this exactly:
+  //
+  //   1,344 MON x mark x 1.01 = $26.33  > $26.00   (sized to all of it)
+  //   1,328 MON x mark x 1.01 = $26.01  > $26.00   (1% headroom: short a cent)
+  //
+  // 250 bps = the 1% band + the venue's highest published taker fee (345 per
+  // 1e6 at most 0.345%, measured ~9 bps) + room for the mark to move between
+  // the quote and the fill. The unused collateral stays the hunter's at Perpl.
   const fundable6 = (tradeAusd6 * (10_000n - ORDER_HEADROOM_BPS)) / 10_000n;
 
   // The order sits under whichever leash will govern it: the live one, or the

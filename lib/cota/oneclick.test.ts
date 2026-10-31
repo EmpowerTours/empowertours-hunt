@@ -317,7 +317,7 @@ describe("planOneClick — the order must fit under the leash governing it", () 
     }
   });
 
-  it("sends all but 1% of the collateral when it already fits", () => {
+  it("sends all but 2.5% of the collateral when it already fits", () => {
     const r = planOneClick(funded(10_980_000n), {
       ...base,
       hasLeash: true,
@@ -325,12 +325,12 @@ describe("planOneClick — the order must fit under the leash governing it", () 
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
-      // $10.98 at Perpl under a $20 leash, less 1% headroom, and the 400 MON
+      // $10.98 at Perpl under a $20 leash, less 2.5% headroom, and the 400 MON
       // in the wallet is not touched. It used to go out WHOLE — which is what
       // Perpl refused on 2026-10-31 (TakerOrderSettlementFailed): nothing left
       // for the fee or a fill above the mark.
       expect(r.swapMonWei).toBe(0n);
-      expect(r.orderNotional6).toBe(10_870_200n);
+      expect(r.orderNotional6).toBe(10_705_500n);
       expect(r.orderNotional6).toBeLessThan(r.tradeAusd6);
     }
   });
@@ -574,8 +574,36 @@ describe("order headroom (2026-10-31: TakerOrderSettlementFailed)", () => {
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.orderNotional6).toBe((26_002_059n * 9_900n) / 10_000n);
+      expect(r.orderNotional6).toBe((26_002_059n * 9_750n) / 10_000n);
       expect(r.orderNotional6).toBeLessThan(26_002_059n);
     }
+  });
+});
+
+describe("order headroom covers Perpl's worst-fill margin", () => {
+  // Perpl reserves margin at mark x (1 + order_max_market_slippage_bps) plus
+  // the taker fee. Both orders it refused on 2026-10-31 fail this check; the
+  // order sized now must pass it, with the fee at its highest published rate.
+  const MARK = 0.019394;
+  const AVAILABLE = 26_002_059n;
+  const worstCost6 = (notional6: bigint) => {
+    const sizeMon = Math.floor(Number(notional6) / 1e6 / MARK);
+    const atWorst = sizeMon * MARK * 1.01;
+    return BigInt(Math.ceil(atWorst * (1 + 0.00345) * 1e6));
+  };
+
+  it("reproduces both refusals", () => {
+    expect(worstCost6(26_002_059n)).toBeGreaterThan(AVAILABLE); // 1,344 MON
+    expect(worstCost6((26_002_059n * 9_900n) / 10_000n)).toBeGreaterThan(AVAILABLE); // 1,328 MON
+  });
+
+  it("the order one-click sizes now fits", () => {
+    const r = planOneClick({ walletMonWei: 400n * WEI, walletAusd6: 0n, perplAusd6: AVAILABLE }, {
+      ...base,
+      hasLeash: true,
+      leashMaxNotional6: 100_000_000n,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(worstCost6(r.orderNotional6)).toBeLessThan(AVAILABLE);
   });
 });
