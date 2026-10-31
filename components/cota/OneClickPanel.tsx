@@ -24,6 +24,7 @@ import {
   type RunResult,
 } from "@/lib/cota/oneclick-run";
 import { buildRunners, type Carry } from "@/lib/cota/oneclick-steps";
+import { refusalText } from "@/lib/cota/denial-text";
 
 // ---------------------------------------------------------------------------
 // The one control on the Cota hub.
@@ -66,7 +67,8 @@ const T = {
     keepHunting: "Seguir cazando MON →",
     ready: "Invertir",
     willDo: "Al presionar:",
-    stepSwap: "cambiar MON por AUSD donde pague más (Uniswap o la caja de Cota)",
+    stepSwap:
+      "cambiar MON por AUSD donde pague más (Uniswap o la caja de Cota)",
     stepDeposit: "depositar el AUSD en Perpl",
     stepLeash: "firmar tu correa (tú decides los límites)",
     stepTrade: "abrir la operación",
@@ -635,11 +637,17 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
             setBusy(false);
           }
         }}
-        disabled={busy}
+        // One position at a time; the server refuses a second open as well,
+        // but by then the swap and deposit would already have moved the money.
+        disabled={busy || positions.length > 0}
       >
         {busy
           ? `${t.working}${running ? ` (${label[running]})` : ""}`
-          : `${t.ready} $${ausdLabel(plan.orderNotional6)}`}
+          : positions.length > 0
+            ? lang === "es"
+              ? "Ya hay una posición abierta"
+              : "A position is already open"
+            : `${t.ready} $${ausdLabel(plan.orderNotional6)}`}
       </Button>
 
       {/* A partial run says where the money actually is. "Something went wrong"
@@ -657,9 +665,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
               Retrying on the swap screen shows the desk's own reason. */}
           {result.failedAt === "swap" && (
             <a href="/cota/swap" className="mt-2 block font-semibold underline">
-              {lang === "es"
-                ? "Cambiar MON a AUSD →"
-                : "Swap MON to AUSD →"}
+              {lang === "es" ? "Cambiar MON a AUSD →" : "Swap MON to AUSD →"}
             </a>
           )}
         </Note>
@@ -671,7 +677,14 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       )}
 
       {positions.length > 0 && (
-        <Note tone="warn" title={lang === "es" ? "Ya tienes posiciones abiertas en Perpl" : "You already have open positions at Perpl"}>
+        <Note
+          tone="warn"
+          title={
+            lang === "es"
+              ? "Ya tienes posiciones abiertas en Perpl"
+              : "You already have open positions at Perpl"
+          }
+        >
           {positions.map((p) => (
             <span key={p.pid} className="block font-mono text-xs">
               {p.market} {p.side} {p.size}
@@ -679,6 +692,12 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
               {p.entryUsd !== null && p.scaled ? ` · entry $${p.entryUsd}` : ""}
             </span>
           ))}
+          <span className="mt-1 block">
+            {refusalText("position_open", lang)}
+          </span>
+          <a href="/cota/trade" className="mt-2 block font-semibold underline">
+            {lang === "es" ? "Ir a operar →" : "Go to trade →"}
+          </a>
         </Note>
       )}
 

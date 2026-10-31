@@ -20,7 +20,8 @@ export type ExecRefusal =
   | "size_zero"
   | "forwarding_disabled"
   | "account_frozen"
-  | "no_collateral";
+  | "no_collateral"
+  | "position_open";
 
 export type RefusalReason = DenyReason | ExecRefusal;
 
@@ -103,6 +104,13 @@ const TEXT: Record<RefusalReason, Record<Lang, string>> = {
   no_collateral: {
     en: "Your Perpl account has no free collateral, so any order would be accepted and never filled. Nothing was sent. Deposit, or close a position that's holding your margin.",
     es: "Tu cuenta de Perpl no tiene colateral libre, así que cualquier orden se aceptaría sin ejecutarse. No se envió nada. Deposita, o cierra una posición que esté reteniendo tu margen.",
+  },
+  // One position at a time. An open position holds margin the venue's account
+  // frame does not report as locked, so a second order sized off "available"
+  // asks for collateral that is not free and is refused at settlement.
+  position_open: {
+    en: "You already have a position open at Perpl. Cota holds one at a time, so nothing was sent and nothing was spent. Close it on the trade page when you're ready, then open the next one.",
+    es: "Ya tienes una posición abierta en Perpl. Cota mantiene una a la vez, así que no se envió nada ni se gastó nada. Ciérrala en la página de operar cuando quieras y luego abre la siguiente.",
   },
 };
 

@@ -164,6 +164,21 @@ export async function POST(req: Request) {
       });
     }
 
+    // One position at a time. The venue's account frame reported locked 0 and
+    // available $26.00 while a 395 MON long sat open (2026-10-31), so an order
+    // sized off "available" asked for margin that was not free. Refuse before
+    // anything is sent rather than stack a second open on the first.
+    if (venuePositions.length > 0) {
+      return NextResponse.json({
+        allowed: false,
+        reason: "position_open",
+        detail:
+          "the account already holds an open position; Cota opens one at a time, so close it first",
+        positions: describePositions(venuePositions),
+        markUsd,
+      });
+    }
+
     // Null means loss could not be vouched for (the venue holds size we have no
     // fills for). Fail closed — never trade on a loss we can't verify.
     if (dayState === null) {

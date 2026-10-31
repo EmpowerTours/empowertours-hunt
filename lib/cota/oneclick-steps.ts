@@ -149,6 +149,7 @@ export function buildRunners(args: {
         accepted?: boolean;
         filled?: boolean;
         reason?: string;
+        detail?: string;
         error?: string;
         venue?: {
           statusName?: string;
@@ -161,7 +162,9 @@ export function buildRunners(args: {
       // not an outage. It still stops the run, and it still has to say so in
       // the hunter's words rather than as a silent no-op.
       if (!res.ok || body.allowed === false || body.accepted === false) {
-        throw new Error(body.reason ?? body.error ?? "the order was refused");
+        throw new Error(
+          body.detail ?? body.reason ?? body.error ?? "the order was refused",
+        );
       }
       return tradeOutcome(body);
     },
