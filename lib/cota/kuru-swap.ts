@@ -186,6 +186,28 @@ async function quoteThatExecutes(args: {
 }
 
 /**
+ * The swap failed before any transaction was sent. Nothing was signed, no gas
+ * was spent, the MON is where it was.
+ *
+ * Raised only for failures before leg 1's send. Once sendQuoted is called the
+ * answer is no longer known from here — a send can reach the chain and still
+ * throw — so those failures stay plain errors and the caller keeps the
+ * cautious "check your balance" wording.
+ *
+ * `nothingSent` is what callers test, by shape rather than instanceof, so
+ * oneclick-run.ts can read it without importing a "use client" module.
+ */
+export class SwapNotStarted extends Error {
+  readonly nothingSent = true;
+  constructor(cause: unknown) {
+    super(String((cause as { message?: string })?.message ?? cause), {
+      cause,
+    });
+    this.name = "SwapNotStarted";
+  }
+}
+
+/**
  * MON -> AUSD, with the trade on Kuru's order book.
  *
  * `onStep` is called before each leg so the page can say which of the three
@@ -224,22 +246,32 @@ export async function swapMonToAusdViaKuru(args: {
   const user = account.address;
 
   step("quoting");
-  const token = await kuruToken(user);
+  // Everything up to the first send can fail without a transaction existing,
+  // and the hunter is owed that fact: "your MON is untouched" rather than "go
+  // check whether leg 1 sold it". See SwapNotStarted.
+  let token: string;
+  let leg1: KuruQuote;
+  let usdcBefore: bigint;
+  try {
+    token = await kuruToken(user);
 
-  // --- 1. the trade, on the book ------------------------------------------
-  const leg1 = await quoteThatExecutes({
-    account,
-    token,
-    tokenIn: "0x0000000000000000000000000000000000000000",
-    tokenOut: USDC,
-    amount: monWei,
-  });
-  const usdcBefore = (await pc.readContract({
-    address: USDC,
-    abi: ERC20_ABI,
-    functionName: "balanceOf",
-    args: [user],
-  })) as bigint;
+    // --- 1. the trade, on the book ----------------------------------------
+    leg1 = await quoteThatExecutes({
+      account,
+      token,
+      tokenIn: "0x0000000000000000000000000000000000000000",
+      tokenOut: USDC,
+      amount: monWei,
+    });
+    usdcBefore = (await pc.readContract({
+      address: USDC,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [user],
+    })) as bigint;
+  } catch (e) {
+    throw new SwapNotStarted(e);
+  }
 
   step("trading-on-book");
   const bookTxHash = await sendQuoted(account, leg1);
@@ -334,7 +366,8 @@ export async function convertUsdcToAusd(args: {
         args: [spender, usdcAmount],
       });
       const r = await pc.waitForTransactionReceipt({ hash: approveHash });
-      if (r.status !== "success") throw new Error("kuru: USDC approval reverted");
+      if (r.status !== "success")
+        throw new Error("kuru: USDC approval reverted");
     }
     spenders.forEach((s) => approved.add(s));
   };

@@ -637,16 +637,28 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           {strandedAfter(result, lang) && (
             <span className="mt-1 block">{strandedAfter(result, lang)}</span>
           )}
-          {result.failedAt === "swap" && (
-            <a
-              href="/cota/swap/usdc"
-              className="mt-2 block font-semibold underline"
-            >
-              {lang === "es"
-                ? "Terminar de convertir USDC a AUSD →"
-                : "Finish converting USDC to AUSD →"}
-            </a>
-          )}
+          {/* Nothing sent means no USDC to finish converting. Point at the
+              desk, which does not depend on Kuru, instead. */}
+          {result.failedAt === "swap" &&
+            (result.outcomes.find((o) => !o.ok)?.nothingSent ? (
+              <a
+                href="/cota/swap"
+                className="mt-2 block font-semibold underline"
+              >
+                {lang === "es"
+                  ? "Cambiar MON a AUSD con la caja de Cota →"
+                  : "Swap MON to AUSD with Cota's desk →"}
+              </a>
+            ) : (
+              <a
+                href="/cota/swap/usdc"
+                className="mt-2 block font-semibold underline"
+              >
+                {lang === "es"
+                  ? "Terminar de convertir USDC a AUSD →"
+                  : "Finish converting USDC to AUSD →"}
+              </a>
+            ))}
         </Note>
       )}
       {result?.ok && (

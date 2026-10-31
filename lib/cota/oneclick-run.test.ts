@@ -124,6 +124,42 @@ describe("strandedAfter — where the money actually is", () => {
     expect(msg).toMatch(/check your balance/i);
   });
 
+  it("says the MON is untouched when the swap failed before sending anything", async () => {
+    // 2026-10-30: Kuru's API timed out, nothing was signed, and the screen
+    // still said leg 1 might have sold the MON and linked the USDC screen.
+    const out = await runPlan(
+      ["swap", "deposit"],
+      runners({
+        swap: vi.fn(async () => {
+          throw Object.assign(new Error("kuru: no answer from Kuru"), {
+            nothingSent: true,
+          });
+        }),
+      }),
+      explain,
+    );
+    expect(out.outcomes[0]).toMatchObject({ ok: false, nothingSent: true });
+    const en = strandedAfter(out, "en") ?? "";
+    expect(en).toMatch(/nothing was sent/i);
+    expect(en).toMatch(/untouched/i);
+    expect(en).not.toMatch(/two legs/i);
+    expect(strandedAfter(out, "es")).toMatch(/no se envió nada/i);
+  });
+
+  it("does not claim nothing was sent for an ordinary swap error", async () => {
+    const out = await runPlan(
+      ["swap"],
+      runners({
+        swap: vi.fn(async () => {
+          throw new Error("kuru: transaction 0xabc reverted");
+        }),
+      }),
+      explain,
+    );
+    expect(out.outcomes[0].nothingSent).toBeUndefined();
+    expect(strandedAfter(out, "en")).toMatch(/two legs/i);
+  });
+
   it("says the collateral is already at Perpl when only the trade failed", async () => {
     const out = await runPlan(
       ["deposit", "trade"],

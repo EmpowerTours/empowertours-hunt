@@ -51,6 +51,12 @@ export interface StepOutcome {
   hash?: string;
   /** Present only on failure, already turned into a sentence for the hunter. */
   error?: string;
+  /**
+   * True only when the step failed before sending any transaction, so nothing
+   * moved. Read off the error's own `nothingSent` (see SwapNotStarted in
+   * kuru-swap.ts); absent means unknown, never "nothing happened".
+   */
+  nothingSent?: boolean;
 }
 
 export interface RunResult {
@@ -94,7 +100,14 @@ export async function runPlan(
       const hash = await runners[step]();
       outcomes.push({ step, ok: true, hash });
     } catch (err) {
-      outcomes.push({ step, ok: false, error: explain(step, err) });
+      const nothingSent =
+        (err as { nothingSent?: unknown } | null)?.nothingSent === true;
+      outcomes.push({
+        step,
+        ok: false,
+        error: explain(step, err),
+        ...(nothingSent ? { nothingSent } : {}),
+      });
       return { ok: false, outcomes, failedAt: step };
     }
   }
@@ -121,6 +134,15 @@ export function strandedAfter(
     return es
       ? "El cambio sí se hizo: tienes AUSD en tu cartera. Lo que falló fue el depósito en Perpl — tu dinero está a salvo, vuelve a intentar el depósito."
       : "The swap did go through, so you are holding AUSD in your wallet. It was the deposit to Perpl that failed — your money is safe, try the deposit again.";
+  }
+  const failed = result.outcomes.find((o) => !o.ok);
+  if (result.failedAt === "swap" && failed?.nothingSent) {
+    // Known, not guessed: the swap stopped before its first transaction was
+    // sent. Saying "your MON may have been sold" here sent a hunter to the
+    // USDC screen on 2026-10-30 after Kuru's API timed out with nothing signed.
+    return es
+      ? "No se envió nada: tu MON sigue intacto y no se cobró gas. Puedes intentar de nuevo más tarde, o cambiar con la caja de Cota (comisión 1%)."
+      : "Nothing was sent: your MON is untouched and no gas was charged. You can try again later, or swap through Cota's desk instead (1% fee).";
   }
   if (result.failedAt === "swap") {
     // THE SWAP IS TWO LEGS AND THE FIRST ONE MAY HAVE LANDED.

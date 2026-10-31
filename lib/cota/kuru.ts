@@ -59,6 +59,67 @@ export const KURU_EXECUTOR =
   "0x2f84fb8982073f39ba47c7fcc29119af074abbcb" as const;
 
 /**
+ * How long one call to Kuru's API may take before we give up on it.
+ *
+ * There was no limit. On 2026-10-30 ws.kuru.io answered Cloudflare 522 and
+ * then nothing at all, and a hunter selling 843 MON sat on "working…" until
+ * Safari gave up with "Load failed" — minutes later, and in words that said
+ * nothing about whose fault it was or whether money had moved. A healthy
+ * token or quote call answers in well under a second.
+ */
+export const KURU_TIMEOUT_MS = 15_000;
+
+/**
+ * Kuru's API did not answer usefully: a timeout, a network failure, or a 5xx.
+ *
+ * Its own class so callers can tell "Kuru is down" from "Kuru answered and
+ * refused", and so the message can say so. Thrown only from the HTTP calls,
+ * which come before anything is signed.
+ */
+export class KuruUnreachable extends Error {
+  constructor(what: string, cause?: unknown) {
+    super(
+      `kuru: no answer from Kuru (${what}) — their swap service is down or slow`,
+      { cause },
+    );
+    this.name = "KuruUnreachable";
+  }
+}
+
+/**
+ * fetch with KURU_TIMEOUT_MS, still honouring the caller's own signal.
+ *
+ * Combined by hand rather than with AbortSignal.any, which iOS Safari only has
+ * from 17.4 — and iOS Safari is where hunters are.
+ */
+async function kuruFetch(
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), KURU_TIMEOUT_MS);
+  const forward = () => ctl.abort();
+  signal?.addEventListener("abort", forward, { once: true });
+  const what = new URL(url).pathname;
+  try {
+    const res = await fetch(url, { ...init, signal: ctl.signal });
+    if (res.status >= 500) throw new KuruUnreachable(`${what} ${res.status}`);
+    return res;
+  } catch (e) {
+    // The caller cancelling is not Kuru being down; let that through as-is.
+    if (signal?.aborted || e instanceof KuruUnreachable) throw e;
+    throw new KuruUnreachable(
+      ctl.signal.aborted ? `${what} timed out` : what,
+      e,
+    );
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", forward);
+  }
+}
+
+/**
  * Every address an ERC-20 leg of this quote may pull tokens through.
  *
  * Kuru moved: on 2026-10-13 a USDC->AUSD quote was addressed to router
@@ -88,7 +149,10 @@ export const RESUME_USDC_MIN = 10_000n;
  * Should the swap screen offer "Finish converting USDC to AUSD"?
  * True when leg 1 has left USDC in the wallet and there is no AUSD yet.
  */
-export function shouldResumeUsdc(usdc: bigint | null, ausd: bigint | null): boolean {
+export function shouldResumeUsdc(
+  usdc: bigint | null,
+  ausd: bigint | null,
+): boolean {
   if (usdc === null) return false;
   return usdc >= RESUME_USDC_MIN && (ausd ?? 0n) < RESUME_USDC_MIN;
 }
@@ -123,13 +187,16 @@ export async function kuruToken(
   userAddress: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const res = await fetch(`${API}/api/generate-token`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ user_address: userAddress }),
+  const res = await kuruFetch(
+    `${API}/api/generate-token`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ user_address: userAddress }),
+      cache: "no-store",
+    },
     signal,
-    cache: "no-store",
-  });
+  );
   if (!res.ok) throw new Error(`kuru: token ${res.status}`);
   const body = (await res.json()) as { token?: unknown };
   if (typeof body.token !== "string" || body.token.length === 0) {
@@ -176,22 +243,25 @@ export async function kuruQuote(args: {
   slippageBps?: number;
   signal?: AbortSignal;
 }): Promise<KuruQuote> {
-  const res = await fetch(`${API}/api/quote`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${args.token}`,
+  const res = await kuruFetch(
+    `${API}/api/quote`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${args.token}`,
+      },
+      body: JSON.stringify({
+        userAddress: args.userAddress,
+        tokenIn: args.tokenIn,
+        tokenOut: args.tokenOut,
+        amount: args.amount.toString(),
+        slippageTolerance: args.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
+      }),
+      cache: "no-store",
     },
-    body: JSON.stringify({
-      userAddress: args.userAddress,
-      tokenIn: args.tokenIn,
-      tokenOut: args.tokenOut,
-      amount: args.amount.toString(),
-      slippageTolerance: args.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
-    }),
-    signal: args.signal,
-    cache: "no-store",
-  });
+    args.signal,
+  );
   if (!res.ok) throw new Error(`kuru: quote ${res.status}`);
   return parseQuote(await res.json());
 }
