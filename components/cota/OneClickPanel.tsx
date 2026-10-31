@@ -51,7 +51,7 @@ type Lang = "es" | "en";
 const T = {
   es: {
     title: "Poner mi MON a trabajar",
-    lede: "Un botón: cambia tu MON por AUSD en el libro de Kuru, lo deposita en Perpl y abre la operación bajo tu correa.",
+    lede: "Un botón: cambia tu MON por AUSD con la caja de Cota, lo deposita en Perpl y abre la operación bajo tu correa.",
     signIn: "Inicia sesión",
     checking: "Revisando tus saldos…",
     loadFailed: "No pudimos leer tus saldos",
@@ -65,7 +65,7 @@ const T = {
     keepHunting: "Seguir cazando MON →",
     ready: "Invertir",
     willDo: "Al presionar:",
-    stepSwap: "cambiar MON por AUSD en el libro de Kuru",
+    stepSwap: "cambiar MON por AUSD con la caja de Cota (comisión 1%)",
     stepDeposit: "depositar el AUSD en Perpl",
     stepLeash: "firmar tu correa (tú decides los límites)",
     stepTrade: "abrir la operación",
@@ -110,7 +110,7 @@ const T = {
   },
   en: {
     title: "Put my MON to work",
-    lede: "One button: sells your MON for AUSD on Kuru's order book, deposits it at Perpl, and opens the trade under your leash.",
+    lede: "One button: swaps your MON for AUSD on Cota's desk, deposits it at Perpl, and opens the trade under your leash.",
     signIn: "Sign in",
     checking: "Checking your balances…",
     loadFailed: "We could not read your balances",
@@ -124,7 +124,7 @@ const T = {
     keepHunting: "Go hunt more MON →",
     ready: "Invest",
     willDo: "One press will:",
-    stepSwap: "sell MON for AUSD on Kuru's order book",
+    stepSwap: "swap MON for AUSD on Cota's desk (1% fee)",
     stepDeposit: "deposit the AUSD at Perpl",
     stepLeash: "sign your leash (you set the limits)",
     stepTrade: "open the trade",
@@ -326,7 +326,9 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           minFillable6: MIN_FILLABLE_6DP,
           targetMonWei: pct === null ? null : (monWei * BigInt(pct)) / 100n,
           gasReserveWei: GAS_UNITS_WHOLE_FLOW * fee,
-          slippageBps: 100n,
+          // The desk takes a 1% fee on top of any move in price, so 1% here
+          // would leave the deposit after it short. 2% covers both.
+          slippageBps: 200n,
         }),
       );
     } catch (err) {
@@ -637,28 +639,16 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           {strandedAfter(result, lang) && (
             <span className="mt-1 block">{strandedAfter(result, lang)}</span>
           )}
-          {/* Nothing sent means no USDC to finish converting. Point at the
-              desk, which does not depend on Kuru, instead. */}
-          {result.failedAt === "swap" &&
-            (result.outcomes.find((o) => !o.ok)?.nothingSent ? (
-              <a
-                href="/cota/swap"
-                className="mt-2 block font-semibold underline"
-              >
-                {lang === "es"
-                  ? "Cambiar MON a AUSD con la caja de Cota →"
-                  : "Swap MON to AUSD with Cota's desk →"}
-              </a>
-            ) : (
-              <a
-                href="/cota/swap/usdc"
-                className="mt-2 block font-semibold underline"
-              >
-                {lang === "es"
-                  ? "Terminar de convertir USDC a AUSD →"
-                  : "Finish converting USDC to AUSD →"}
-              </a>
-            ))}
+          {/* The swap is one atomic desk transaction, so a failed one leaves
+              no USDC to finish converting — the MON is still in the wallet.
+              Retrying on the swap screen shows the desk's own reason. */}
+          {result.failedAt === "swap" && (
+            <a href="/cota/swap" className="mt-2 block font-semibold underline">
+              {lang === "es"
+                ? "Cambiar MON a AUSD en la caja de Cota →"
+                : "Swap MON to AUSD on Cota's desk →"}
+            </a>
+          )}
         </Note>
       )}
       {result?.ok && (

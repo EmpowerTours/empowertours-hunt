@@ -1,385 +1,83 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { trackFeature } from "@/components/analytics/track";
 import { useLocale } from "next-intl";
-import { useAuthSlot } from "@/app/providers";
-import { Button, Note, Panel } from "@/components/ui/primitives";
-import { SignInPrompt } from "@/components/auth/SignInPrompt";
-import { signInAccount } from "@/lib/auth/passkey";
-import {
-  explainSwapError,
-  formatAusd,
-  publicClient,
-  swapGasReserveWei,
-} from "@/lib/cota/swap";
-import { convertUsdcToAusd, type KuruStep } from "@/lib/cota/kuru-swap";
-import {
-  AUSD as AUSD_TOKEN,
-  kuruQuote,
-  kuruToken,
-  USDC,
-} from "@/lib/cota/kuru";
+import { Note, Panel } from "@/components/ui/primitives";
+import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 
 // ---------------------------------------------------------------------------
-// USDC -> AUSD. The second half of the on-ramp, on its own.
+// USDC -> AUSD, after Kuru's relaunch.
 //
-// WHY THIS IS A SEPARATE PAGE from /cota/swap rather than a mode inside it.
-// That page is about MON: it reserves gas out of the balance being spent,
-// formats 18 decimals, falls back to the oracle desk, and warns about swapping
-// the whole balance. A hunter arriving from /cota/onramp shares none of that —
-// Aurora already delivered their USDC, so the order-book leg that buys it has
-// nothing to do, and there are two signatures instead of three.
+// This page used to convert USDC straight to AUSD through ws.kuru.io's router.
+// That API stopped answering on 2026-10-30, and Kuru's relaunched exchange has
+// no AUSD market at all — all nine of its books quote USDC (2026-10-31). So
+// there is no one-step route left, and pretending otherwise would leave a
+// hunter signing for something that cannot fill.
 //
-// It exists because the onramp shipped a button labelled "Swap USDC -> AUSD"
-// that pointed at the MON page, which answers a hunter holding only USDC with
-// "you have no MON in your Cota wallet". That is the dead end the onramp was
-// built to remove, reintroduced one screen later.
-//
-// THE GAS TRAP IS THE REAL HAZARD HERE. Someone who funded entirely through
-// Aurora holds USDC and NO MON, and both the approval and the conversion are
-// transactions they must pay for. They arrive able to see their money and
-// unable to move it. The screen says so up front rather than letting them find
-// out when the first signature fails.
+// The route that exists is two screens the app already has: buy MON with the
+// USDC on Kuru's book (/cota/spot), then MON -> AUSD on the desk (/cota/swap,
+// 1% fee). Links into this page (onramp, one-click, the /cota home) keep
+// working and land here, where the hunter is told that plainly.
 // ---------------------------------------------------------------------------
-
-type Lang = "es" | "en";
-type Phase = "idle" | "working" | "done";
-
-const ERC20_BALANCE = [
-  {
-    type: "function",
-    name: "balanceOf",
-    stateMutability: "view",
-    inputs: [{ name: "owner", type: "address" }],
-    outputs: [{ type: "uint256" }],
-  },
-] as const;
-
-/** Kuru rate-limits quoting — three in a row returned 429. Debounce, do not poll. */
-const QUOTE_DEBOUNCE_MS = 600;
 
 const COPY = {
   es: {
-    title: "Cambia USDC por AUSD",
-    lede: "Perpl opera en AUSD. Si fondeaste desde otra red, tu saldo llegó como USDC — conviértelo aquí.",
-    back: "← Cota",
-    bal: "USDC disponible",
-    balFailed: "No se pudo leer tu saldo.",
-    balRetry: "Reintentar",
-    amount: "USDC a cambiar",
-    max: "Máx",
-    get: "Recibes",
-    go: "Cambiar",
-    working: "Cambiando…",
-    noUsdc: "No tienes USDC. Fondea desde otra red primero.",
-    toOnramp: "Fondear desde cualquier red →",
-    noGas:
-      "No tienes MON para el gas. Esta operación son dos transacciones y ambas se pagan en MON. Caza algo de MON primero, o pide que te envíen un poco.",
-    signIn: "Inicia sesión",
-    done: "Listo. Ahora deposita el AUSD en Perpl.",
-    goDeposit: "Depositar AUSD en Perpl →",
-    steps: {
-      quoting: "Cotizando…",
-      "trading-on-book": "Operando…",
-      approving: "Autorizando USDC…",
-      converting: "Convirtiendo a AUSD…",
-      done: "Listo",
-    },
+    back: "Volver",
+    title: "USDC → AUSD",
+    lede: "Kuru ya no tiene un mercado de AUSD, así que no hay conversión directa. Se hace en dos pasos:",
+    step1: "Compra MON con tu USDC en el libro de Kuru",
+    step1Cta: "Ir a Contado →",
+    step2: "Cambia ese MON por AUSD en la caja de Cota (comisión 1%)",
+    step2Cta: "Ir a Cambiar →",
+    why: "Tu USDC sigue en tu cartera. Nada se movió por abrir esta página.",
   },
   en: {
-    title: "Swap USDC for AUSD",
-    lede: "Perpl settles in AUSD. If you funded from another chain your balance arrived as USDC — convert it here.",
-    back: "← Cota",
-    bal: "USDC available",
-    balFailed: "Could not read your balance.",
-    balRetry: "Try again",
-    amount: "USDC to swap",
-    max: "Max",
-    get: "You get",
-    go: "Swap",
-    working: "Swapping…",
-    noUsdc: "You have no USDC. Fund from another chain first.",
-    toOnramp: "Fund from any chain →",
-    noGas:
-      "You have no MON for gas. This is two transactions and both are paid in MON. Hunt some MON first, or have someone send you a little.",
-    signIn: "Sign in",
-    done: "Done. Now deposit the AUSD into Perpl.",
-    goDeposit: "Deposit AUSD into Perpl →",
-    steps: {
-      quoting: "Quoting…",
-      "trading-on-book": "Trading…",
-      approving: "Approving USDC…",
-      converting: "Converting to AUSD…",
-      done: "Done",
-    },
+    back: "Back",
+    title: "USDC → AUSD",
+    lede: "Kuru no longer has an AUSD market, so there is no direct conversion. It takes two steps:",
+    step1: "Buy MON with your USDC on Kuru's order book",
+    step1Cta: "Go to Spot →",
+    step2: "Swap that MON for AUSD on Cota's desk (1% fee)",
+    step2Cta: "Go to Swap →",
+    why: "Your USDC is still in your wallet. Opening this page moved nothing.",
   },
 } as const;
 
-export default function SwapUsdcPage() {
-  const lang = (useLocale() as Lang) ?? "en";
-  const t = COPY[lang] ?? COPY.en;
-  const auth = useAuthSlot();
-  const signedIn = auth.status === "signed-in";
-  const wallet = auth.walletAddress;
-
-  const [usdcBalance, setUsdcBalance] = useState<bigint | null>(null);
-  const [balanceError, setBalanceError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-  const [monBalance, setMonBalance] = useState<bigint | null>(null);
-  const [gasPrice, setGasPrice] = useState<bigint | null>(null);
-  const [input, setInput] = useState("");
-  const [quote, setQuote] = useState<bigint | null>(null);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [step, setStep] = useState<KuruStep | null>(null);
-  const [ausdOut, setAusdOut] = useState<bigint | null>(null);
-  const [txHash, setTxHash] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!signedIn || wallet === null) return;
-    let live = true;
-    void (async () => {
-      try {
-        const pc = publicClient();
-        const [usdc, mon, gas] = await Promise.all([
-          pc.readContract({
-            address: USDC,
-            abi: ERC20_BALANCE,
-            functionName: "balanceOf",
-            args: [wallet as `0x${string}`],
-          }) as Promise<bigint>,
-          pc.getBalance({ address: wallet as `0x${string}` }),
-          pc.getGasPrice(),
-        ]);
-        if (!live) return;
-        setUsdcBalance(usdc);
-        setMonBalance(mon);
-        setGasPrice(gas);
-        setBalanceError(null);
-      } catch (err) {
-        // Still not zero — a zero would read as "you have nothing" and send a
-        // hunter away from money they actually hold. But not silent either:
-        // swallowing this left the page showing "…" for as long as it stayed
-        // open, which is indistinguishable from the app being broken, and it
-        // happened to someone trying to reach 58 USDC they could see on a
-        // block explorer. Now it says so and offers to try again.
-        if (live)
-          setBalanceError(
-            String((err as { message?: string })?.message ?? err),
-          );
-      }
-    })();
-    return () => {
-      live = false;
-    };
-  }, [signedIn, wallet, phase, reloadKey]);
-
-  const units = (() => {
-    const n = Number(input);
-    if (!Number.isFinite(n) || n <= 0) return 0n;
-    return BigInt(Math.floor(n * 1e6));
-  })();
-
-  useEffect(() => {
-    let live = true;
-    if (units <= 0n || wallet === null) {
-      // Cleared through the same path as a successful quote so the render
-      // never shows a price for an amount nobody typed.
-      const clear = setTimeout(() => {
-        if (live) setQuote(null);
-      }, 0);
-      return () => {
-        live = false;
-        clearTimeout(clear);
-      };
-    }
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const token = await kuruToken(wallet);
-          const q = await kuruQuote({
-            token,
-            userAddress: wallet,
-            tokenIn: USDC,
-            tokenOut: AUSD_TOKEN,
-            amount: units,
-          });
-          if (live) setQuote(q.output);
-        } catch {
-          if (live) setQuote(null);
-        }
-      })();
-    }, QUOTE_DEBOUNCE_MS);
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [units, wallet]);
-
-  const run = useCallback(async () => {
-    setPhase("working");
-    setError(null);
-    let session: Awaited<ReturnType<typeof signInAccount>> | null = null;
-    try {
-      session = await signInAccount();
-      const result = await convertUsdcToAusd({
-        account: session.account,
-        usdcAmount: units,
-        onStep: setStep,
-      });
-      setAusdOut(result.ausdOut);
-      setTxHash(result.convertTxHash);
-      setPhase("done");
-      trackFeature("swap_usdc_to_ausd");
-    } catch (err) {
-      setError(explainSwapError(err, lang));
-      setPhase("idle");
-    } finally {
-      session?.session.end();
-      setStep(null);
-    }
-  }, [units, lang]);
-
-  if (!signedIn) {
-    return (
-      <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-6">
-        <a href="/cota" className="text-ink/60 text-sm">
-          {t.back}
-        </a>
-        <h1 className="text-ink text-xl font-semibold">{t.title}</h1>
-        <SignInPrompt label={t.signIn} />
-      </main>
-    );
-  }
-
-  const noUsdc = usdcBalance !== null && usdcBalance === 0n;
-  // Two transactions here — the approval and the conversion — against the MON
-  // cost of one measured swap. Deliberately not exact: the point is to catch
-  // the hunter who has NOTHING, not to compute a fee to the wei.
-  const noGas =
-    monBalance !== null &&
-    gasPrice !== null &&
-    monBalance < swapGasReserveWei(gasPrice);
-
+export default function UsdcToAusdPage() {
+  const lang = useLocale() === "es" ? "es" : "en";
+  const t = COPY[lang];
   return (
-    <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-6">
-      <a href="/cota" className="text-ink/60 text-sm">
-        {t.back}
+    <main className="safe-top safe-bottom text-ink mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-4 py-6">
+      <a href="/cota" className="text-ink-dim w-fit text-sm hover:underline">
+        ← {t.back}
       </a>
-      <h1 className="text-ink text-xl font-semibold">{t.title}</h1>
-      <p className="text-ink/70 text-sm">{t.lede}</p>
-
-      <Panel>
-        <div className="flex items-center justify-between">
-          <span className="text-ink/60 text-xs uppercase">{t.bal}</span>
-          <span className="text-ink font-mono text-sm">
-            <span translate="no">
-              {usdcBalance === null ? "…" : formatAusd(usdcBalance)} USDC
-            </span>
-          </span>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">{t.title}</h1>
+          <p className="text-ink-dim mt-1 text-sm">{t.lede}</p>
         </div>
-        {/* A balance that will not load is not a balance of zero, and it is not
-            a spinner either. Saying which, and offering to try again, is the
-            difference between a page that is loading and a page that is stuck
-            — and from the outside those look identical. */}
-        {balanceError && usdcBalance === null ? (
-          <div className="mt-2 space-y-2">
-            <p className="text-alert text-xs">{t.balFailed}</p>
-            <p className="text-ink/40 text-[11px] break-words">
-              {balanceError}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setBalanceError(null);
-                setReloadKey((k) => k + 1);
-              }}
-              className="text-ink/60 text-xs underline underline-offset-2"
-            >
-              {t.balRetry}
-            </button>
-          </div>
-        ) : null}
+        <LanguageSwitch />
+      </header>
+      <Panel className="space-y-4">
+        <div>
+          <p className="text-ink text-sm">1. {t.step1}</p>
+          <a
+            href="/cota/spot"
+            className="text-phosphor text-sm font-semibold underline"
+          >
+            {t.step1Cta}
+          </a>
+        </div>
+        <div>
+          <p className="text-ink text-sm">2. {t.step2}</p>
+          <a
+            href="/cota/swap"
+            className="text-phosphor text-sm font-semibold underline"
+          >
+            {t.step2Cta}
+          </a>
+        </div>
       </Panel>
-
-      {noGas ? <Note tone="warn">{t.noGas}</Note> : null}
-
-      {noUsdc ? (
-        <>
-          <Note>{t.noUsdc}</Note>
-          <a
-            href="/cota/onramp"
-            className="border-hull-line text-ink flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-          >
-            {t.toOnramp}
-          </a>
-        </>
-      ) : phase === "done" ? (
-        <Panel>
-          <p className="text-ink text-sm">
-            {t.done} {ausdOut === null ? null : `+${formatAusd(ausdOut)} AUSD`}
-          </p>
-          {txHash ? (
-            <a
-              href={`https://monadscan.com/tx/${txHash}`}
-              className="text-ink/60 mt-2 block font-mono text-xs break-all"
-            >
-              {txHash}
-            </a>
-          ) : null}
-          <a
-            href="/cota/deposit"
-            className="bg-phosphor/10 border-phosphor/40 text-ink mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl border px-5 text-sm font-medium"
-          >
-            {t.goDeposit}
-          </a>
-        </Panel>
-      ) : (
-        <Panel>
-          <label className="text-ink/60 text-xs uppercase" htmlFor="usdc-in">
-            {t.amount}
-          </label>
-          <div className="mt-1 flex items-center gap-2">
-            <input
-              id="usdc-in"
-              inputMode="decimal"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              className="border-hull-line text-ink min-h-12 w-full rounded-2xl border bg-transparent px-4 font-mono text-sm"
-              placeholder="0.00"
-            />
-            <button
-              type="button"
-              onClick={() =>
-                setUsdcBalance((b) => {
-                  if (b !== null) setInput(formatAusd(b));
-                  return b;
-                })
-              }
-              className="text-ink/60 shrink-0 text-xs underline"
-            >
-              {t.max}
-            </button>
-          </div>
-          <p className="text-ink/60 mt-2 text-xs">
-            {t.get}: {quote === null ? "…" : `${formatAusd(quote)} AUSD`}
-          </p>
-          <Button
-            onClick={run}
-            disabled={phase === "working" || units <= 0n || noGas}
-            className="mt-3"
-          >
-            {phase === "working"
-              ? step !== null
-                ? t.steps[step]
-                : t.working
-              : t.go}
-          </Button>
-        </Panel>
-      )}
-
-      {error ? <Note tone="stop">{error}</Note> : null}
+      <Note>{t.why}</Note>
     </main>
   );
 }

@@ -11,7 +11,6 @@ import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { signInAccount } from "@/lib/auth/passkey";
 import {
   formatAusd,
-  minOut,
   publicClient,
   SWAP_ABI,
   SWAP_ADDRESS,
@@ -20,16 +19,10 @@ import {
   belowDeskMinimum,
   formatMonCeil,
   minMonForDesk,
-  walletClientFor,
+  swapMonToAusdViaDesk,
+  DeskReverted,
 } from "@/lib/cota/swap";
-import { swapMonToAusdViaKuru, type KuruStep } from "@/lib/cota/kuru-swap";
-import {
-  AUSD as AUSD_TOKEN,
-  kuruQuote,
-  kuruToken,
-  shouldResumeUsdc,
-  USDC,
-} from "@/lib/cota/kuru";
+import { AUSD as AUSD_TOKEN, shouldResumeUsdc, USDC } from "@/lib/cota/kuru";
 
 const BAL_ABI = [
   {
@@ -94,10 +87,10 @@ const T = {
     stepApprove: "2/3 Autorizando USDC…",
     stepConvert: "3/3 Convirtiendo a AUSD…",
     viewBookTx: "Ver la operación en el libro",
-    resumeTitle: "Tienes USDC sin convertir",
+    resumeTitle: "Tienes USDC",
     resumeBody: (usdc: string) =>
-      `Tu MON ya se vendió por ${usdc} USDC, pero la conversión a AUSD no terminó. No vuelvas a cambiar MON: termina solo el paso USDC → AUSD.`,
-    resumeCta: "Terminar de convertir USDC a AUSD →",
+      `Tienes ${usdc} USDC. Kuru ya no tiene un mercado de AUSD, así que para convertirlo: compra MON con ese USDC en Contado y luego cámbialo aquí por AUSD.`,
+    resumeCta: "Comprar MON con mi USDC →",
     viaPool: "Vía Kuru (ruta por pool)",
     poolNote:
       "Kuru enrutó esta cantidad por un pool en vez del libro, porque ahí el precio es mejor para ti. Siguen siendo tres firmas.",
@@ -141,10 +134,10 @@ const T = {
     stepApprove: "2/3 Approving USDC…",
     stepConvert: "3/3 Converting to AUSD…",
     viewBookTx: "View the order-book trade",
-    resumeTitle: "You have unconverted USDC",
+    resumeTitle: "You hold USDC",
     resumeBody: (usdc: string) =>
-      `Your MON already sold for ${usdc} USDC, but the conversion to AUSD did not finish. Don't swap MON again — just finish the USDC → AUSD step.`,
-    resumeCta: "Finish converting USDC to AUSD →",
+      `You hold ${usdc} USDC. Kuru no longer has an AUSD market, so to convert it: buy MON with that USDC on Spot, then swap the MON for AUSD here.`,
+    resumeCta: "Buy MON with my USDC →",
     viaPool: "Via Kuru (routed through a pool)",
     poolNote:
       "Kuru routed this size through a pool rather than the order book, because the price there is better for you. Still three signatures.",
@@ -176,14 +169,9 @@ export default function SwapPage() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [ausdOut, setAusdOut] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Which on-ramp the quote came from. Kuru is preferred because the trade
-  // lands on its order book at 0 bps; the desk is the fallback for when Kuru's
-  // API or route is unavailable, and it depends on nothing but Monad.
-  const [route, setRoute] = useState<"kuru-book" | "kuru-pool" | "desk">(
-    "desk",
-  );
-  const [step, setStep] = useState<KuruStep | null>(null);
-  const [bookTx, setBookTx] = useState<string | null>(null);
+  // MON -> AUSD goes through the desk only. Kuru's relaunched exchange has no
+  // AUSD market (all nine of its books quote USDC, 2026-10-31), and the old
+  // two-leg Kuru route through ws.kuru.io no longer answers.
   const [usdcBalance, setUsdcBalance] = useState<bigint | null>(null);
   const [ausdBalance, setAusdBalance] = useState<bigint | null>(null);
 
@@ -306,44 +294,7 @@ export default function SwapPage() {
         if (!cancelled) setQuote(null);
         return;
       }
-      // Kuru first, desk second. Both are quoted the same way — ask, and use
-      // whichever answers — so the fallback is exercised by any Kuru failure
-      // rather than by a health check that can itself be wrong.
       void (async () => {
-        if (address) {
-          try {
-            const token = await kuruToken(address);
-            const leg1 = await kuruQuote({
-              token,
-              userAddress: address,
-              tokenIn: "0x0000000000000000000000000000000000000000",
-              tokenOut: USDC,
-              amount: value,
-            });
-            // Kuru is taken whichever venue it picks, because its price beats
-            // the desk's 1% either way. What changes is only what this page is
-            // allowed to SAY: the route is chosen per quote and measured here
-            // — 6 of 7 sizes sampled on mainnet crossed the order book, and
-            // 10 MON went to a pool because the pool priced better at that
-            // size. Falling back to the desk on that would charge the hunter
-            // 1% to protect a claim, which is backwards.
-            const leg2 = await kuruQuote({
-              token,
-              userAddress: address,
-              tokenIn: USDC,
-              tokenOut: AUSD_TOKEN,
-              amount: leg1.output,
-            });
-            if (!cancelled) {
-              setQuote(leg2.output);
-              setRoute(leg1.usesOrderBook ? "kuru-book" : "kuru-pool");
-            }
-            return;
-          } catch {
-            // Fall through to the desk. Kuru being down is not an error the
-            // hunter needs to read about; it is why the desk exists.
-          }
-        }
         try {
           const q = (await publicClient().readContract({
             address: SWAP_ADDRESS,
@@ -351,10 +302,7 @@ export default function SwapPage() {
             functionName: "quote",
             args: [value],
           })) as bigint;
-          if (!cancelled) {
-            setQuote(q);
-            setRoute("desk");
-          }
+          if (!cancelled) setQuote(q);
         } catch {
           if (!cancelled) setQuote(null);
         }
@@ -381,69 +329,20 @@ export default function SwapPage() {
     }
     setPhase("swapping");
     try {
-      if (route !== "desk") {
-        const { account } = await signInAccount();
-        const r = await swapMonToAusdViaKuru({
-          account,
-          monWei: value,
-          onStep: setStep,
-        });
-        setBookTx(r.bookTxHash);
-        setTxHash(r.convertTxHash);
-        setAusdOut(r.ausdOut);
-        setPhase("done");
-        trackFeature("swap_mon_to_ausd");
-        setStep(null);
-        void refreshBalances();
-        return;
-      }
-      const pc = publicClient();
-      // Re-quote at execution time so the slippage floor is honest.
-      const q = (await pc.readContract({
-        address: SWAP_ADDRESS,
-        abi: SWAP_ABI,
-        functionName: "quote",
-        args: [value],
-      })) as bigint;
       const { account } = await signInAccount();
-      // Simulate BEFORE spending gas: this reverts with the real reason (rate
-      // stale, desk empty, not enough MON…) so explainSwapError can name it,
-      // instead of the tx silently reverting on-chain.
-      await pc.simulateContract({
-        account: account.address,
-        address: SWAP_ADDRESS,
-        abi: SWAP_ABI,
-        functionName: "swap",
-        args: [minOut(q)],
-        value,
-      });
-      const hash = await walletClientFor(account).writeContract({
-        address: SWAP_ADDRESS,
-        abi: SWAP_ABI,
-        functionName: "swap",
-        args: [minOut(q)],
-        value,
-      });
-      setTxHash(hash);
-      const receipt = await pc.waitForTransactionReceipt({ hash });
-      // A mined tx can still be reverted — never claim success on that.
-      if (receipt.status !== "success") {
-        setError(t.reverted);
-        setPhase("error");
-        return;
-      }
+      const { ausdOut: q } = await swapMonToAusdViaDesk(account, value, setTxHash);
       setAusdOut(q);
       setPhase("done");
       trackFeature("swap_mon_to_ausd");
       void refreshBalances();
     } catch (e) {
-      setError(explainSwapError(e, lang, deskMinMon));
+      // A mined tx can still be reverted — never claim success on that.
+      setError(
+        e instanceof DeskReverted ? t.reverted : explainSwapError(e, lang, deskMinMon),
+      );
       setPhase("error");
-      // Otherwise a failure at leg 3 leaves "2/3 Approving USDC…" on screen
-      // next to an error, which reads as the app still working.
-      setStep(null);
     }
-  }, [monInput, lang, t.tooLittle, t.reverted, refreshBalances, route, deskMinMon]);
+  }, [monInput, lang, t.tooLittle, t.reverted, refreshBalances, deskMinMon]);
 
   const deskLow = quote !== null && available !== null && quote > available;
   const noMon = monBalance !== null && monBalance === 0n;
@@ -463,9 +362,7 @@ export default function SwapPage() {
   } catch {
     inputWei = 0n;
   }
-  // Only the DESK route has this floor; Kuru has none.
-  const belowMin =
-    route === "desk" && inputWei > 0n && belowDeskMinimum(inputWei, deskMinMon);
+  const belowMin = inputWei > 0n && belowDeskMinimum(inputWei, deskMinMon);
   let overMax = false;
   try {
     overMax = monInput.trim() !== "" && parseEther(monInput) > maxSwap;
@@ -498,7 +395,7 @@ export default function SwapPage() {
                 {t.resumeBody(Number(formatUnits(usdcBalance, 6)).toFixed(2))}
               </span>
               <a
-                href="/cota/swap/usdc"
+                href="/cota/spot"
                 className="mt-2 block font-semibold underline"
               >
                 {t.resumeCta}
@@ -533,20 +430,6 @@ export default function SwapPage() {
                 {t.done} {formatAusd(ausdOut)} AUSD
               </Pill>
               <p className="text-ink-dim text-sm">{t.next}</p>
-              {/* Two links on the Kuru route, because they are two different
-                  facts: one is the trade that executed on Kuru's order book,
-                  the other is the conversion. A hunter who wants to check the
-                  claim on this page can check it. */}
-              {bookTx && (
-                <a
-                  href={`https://monadscan.com/tx/${bookTx}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-phosphor block text-sm underline"
-                >
-                  {t.viewBookTx} →
-                </a>
-              )}
               {txHash && (
                 <a
                   href={`https://monadscan.com/tx/${txHash}`}
@@ -610,32 +493,18 @@ export default function SwapPage() {
                   hunter in signatures. Three prompts with no explanation is how
                   someone abandons halfway and is left holding USDC. */}
               <div className="flex items-center gap-2">
-                <Pill color={route === "desk" ? "#47645d" : "#46ffbe"}>
-                  {route === "kuru-book"
-                    ? t.viaBook
-                    : route === "kuru-pool"
-                      ? t.viaPool
-                      : t.viaDesk}
-                </Pill>
+                <Pill color="#47645d">{t.viaDesk}</Pill>
               </div>
-              <p className="text-ink-faint text-xs leading-snug">
-                {route === "kuru-book"
-                  ? t.bookNote
-                  : route === "kuru-pool"
-                    ? t.poolNote
-                    : t.deskNote}
-              </p>
-              {/* The desk float only constrains the DESK route. Warning about
-                  it while Kuru is quoting would be false — Kuru has no float. */}
-              {route === "desk" && deskLow && (
+              <p className="text-ink-faint text-xs leading-snug">{t.deskNote}</p>
+              {deskLow && (
                 <Note tone="warn">{t.deskLow}</Note>
               )}
-              {route === "desk" && deskMinMon !== null && (
+              {deskMinMon !== null && (
                 <p className="text-ink-faint text-xs">
                   {t.deskMin(formatMonCeil(deskMinMon))}
                 </p>
               )}
-              {route === "desk" && deskMinFailed && (
+              {deskMinFailed && (
                 <Note tone="warn">{t.minUnknown}</Note>
               )}
               {belowMin && deskMinMon !== null && (
@@ -652,21 +521,13 @@ export default function SwapPage() {
                 disabled={
                   phase === "swapping" ||
                   quote === null ||
-                  (route === "desk" && deskLow) ||
+                  deskLow ||
                   belowMin ||
                   noMon ||
                   overMax
                 }
               >
-                {phase !== "swapping"
-                  ? t.swap
-                  : step === "trading-on-book"
-                    ? t.stepBook
-                    : step === "approving"
-                      ? t.stepApprove
-                      : step === "converting"
-                        ? t.stepConvert
-                        : t.swapping}
+                {phase !== "swapping" ? t.swap : t.swapping}
               </Button>
             </Panel>
           )}

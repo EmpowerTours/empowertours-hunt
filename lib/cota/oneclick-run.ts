@@ -145,20 +145,13 @@ export function strandedAfter(
       : "Nothing was sent: your MON is untouched and no gas was charged. You can try again later, or swap through Cota's desk instead (1% fee).";
   }
   if (result.failedAt === "swap") {
-    // THE SWAP IS TWO LEGS AND THE FIRST ONE MAY HAVE LANDED.
-    //
-    // This used to say "nothing was swapped, your MON is all still in your
-    // wallet". It said that to someone whose first leg had just sold 1,414 MON
-    // — eighty per cent of everything they held — for USDC, and only the
-    // second leg failed. The step reports as "swap" either way, so the message
-    // asserted something it had no way to know and happened to be as wrong as
-    // it could be, on the subject of their money.
-    //
-    // It now describes both possibilities and names the screen that settles it,
-    // because a wallet balance is the one source that cannot be mistaken.
+    // The swap is now one desk transaction: it pays its quote or reverts, so
+    // the MON is untouched either way. (The two-leg Kuru route it replaced
+    // could leave USDC behind; that is why this used to hedge.) What is not
+    // known from here is whether a reverted attempt cost gas, so it says so.
     return es
-      ? "El cambio se hace en dos pasos. Si el primero alcanzó a ejecutarse, tu MON ya se vendió y ahora tienes USDC; si no, tu MON sigue intacto. Revisa tu saldo en Contado antes de volver a intentar."
-      : "The swap runs in two legs. If the first one went through, your MON has already been sold and you are holding USDC; if it did not, your MON is untouched. Check your balance on the Spot screen before trying again.";
+      ? "El cambio no se hizo: tu MON sigue en tu cartera. Si la transacción llegó a la cadena y se revirtió, se cobró el gas."
+      : "The swap did not go through: your MON is still in your wallet. If the transaction reached the chain and reverted, its gas was charged.";
   }
   if (result.failedAt === "leash" || result.failedAt === "trade") {
     return es

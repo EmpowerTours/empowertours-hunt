@@ -105,7 +105,7 @@ describe("strandedAfter — where the money actually is", () => {
     }
   });
 
-  it("says nothing was swapped when the swap itself failed", async () => {
+  it("says the MON is still in the wallet when the desk swap failed — and that gas may be gone", async () => {
     const out = await runPlan(
       ["swap", "deposit"],
       runners({
@@ -115,13 +115,14 @@ describe("strandedAfter — where the money actually is", () => {
       }),
       explain,
     );
-    // Must NOT assert the MON is safe: the swap is two legs and the first may
-    // have landed. It said "nothing was swapped" to someone who had just sold
-    // 1,414 MON in leg 1.
+    // The swap is ONE desk transaction now: it pays its quote or reverts, so
+    // the MON is untouched. The old two-leg route could leave USDC behind,
+    // which is why this message used to hedge. What still cannot be known
+    // here is whether a revert charged gas, so it must say so.
     const msg = strandedAfter(out, "en") ?? "";
-    expect(msg).toMatch(/two legs/i);
-    expect(msg).not.toMatch(/nothing was swapped/i);
-    expect(msg).toMatch(/check your balance/i);
+    expect(msg).toMatch(/still in your wallet/i);
+    expect(msg).toMatch(/gas/i);
+    expect(msg).not.toMatch(/two legs/i);
   });
 
   it("says the MON is untouched when the swap failed before sending anything", async () => {
@@ -157,7 +158,9 @@ describe("strandedAfter — where the money actually is", () => {
       explain,
     );
     expect(out.outcomes[0].nothingSent).toBeUndefined();
-    expect(strandedAfter(out, "en")).toMatch(/two legs/i);
+    // Not the "nothing was sent" sentence: a revert may have cost gas.
+    expect(strandedAfter(out, "en")).not.toMatch(/nothing was sent/i);
+    expect(strandedAfter(out, "en")).toMatch(/gas/i);
   });
 
   it("says the collateral is already at Perpl when only the trade failed", async () => {

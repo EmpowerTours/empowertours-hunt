@@ -2,7 +2,7 @@
 // The four steps, as functions one press can run.
 //
 // Each wraps work that already existed and was reachable only from its own
-// screen: swapMonToAusdViaKuru from /cota/swap, fundPerpl from /cota/deposit,
+// screen: swapMonToAusdViaDesk from /cota/swap, fundPerpl from /cota/deposit,
 // signAndAnchorCota from /cota, and the trade POST from /cota/trade. Nothing
 // here reimplements any of them — a second implementation of a money path is
 // how two screens end up disagreeing about what a hunter owns.
@@ -18,7 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import type { LocalAccount } from "viem";
-import { swapMonToAusdViaKuru } from "./kuru-swap";
+import { swapMonToAusdViaDesk } from "./swap";
 import { fundPerpl } from "./deposit";
 import { signAndAnchorCota } from "./sign";
 import { newBrowserNonce } from "./sign";
@@ -61,22 +61,12 @@ export function buildRunners(args: {
   return {
     swap: async () => {
       note("swap");
-      const r = await swapMonToAusdViaKuru({
-        account,
-        monWei: plan.swapMonWei,
-        // Recorded as soon as the book trade lands, so a failure in leg 2
-        // cannot erase the fact that leg 1 spent real MON.
-        onBookTx: (hash) => {
-          void fetch("/api/cota/kuru/history", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ hash, side: "sell" }),
-          }).catch(() => {});
-        },
-      });
-      carry.wentThroughOrderBook = r.wentThroughOrderBook;
-
-      return r.bookTxHash;
+      // The desk, not Kuru: Kuru's relaunched exchange has no AUSD market
+      // (2026-10-31). One transaction, atomic — it pays its quote or reverts,
+      // so a failure here never strands USDC the way the two-leg route could.
+      const r = await swapMonToAusdViaDesk(account, plan.swapMonWei);
+      carry.wentThroughOrderBook = false;
+      return r.hash;
     },
 
     deposit: async () => {

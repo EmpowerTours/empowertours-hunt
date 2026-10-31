@@ -123,6 +123,58 @@ export function formatAusd(amount6dp: bigint): string {
   return formatUnits(amount6dp, AUSD_DECIMALS);
 }
 
+/** A desk swap that was mined and reverted. Carries the hash so it can be looked up. */
+export class DeskReverted extends Error {
+  constructor(readonly hash: `0x${string}`) {
+    super(`desk: transaction ${hash} reverted`);
+    this.name = "DeskReverted";
+  }
+}
+
+/**
+ * MON -> AUSD on the desk, the one implementation both /cota/swap and the
+ * one-click run use. Two copies of a money path are how two screens end up
+ * disagreeing about what a hunter owns.
+ *
+ * Re-quotes at execution so the slippage floor is honest, and simulates before
+ * spending gas so a revert surfaces with its real reason (rate stale, desk
+ * empty, per-address cap…) for explainSwapError to name. `onSent` hears the
+ * hash before the receipt, so a revert still leaves something to look up.
+ * Returns the quoted payout: the desk pays exactly its quote or reverts.
+ */
+export async function swapMonToAusdViaDesk(
+  account: LocalAccount,
+  monWei: bigint,
+  onSent?: (hash: `0x${string}`) => void,
+): Promise<{ hash: `0x${string}`; ausdOut: bigint }> {
+  const pc = publicClient();
+  const q = (await pc.readContract({
+    address: SWAP_ADDRESS,
+    abi: SWAP_ABI,
+    functionName: "quote",
+    args: [monWei],
+  })) as bigint;
+  await pc.simulateContract({
+    account: account.address,
+    address: SWAP_ADDRESS,
+    abi: SWAP_ABI,
+    functionName: "swap",
+    args: [minOut(q)],
+    value: monWei,
+  });
+  const hash = await walletClientFor(account).writeContract({
+    address: SWAP_ADDRESS,
+    abi: SWAP_ABI,
+    functionName: "swap",
+    args: [minOut(q)],
+    value: monWei,
+  });
+  onSent?.(hash);
+  const receipt = await pc.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new DeskReverted(hash);
+  return { hash, ausdOut: q };
+}
+
 /** Turn a revert/RPC error into one honest sentence for the hunter. */
 export function explainSwapError(
   err: unknown,
