@@ -51,7 +51,7 @@ type Lang = "es" | "en";
 const T = {
   es: {
     title: "Poner mi MON a trabajar",
-    lede: "Un botón: cambia tu MON por AUSD con la caja de Cota, lo deposita en Perpl y abre la operación bajo tu correa.",
+    lede: "Un botón: cambia tu MON por AUSD (en Uniswap o en la caja de Cota, lo que pague más), lo deposita en Perpl y abre la operación bajo tu correa.",
     signIn: "Inicia sesión",
     checking: "Revisando tus saldos…",
     loadFailed: "No pudimos leer tus saldos",
@@ -65,7 +65,7 @@ const T = {
     keepHunting: "Seguir cazando MON →",
     ready: "Invertir",
     willDo: "Al presionar:",
-    stepSwap: "cambiar MON por AUSD con la caja de Cota (comisión 1%)",
+    stepSwap: "cambiar MON por AUSD donde pague más (Uniswap o la caja de Cota)",
     stepDeposit: "depositar el AUSD en Perpl",
     stepLeash: "firmar tu correa (tú decides los límites)",
     stepTrade: "abrir la operación",
@@ -110,7 +110,7 @@ const T = {
   },
   en: {
     title: "Put my MON to work",
-    lede: "One button: swaps your MON for AUSD on Cota's desk, deposits it at Perpl, and opens the trade under your leash.",
+    lede: "One button: swaps your MON for AUSD (on Uniswap or Cota's desk, whichever pays more), deposits it at Perpl, and opens the trade under your leash.",
     signIn: "Sign in",
     checking: "Checking your balances…",
     loadFailed: "We could not read your balances",
@@ -124,7 +124,7 @@ const T = {
     keepHunting: "Go hunt more MON →",
     ready: "Invest",
     willDo: "One press will:",
-    stepSwap: "swap MON for AUSD on Cota's desk (1% fee)",
+    stepSwap: "swap MON for AUSD wherever pays more (Uniswap or Cota's desk)",
     stepDeposit: "deposit the AUSD at Perpl",
     stepLeash: "sign your leash (you set the limits)",
     stepTrade: "open the trade",
@@ -326,8 +326,9 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           minFillable6: MIN_FILLABLE_6DP,
           targetMonWei: pct === null ? null : (monWei * BigInt(pct)) / 100n,
           gasReserveWei: GAS_UNITS_WHOLE_FLOW * fee,
-          // The desk takes a 1% fee on top of any move in price, so 1% here
-          // would leave the deposit after it short. 2% covers both.
+          // Headroom for the swap's price: the desk's 1% fee, or the v4 pool's
+          // price impact (0.75% at 843 MON, 2026-10-31), plus movement. 2%
+          // keeps the deposit after it from coming up short.
           slippageBps: 200n,
         }),
       );
@@ -645,8 +646,8 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
           {result.failedAt === "swap" && (
             <a href="/cota/swap" className="mt-2 block font-semibold underline">
               {lang === "es"
-                ? "Cambiar MON a AUSD en la caja de Cota →"
-                : "Swap MON to AUSD on Cota's desk →"}
+                ? "Cambiar MON a AUSD →"
+                : "Swap MON to AUSD →"}
             </a>
           )}
         </Note>

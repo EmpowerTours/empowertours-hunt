@@ -19,9 +19,15 @@ import {
   belowDeskMinimum,
   formatMonCeil,
   minMonForDesk,
-  swapMonToAusdViaDesk,
   DeskReverted,
 } from "@/lib/cota/swap";
+import {
+  chooseRoute,
+  quoteAusdRoutes,
+  swapMonToAusd,
+  type AusdRoute,
+} from "@/lib/cota/ausd-route";
+import { V4Reverted } from "@/lib/cota/uniswap-v4";
 import { AUSD as AUSD_TOKEN, shouldResumeUsdc, USDC } from "@/lib/cota/kuru";
 
 const BAL_ABI = [
@@ -91,6 +97,9 @@ const T = {
     resumeBody: (usdc: string) =>
       `Tienes ${usdc} USDC. Kuru ya no tiene un mercado de AUSD, así que para convertirlo: compra MON con ese USDC en Contado y luego cámbialo aquí por AUSD.`,
     resumeCta: "Comprar MON con mi USDC →",
+    viaV4: "Vía el pool de Uniswap v4 (comisión 0.05%)",
+    v4Note:
+      "Se cambia en el pool MON/AUSD de Uniswap: una sola transacción, sin depender del AUSD de la caja.",
     viaPool: "Vía Kuru (ruta por pool)",
     poolNote:
       "Kuru enrutó esta cantidad por un pool en vez del libro, porque ahí el precio es mejor para ti. Siguen siendo tres firmas.",
@@ -138,6 +147,9 @@ const T = {
     resumeBody: (usdc: string) =>
       `You hold ${usdc} USDC. Kuru no longer has an AUSD market, so to convert it: buy MON with that USDC on Spot, then swap the MON for AUSD here.`,
     resumeCta: "Buy MON with my USDC →",
+    viaV4: "Via the Uniswap v4 pool (0.05% fee)",
+    v4Note:
+      "Swaps in Uniswap's MON/AUSD pool: one transaction, without drawing on the desk's AUSD.",
     viaPool: "Via Kuru (routed through a pool)",
     poolNote:
       "Kuru routed this size through a pool rather than the order book, because the price there is better for you. Still three signatures.",
@@ -161,6 +173,9 @@ export default function SwapPage() {
 
   const [monInput, setMonInput] = useState("");
   const [quote, setQuote] = useState<bigint | null>(null);
+  // Which route the quote came from: the Uniswap v4 pool or our desk,
+  // whichever pays more (lib/cota/ausd-route.ts decides, for here and one-click).
+  const [route, setRoute] = useState<AusdRoute | null>(null);
   const [available, setAvailable] = useState<bigint | null>(null);
   const [monBalance, setMonBalance] = useState<bigint | null>(null);
   // Live, because the reserve is priced in MON and the price moves.
@@ -296,15 +311,16 @@ export default function SwapPage() {
       }
       void (async () => {
         try {
-          const q = (await publicClient().readContract({
-            address: SWAP_ADDRESS,
-            abi: SWAP_ABI,
-            functionName: "quote",
-            args: [value],
-          })) as bigint;
-          if (!cancelled) setQuote(q);
+          const choice = chooseRoute(await quoteAusdRoutes(value));
+          if (!cancelled) {
+            setQuote(choice?.ausdOut ?? null);
+            setRoute(choice?.route ?? null);
+          }
         } catch {
-          if (!cancelled) setQuote(null);
+          if (!cancelled) {
+            setQuote(null);
+            setRoute(null);
+          }
         }
       })();
     }, 300);
@@ -330,21 +346,25 @@ export default function SwapPage() {
     setPhase("swapping");
     try {
       const { account } = await signInAccount();
-      const { ausdOut: q } = await swapMonToAusdViaDesk(account, value, setTxHash);
-      setAusdOut(q);
+      const r = await swapMonToAusd(account, value, (_, h) => setTxHash(h));
+      setRoute(r.route);
+      setAusdOut(r.ausdOut);
       setPhase("done");
       trackFeature("swap_mon_to_ausd");
       void refreshBalances();
     } catch (e) {
       // A mined tx can still be reverted — never claim success on that.
       setError(
-        e instanceof DeskReverted ? t.reverted : explainSwapError(e, lang, deskMinMon),
+        e instanceof DeskReverted || e instanceof V4Reverted
+          ? t.reverted
+          : explainSwapError(e, lang, deskMinMon),
       );
       setPhase("error");
     }
   }, [monInput, lang, t.tooLittle, t.reverted, refreshBalances, deskMinMon]);
 
-  const deskLow = quote !== null && available !== null && quote > available;
+  const deskLow =
+    route === "desk" && quote !== null && available !== null && quote > available;
   const noMon = monBalance !== null && monBalance === 0n;
   // Cap the amount so a hunter always keeps MON for gas. Derived from the
   // MEASURED cost of this swap and the live price rather than a flat constant:
@@ -362,7 +382,9 @@ export default function SwapPage() {
   } catch {
     inputWei = 0n;
   }
-  const belowMin = inputWei > 0n && belowDeskMinimum(inputWei, deskMinMon);
+  // The desk's minimum only binds when the desk is the route.
+  const belowMin =
+    route === "desk" && inputWei > 0n && belowDeskMinimum(inputWei, deskMinMon);
   let overMax = false;
   try {
     overMax = monInput.trim() !== "" && parseEther(monInput) > maxSwap;
@@ -493,18 +515,24 @@ export default function SwapPage() {
                   hunter in signatures. Three prompts with no explanation is how
                   someone abandons halfway and is left holding USDC. */}
               <div className="flex items-center gap-2">
-                <Pill color="#47645d">{t.viaDesk}</Pill>
+                {route !== null && (
+                  <Pill color={route === "v4" ? "#46ffbe" : "#47645d"}>
+                    {route === "v4" ? t.viaV4 : t.viaDesk}
+                  </Pill>
+                )}
               </div>
-              <p className="text-ink-faint text-xs leading-snug">{t.deskNote}</p>
+              <p className="text-ink-faint text-xs leading-snug">
+                {route === "v4" ? t.v4Note : t.deskNote}
+              </p>
               {deskLow && (
                 <Note tone="warn">{t.deskLow}</Note>
               )}
-              {deskMinMon !== null && (
+              {route === "desk" && deskMinMon !== null && (
                 <p className="text-ink-faint text-xs">
                   {t.deskMin(formatMonCeil(deskMinMon))}
                 </p>
               )}
-              {deskMinFailed && (
+              {route === "desk" && deskMinFailed && (
                 <Note tone="warn">{t.minUnknown}</Note>
               )}
               {belowMin && deskMinMon !== null && (

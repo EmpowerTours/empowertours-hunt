@@ -2,7 +2,7 @@
 // The four steps, as functions one press can run.
 //
 // Each wraps work that already existed and was reachable only from its own
-// screen: swapMonToAusdViaDesk from /cota/swap, fundPerpl from /cota/deposit,
+// screen: swapMonToAusd from /cota/swap, fundPerpl from /cota/deposit,
 // signAndAnchorCota from /cota, and the trade POST from /cota/trade. Nothing
 // here reimplements any of them — a second implementation of a money path is
 // how two screens end up disagreeing about what a hunter owns.
@@ -18,7 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import type { LocalAccount } from "viem";
-import { swapMonToAusdViaDesk } from "./swap";
+import { swapMonToAusd } from "./ausd-route";
 import { fundPerpl } from "./deposit";
 import { signAndAnchorCota } from "./sign";
 import { newBrowserNonce } from "./sign";
@@ -61,10 +61,10 @@ export function buildRunners(args: {
   return {
     swap: async () => {
       note("swap");
-      // The desk, not Kuru: Kuru's relaunched exchange has no AUSD market
-      // (2026-10-31). One transaction, atomic — it pays its quote or reverts,
-      // so a failure here never strands USDC the way the two-leg route could.
-      const r = await swapMonToAusdViaDesk(account, plan.swapMonWei);
+      // The Uniswap v4 pool or our desk, whichever pays more — the same choice
+      // /cota/swap makes (ausd-route.ts). Either is one atomic transaction: it
+      // pays at least its floor or reverts, so a failure never strands USDC.
+      const r = await swapMonToAusd(account, plan.swapMonWei);
       carry.wentThroughOrderBook = false;
       return r.hash;
     },

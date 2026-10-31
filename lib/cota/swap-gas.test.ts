@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SWAP_GAS_MEASURED, swapGasReserveWei } from "./swap";
+import { SWAP_GAS_MEASURED, V4_SWAP_GAS_CEILING, swapGasReserveWei } from "./swap";
 
 // ---------------------------------------------------------------------------
 // The swap desk's reserve was a flat 0.05 MON. Unlike the spot screen's, it was
@@ -43,9 +43,16 @@ describe("swapGasReserveWei", () => {
   });
 
   it("does not overflow a 64-bit int on a high price", () => {
-    // 291,983 x 300 gwei x 2 is past Number.MAX_SAFE_INTEGER. bigint the whole
-    // way, which is the same trap that made a bash `printf '0x%x'` silently
-    // truncate the value while measuring this.
-    expect(swapGasReserveWei(300_000_000_000n)).toBe(175_189_800_000_000_000n);
+    // 600,000 (the v4 route's ceiling, now the larger of the two routes) x 300
+    // gwei is past Number.MAX_SAFE_INTEGER. bigint the whole way, which is the
+    // same trap that made a bash `printf '0x%x'` silently truncate the value
+    // while measuring this.
+    expect(swapGasReserveWei(300_000_000_000n)).toBe(180_000_000_000_000_000n);
+  });
+
+  it("covers the v4 route's gas ceiling, not only the desk's measured gas", () => {
+    const p = 102_000_000_000n;
+    expect(swapGasReserveWei(p)).toBeGreaterThanOrEqual(V4_SWAP_GAS_CEILING * p);
+    expect(swapGasReserveWei(p)).toBeGreaterThanOrEqual(SWAP_GAS_MEASURED * 2n * p);
   });
 });

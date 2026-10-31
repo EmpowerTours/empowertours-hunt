@@ -41,7 +41,7 @@ import {
   type Hex,
   type LocalAccount,
 } from "viem";
-import { publicClient, walletClientFor } from "./swap";
+import { V4_SWAP_GAS_CEILING, publicClient, walletClientFor } from "./swap";
 import { AUSD } from "./kuru";
 
 export const V4_POOL_MANAGER =
@@ -225,7 +225,7 @@ export async function quoteMonToAusdV4(monWei: bigint): Promise<bigint> {
 export function v4GasLimit(estimate: bigint): bigint {
   if (estimate <= 0n) throw new Error("v4: no gas estimate for the swap");
   const padded = (estimate * 3n) / 2n;
-  return padded > 600_000n ? 600_000n : padded;
+  return padded > V4_SWAP_GAS_CEILING ? V4_SWAP_GAS_CEILING : padded;
 }
 
 /** A swap that was mined and reverted. Carries the hash so it can be looked up. */

@@ -279,6 +279,17 @@ export const SWAP_GAS_MEASURED = 291_983n;
  * Unspent MON stays the hunter's, so the only cost of being generous is a max
  * button that offers slightly less than the theoretical maximum.
  */
+/**
+ * The most gas the Uniswap v4 route may be sent with (uniswap-v4.ts caps its
+ * padded limit here). Lives in this file so the reserve below and that cap
+ * cannot drift apart.
+ */
+export const V4_SWAP_GAS_CEILING = 600_000n;
+
 export function swapGasReserveWei(gasPriceWei: bigint): bigint {
-  return SWAP_GAS_MEASURED * gasPriceWei * 2n;
+  // Whichever route the swap takes, the MON held back must pay its limit:
+  // the desk's measured gas doubled, or the v4 route's ceiling.
+  const desk = SWAP_GAS_MEASURED * 2n;
+  const units = desk > V4_SWAP_GAS_CEILING ? desk : V4_SWAP_GAS_CEILING;
+  return units * gasPriceWei;
 }

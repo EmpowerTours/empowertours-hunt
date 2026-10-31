@@ -141,8 +141,8 @@ export function strandedAfter(
     // sent. Saying "your MON may have been sold" here sent a hunter to the
     // USDC screen on 2026-10-30 after Kuru's API timed out with nothing signed.
     return es
-      ? "No se envió nada: tu MON sigue intacto y no se cobró gas. Puedes intentar de nuevo más tarde, o cambiar con la caja de Cota (comisión 1%)."
-      : "Nothing was sent: your MON is untouched and no gas was charged. You can try again later, or swap through Cota's desk instead (1% fee).";
+      ? "No se envió nada: tu MON sigue intacto y no se cobró gas. Puedes intentar de nuevo más tarde, o cambiar en la pantalla de Cambiar."
+      : "Nothing was sent: your MON is untouched and no gas was charged. You can try again later, or use the Swap screen.";
   }
   if (result.failedAt === "swap") {
     // The swap is now one desk transaction: it pays its quote or reverts, so
