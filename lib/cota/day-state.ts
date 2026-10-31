@@ -1,3 +1,4 @@
+import type { OpenPositionFrame } from "./venue/frames";
 // The live day-state read, with the one repair it is allowed to make on its own.
 //
 // Reading the state the leash is checked against means reconciling two sources:
@@ -41,6 +42,8 @@ export interface DayStateRead {
   adoptedFills: number;
   /** Size the venue holds that nothing accounts for. Non-empty ⇒ dayState null. */
   unexplained: Unexplained[];
+  /** The open positions the venue reported on this read, as it sent them. */
+  venuePositions: OpenPositionFrame[];
 }
 
 export async function readDayState(args: {
@@ -128,5 +131,6 @@ export async function readDayState(args: {
     venueAccount: read.account,
     adoptedFills,
     unexplained,
+    venuePositions: read.positions,
   };
 }

@@ -153,10 +153,16 @@ export function strandedAfter(
       ? "El cambio no se hizo: tu MON sigue en tu cartera. Si la transacción llegó a la cadena y se revirtió, se cobró el gas."
       : "The swap did not go through: your MON is still in your wallet. If the transaction reached the chain and reverted, its gas was charged.";
   }
-  if (result.failedAt === "leash" || result.failedAt === "trade") {
+  if (result.failedAt === "leash") {
     return es
       ? "Tu dinero ya está depositado en Perpl y sigue siendo tuyo. Lo único que falta es firmar la correa y abrir la operación."
       : "Your money is already deposited at Perpl and still yours. All that is left is signing the leash and opening the trade.";
+  }
+  if (result.failedAt === "trade") {
+    // The leash is signed by now (or was already live): only the order is left.
+    return es
+      ? "Tu dinero ya está depositado en Perpl y sigue siendo tuyo, y tu correa está firmada. Solo falta abrir la operación."
+      : "Your money is already deposited at Perpl and still yours, and your leash is signed. Only opening the trade is left.";
   }
   return null;
 }

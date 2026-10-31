@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import type { PositionView } from "@/lib/cota/venue/position-view";
 import { Button, Disclosure, Note, Panel } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { formatMon } from "@/components/hunt/format";
@@ -218,6 +219,9 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
 
   const [plan, setPlan] = useState<OneClick | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
+  // What is already open at Perpl, read through the hunter's own key — so
+  // nobody has to go to app.perpl.xyz to find out what is holding margin.
+  const [positions, setPositions] = useState<PositionView[]>([]);
   const [failed, setFailed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState<Step | null>(null);
@@ -300,11 +304,19 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       const b: Balances = {
         walletMonWei: monWei,
         walletAusd6: ausd6,
+        // AVAILABLE, not balance: margin already locked by an open position
+        // or order cannot back a new one, and sizing from the balance would
+        // count it twice.
         perplAusd6: BigInt(
-          Math.round((accountRes?.account?.balanceUsd ?? 0) * 1e6),
+          Math.round(
+            (accountRes?.account?.availableUsd ??
+              accountRes?.account?.balanceUsd ??
+              0) * 1e6,
+          ),
         ),
       };
       setBalances(b);
+      setPositions(accountRes?.account?.positions ?? []);
       setPlan(
         planOneClick(b, {
           enrolled: Boolean(accountRes?.enrolled),
@@ -655,6 +667,18 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       {result?.ok && (
         <Note tone="success" title={t.doneTitle}>
           {t.doneBody}
+        </Note>
+      )}
+
+      {positions.length > 0 && (
+        <Note tone="warn" title={lang === "es" ? "Ya tienes posiciones abiertas en Perpl" : "You already have open positions at Perpl"}>
+          {positions.map((p) => (
+            <span key={p.pid} className="block font-mono text-xs">
+              {p.market} {p.side} {p.size}
+              {p.scaled ? "" : " (raw)"} · {p.leverageX}x
+              {p.entryUsd !== null && p.scaled ? ` · entry $${p.entryUsd}` : ""}
+            </span>
+          ))}
         </Note>
       )}
 

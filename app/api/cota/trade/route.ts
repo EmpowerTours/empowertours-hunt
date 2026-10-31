@@ -1,3 +1,5 @@
+import { describePositions } from "@/lib/cota/venue/position-view";
+import type { OpenPositionFrame } from "@/lib/cota/venue/frames";
 import { NextResponse } from "next/server";
 import { postOnlyResponse } from "@/lib/cota/post-only";
 import { z } from "zod";
@@ -117,6 +119,7 @@ export async function POST(req: Request) {
     let dayState;
     let venueAccount: AccountSnapshot | null = null;
     let unexplained: Unexplained[] = [];
+    let venuePositions: OpenPositionFrame[] = [];
     try {
       const marks = new Map<number, MarkedMarket>([
         [market.id, { market, markUsd }],
@@ -132,6 +135,7 @@ export async function POST(req: Request) {
       dayState = read.dayState;
       venueAccount = read.venueAccount;
       unexplained = read.unexplained;
+      venuePositions = read.venuePositions;
     } catch (e) {
       console.error("[cota/trade] day-state read failed", e);
       return NextResponse.json({
@@ -310,6 +314,14 @@ export async function POST(req: Request) {
           accountId: result.account?.accountId ?? null,
           fw: result.account?.forwardingAllowed ?? null,
           available: result.account?.available ?? null,
+          // What the order was sized from, and what already holds margin on
+          // the account. Three TakerOrderSettlementFailed refusals on
+          // 2026-10-31 could not be explained without these.
+          locked: result.account?.locked ?? null,
+          markUsd,
+          targetNotionalUsd,
+          leverageX,
+          positions: describePositions(venuePositions),
         }),
       );
     }

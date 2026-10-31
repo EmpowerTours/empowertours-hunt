@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { loadPerpKey } from "@/lib/cota/keystore";
 import { readAccountPositions } from "@/lib/cota/venue/account-read";
+import { describePositions } from "@/lib/cota/venue/position-view";
 
 // ---------------------------------------------------------------------------
 // GET /api/cota/account — what the hunter already has AT PERPL.
@@ -50,6 +51,9 @@ export async function GET(req: Request) {
         availableUsd: read.account.available / 1e6,
         forwardingAllowed: read.account.forwardingAllowed,
         frozen: read.account.frozen,
+        // Open positions hold margin the order form cannot spend. Shown so a
+        // hunter never has to go to app.perpl.xyz to find out what is open.
+        positions: describePositions(read.positions),
       },
     });
   } catch (err) {
