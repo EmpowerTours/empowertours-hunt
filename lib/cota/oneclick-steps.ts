@@ -147,8 +147,15 @@ export function buildRunners(args: {
       const body = (await res.json()) as {
         allowed?: boolean;
         accepted?: boolean;
+        filled?: boolean;
         reason?: string;
         error?: string;
+        venue?: {
+          statusName?: string;
+          reasonName?: string;
+          terminal?: boolean;
+          expectsFill?: boolean;
+        } | null;
       };
       // allowed === false is the LEASH refusing, which is the product working,
       // not an outage. It still stops the run, and it still has to say so in
@@ -156,7 +163,41 @@ export function buildRunners(args: {
       if (!res.ok || body.allowed === false || body.accepted === false) {
         throw new Error(body.reason ?? body.error ?? "the order was refused");
       }
-      return "placed";
+      return tradeOutcome(body);
     },
   };
+}
+
+/**
+ * Did the order actually open a position? Accepted is NOT enough.
+ *
+ * The gateway accepting an order only means it was taken. On 2026-10-31 a
+ * one-click run reported "your trade is open" for an order Perpl had already
+ * terminally refused (status Failed, reason TakerOrderSettlementFailed, 0 of
+ * 1,344 filled) — the step returned "placed" on `accepted` alone, and the
+ * hunter went looking for a position that did not exist.
+ *
+ * Done only when the venue filled it or said size changed hands. A refusal
+ * names the venue's reason. An order neither filled nor refused yet is not
+ * claimed as open either: the run stops and says it is still pending.
+ */
+export function tradeOutcome(body: {
+  filled?: boolean;
+  venue?: {
+    statusName?: string;
+    reasonName?: string;
+    terminal?: boolean;
+    expectsFill?: boolean;
+  } | null;
+}): string {
+  const v = body.venue ?? null;
+  if (body.filled === true || v?.expectsFill === true) return "filled";
+  if (v?.terminal) {
+    throw new Error(
+      `Perpl refused the order (${v.statusName ?? "failed"}: ${v.reasonName ?? "no reason given"}). No position was opened.`,
+    );
+  }
+  throw new Error(
+    "Perpl accepted the order but has not filled it yet, so no position is open. Check Results in a minute.",
+  );
 }

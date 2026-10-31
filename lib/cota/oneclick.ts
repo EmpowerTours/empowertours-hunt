@@ -228,6 +228,9 @@ export function monToYieldAusd(
   return (gross * WEI + priceE6 - 1n) / priceE6;
 }
 
+/** Collateral an order leaves unused for fee, spread and mark drift. See planOneClick. */
+export const ORDER_HEADROOM_BPS = 100n;
+
 /**
  * What one press should do.
  *
@@ -362,12 +365,21 @@ export function planOneClick(b: Balances, c: Conditions): OneClick {
 
   const tradeAusd6 = haveAtVenue + depositAusd6;
 
+  // NEVER THE WHOLE COLLATERAL. At 1x an order sized to every last cent of it
+  // leaves nothing for the taker fee, the spread, or a fill above the mark
+  // (Perpl's mark has been seen sitting below the bid), and the venue refuses
+  // to settle it: on 2026-10-31 a 1,344 MON order ($26.0) against $26.002059
+  // available came back Failed / TakerOrderSettlementFailed, nothing filled.
+  // 1% is generous against a measured ~9 bps fee and costs the hunter only a
+  // slightly smaller position; the unused collateral stays theirs at Perpl.
+  const fundable6 = (tradeAusd6 * (10_000n - ORDER_HEADROOM_BPS)) / 10_000n;
+
   // The order sits under whichever leash will govern it: the live one, or the
   // one this press is about to sign. Clamping rather than refusing, because a
   // hunter with more collateral than their ceiling has not done anything wrong
   // — they just cannot put all of it to work under the limits they set.
   const ceiling = c.leashMaxNotional6 ?? c.oneClickNotional6;
-  const orderNotional6 = tradeAusd6 < ceiling ? tradeAusd6 : ceiling;
+  const orderNotional6 = fundable6 < ceiling ? fundable6 : ceiling;
 
   // A clamp can land under the venue's fill floor, and an order below it does
   // not fill small — it fails. Better to say so now than after the money has

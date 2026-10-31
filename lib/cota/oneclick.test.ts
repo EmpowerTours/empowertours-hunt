@@ -317,7 +317,7 @@ describe("planOneClick — the order must fit under the leash governing it", () 
     }
   });
 
-  it("sends the whole collateral when it already fits", () => {
+  it("sends all but 1% of the collateral when it already fits", () => {
     const r = planOneClick(funded(10_980_000n), {
       ...base,
       hasLeash: true,
@@ -325,10 +325,13 @@ describe("planOneClick — the order must fit under the leash governing it", () 
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
-      // $10.98 at Perpl under a $20 leash goes out whole, and the 400 MON in
-      // the wallet is not touched.
+      // $10.98 at Perpl under a $20 leash, less 1% headroom, and the 400 MON
+      // in the wallet is not touched. It used to go out WHOLE — which is what
+      // Perpl refused on 2026-10-31 (TakerOrderSettlementFailed): nothing left
+      // for the fee or a fill above the mark.
       expect(r.swapMonWei).toBe(0n);
-      expect(r.orderNotional6).toBe(10_980_000n);
+      expect(r.orderNotional6).toBe(10_870_200n);
+      expect(r.orderNotional6).toBeLessThan(r.tradeAusd6);
     }
   });
 
@@ -557,6 +560,22 @@ describe("planOneClick — the hunter chooses how much", () => {
     if (r.ok) {
       const left = rich.walletMonWei - r.swapMonWei;
       expect(left).toBeGreaterThanOrEqual(GAS);
+    }
+  });
+});
+
+describe("order headroom (2026-10-31: TakerOrderSettlementFailed)", () => {
+  it("never sizes the order to the whole collateral", () => {
+    // The failing case: $26.002059 at Perpl, no leash ceiling in the way.
+    const r = planOneClick({ walletMonWei: 400n * WEI, walletAusd6: 0n, perplAusd6: 26_002_059n }, {
+      ...base,
+      hasLeash: true,
+      leashMaxNotional6: 100_000_000n,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.orderNotional6).toBe((26_002_059n * 9_900n) / 10_000n);
+      expect(r.orderNotional6).toBeLessThan(26_002_059n);
     }
   });
 });
