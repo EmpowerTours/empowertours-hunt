@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseBook } from "@/lib/cota/kuru-book";
+import { parseGatewayDepth } from "@/lib/cota/kuru-book";
 
 // ---------------------------------------------------------------------------
 // GET /api/cota/kuru/book — Kuru's MON/USDC order book.
@@ -20,12 +20,14 @@ import { parseBook } from "@/lib/cota/kuru-book";
 // applied once in tested code instead of in every caller.
 // ---------------------------------------------------------------------------
 
-const SYMBOL = "MON_USDC";
-const UPSTREAM = "https://exchange.kuru.io/api/v3/depth";
+// Kuru's relaunched exchange. exchange.kuru.io served the retired MON_USDC
+// market (0x065c9d28…), whose book had no bids left by 2026-10-30.
+const SYMBOL = "MONUSDC";
+const UPSTREAM = "https://gateway.mainnet.kuru.io/api/depth";
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const res = await fetch(`${UPSTREAM}?symbol=${SYMBOL}&limit=15`, {
+    const res = await fetch(`${UPSTREAM}?symbol=${SYMBOL}&levels=15`, {
       // Never a cached book. A stale one is worse than none: it reads as a
       // live market and prices a trade that cannot fill.
       cache: "no-store",
@@ -37,7 +39,7 @@ export async function GET(): Promise<NextResponse> {
         { status: 502 },
       );
     }
-    const book = parseBook(await res.json());
+    const book = parseGatewayDepth(await res.json());
     if (book.bestBidUsd === null || book.bestAskUsd === null) {
       // An empty side is not an outage, but it is not a tradable book either,
       // and the screen must be able to tell those apart.

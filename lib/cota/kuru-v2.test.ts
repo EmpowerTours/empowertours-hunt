@@ -5,6 +5,10 @@ import {
   KuruStopped,
   NATIVE_MON,
   checkFill,
+  gasLimitFor,
+  V2_STEP_GAS_CEILING,
+  V2_TRADE_GAS,
+  v2GasReserveWei,
   legsFor,
   minAmountOut,
   swapOnKuru,
@@ -279,5 +283,27 @@ describe("withdrawAll — the way out", () => {
     const chain = fakeChain({ rootId: 0 });
     expect(await withdrawAll({ chain, owner: OWNER })).toEqual([]);
     expect(sends(chain)).toEqual([]);
+  });
+});
+
+describe("gasLimitFor", () => {
+  it("pads the live estimate 1.5x — Monad charges the limit, and state drifts", () => {
+    // The measured swap step.
+    expect(gasLimitFor(389_010n)).toBe(583_515n);
+  });
+  it("caps a runaway estimate", () => {
+    expect(gasLimitFor(5_000_000n)).toBe(V2_STEP_GAS_CEILING);
+  });
+  it("refuses to guess without an estimate", () => {
+    expect(() => gasLimitFor(0n)).toThrow();
+  });
+  it("the trade reserve covers the heaviest measured trade, padded", () => {
+    expect(V2_TRADE_GAS).toBeGreaterThanOrEqual((1_196_755n * 3n) / 2n);
+  });
+});
+
+describe("v2GasReserveWei", () => {
+  it("at today's 102 gwei holds back about 0.23 MON", () => {
+    expect(v2GasReserveWei(102_000_000_000n)).toBe(229_500_000_000_000_000n);
   });
 });

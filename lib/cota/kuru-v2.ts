@@ -234,7 +234,50 @@ export interface KuruChain {
   send(call: ContractCall): Promise<Hex>;
 }
 
-export function viemChain(account: LocalAccount): KuruChain {
+/**
+ * Gas a whole v2 trade needs, for the reserve a hunter must keep in MON.
+ *
+ * Minimum limits found by bisecting each step in eth_simulateV1 against
+ * mainnet state, 2026-10-31 (the receipt cannot tell you — Monad reports
+ * gasUsed == gasLimit):
+ *
+ *   sell 843 MON   deposit 394,829  swap 389,010  withdraw 352,646  = 1,136,485
+ *   buy 5 USDC     approve 87,909   deposit 435,556  swap 390,465
+ *                  withdraw 282,825                                 = 1,196,755
+ *
+ * About three times the old single-transaction route (~387k). Padded 1.5x the
+ * same way gasLimitFor pads each step.
+ */
+export const V2_TRADE_GAS = 1_800_000n;
+
+/** Highest limit any one step may carry; nothing measured pads above ~660k. */
+export const V2_STEP_GAS_CEILING = 1_000_000n;
+
+/**
+ * The limit to send for one step: the live estimate padded 1.5x.
+ *
+ * Monad charges the WHOLE limit, so this is the price of the step, and it runs
+ * against state about three blocks behind where the transaction lands — a
+ * different set of book levels costs different gas (5.6% drift measured on the
+ * old route). The wallet's default would send the raw estimate and revert on
+ * the drift, at full price. A missing estimate is not guessed: the simulation
+ * that precedes it would already have failed.
+ */
+export function gasLimitFor(estimate: bigint): bigint {
+  if (estimate <= 0n) throw new Error("kuru: no gas estimate for this step");
+  const padded = (estimate * 3n) / 2n;
+  return padded > V2_STEP_GAS_CEILING ? V2_STEP_GAS_CEILING : padded;
+}
+
+/**
+ * `onSent` hears every hash the moment it is broadcast, before its receipt —
+ * so a step that then reverts still leaves a hash the screen can record and
+ * the hunter can look up. A revert with no hash is a dead end.
+ */
+export function viemChain(
+  account: LocalAccount,
+  onSent?: (functionName: string, hash: Hex) => void,
+): KuruChain {
   const pc = publicClient();
   const wc = walletClientFor(account);
   return {
@@ -246,7 +289,15 @@ export function viemChain(account: LocalAccount): KuruChain {
         ...(call as Parameters<typeof pc.simulateContract>[0]),
         account,
       });
-      const hash = await wc.writeContract(sim.request);
+      const estimate = await pc.estimateContractGas({
+        ...(call as Parameters<typeof pc.estimateContractGas>[0]),
+        account,
+      });
+      const hash = await wc.writeContract({
+        ...sim.request,
+        gas: gasLimitFor(estimate),
+      });
+      onSent?.(call.functionName, hash);
       const receipt = await pc.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") {
         throw new Error(`kuru: transaction ${hash} reverted`);
@@ -462,4 +513,28 @@ export async function withdrawAll(args: {
     );
   }
   return sent;
+}
+
+/** MON to hold back so a whole v2 trade can pay its gas: V2_TRADE_GAS at `gasPriceWei`, plus 25%. */
+export function v2GasReserveWei(gasPriceWei: bigint): bigint {
+  return (V2_TRADE_GAS * gasPriceWei * 5n) / 4n;
+}
+
+/**
+ * What the hunter holds INSIDE Kuru, by token. Zero for a wallet with no
+ * account. Read on page load so funds left there by an interrupted trade —
+ * the tab closed, the phone locked — are offered back, not forgotten.
+ */
+export async function balancesInKuru(
+  chain: Pick<KuruChain, "read">,
+  owner: `0x${string}`,
+): Promise<{ monWei: bigint; usdc: bigint }> {
+  const c = chain as KuruChain;
+  const rootId = await rootIdOf(c, owner);
+  if (rootId === 0) return { monWei: 0n, usdc: 0n };
+  const [monWei, usdc] = await Promise.all([
+    balanceIn(c, rootId, NATIVE_MON),
+    balanceIn(c, rootId, USDC),
+  ]);
+  return { monWei, usdc };
 }

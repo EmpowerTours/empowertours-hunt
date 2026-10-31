@@ -9,17 +9,20 @@ import { Sheet, SheetOpener } from "@/components/ui/Sheet";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 import { signInAccount } from "@/lib/auth/passkey";
-import { publicClient, walletClientFor } from "@/lib/cota/swap";
-import { KURU_EXECUTOR, USDC, kuruQuote, kuruToken } from "@/lib/cota/kuru";
-import type { KuruBook } from "@/lib/cota/kuru-book";
+import { publicClient } from "@/lib/cota/swap";
+import { USDC } from "@/lib/cota/kuru";
 import {
-  affordable,
-  explainFailure,
-  gasFor,
-  gasReserveWei,
-  quoteAcceptable,
-  received as receivedFrom,
-} from "@/lib/cota/spot-trade";
+  KuruStopped,
+  balancesInKuru,
+  minAmountOut,
+  quoteKuru,
+  swapOnKuru,
+  v2GasReserveWei,
+  viemChain,
+  withdrawAll,
+} from "@/lib/cota/kuru-v2";
+import type { KuruBook } from "@/lib/cota/kuru-book";
+import { affordable, received as receivedFrom } from "@/lib/cota/spot-trade";
 import {
   gasBps,
   gasMon,
@@ -72,6 +75,13 @@ const T = {
     trade: "Operar",
     working: "Operando… confirma con tu passkey",
     approving: "Autorizando USDC…",
+    inKuru:
+      "Tu dinero está en tu cuenta de Kuru: a salvo y a tu nombre, pero todavía no en tu cartera. Retíralo con el botón de abajo.",
+    depositUnknown:
+      "No pudimos confirmar el depósito en Kuru. Revisa tu saldo antes de volver a intentar; si quedó en Kuru, retíralo abajo.",
+    heldInKuru: "Tienes fondos en tu cuenta de Kuru:",
+    withdrawKuru: "Retirar de Kuru a mi cartera",
+    withdrawingKuru: "Retirando…",
     done: "Listo. Recibiste",
     book: "Libro de órdenes",
     seeBook: "Ver el libro",
@@ -114,6 +124,13 @@ const T = {
     trade: "Trade",
     working: "Trading… confirm with your passkey",
     approving: "Approving USDC…",
+    inKuru:
+      "Your funds are in your Kuru account: safe and yours, but not in your wallet yet. Withdraw them with the button below.",
+    depositUnknown:
+      "We could not confirm the deposit to Kuru. Check your balance before trying again; if it landed in Kuru, withdraw it below.",
+    heldInKuru: "You have funds in your Kuru account:",
+    withdrawKuru: "Withdraw from Kuru to my wallet",
+    withdrawingKuru: "Withdrawing…",
     done: "Done. You received",
     book: "Order book",
     seeBook: "See the book",
@@ -152,8 +169,8 @@ const T = {
  * its own gas, which is what a flat 0.05 did on every trade this screen has
  * ever made. See gasReserveWei.
  */
-const GAS_RESERVE_FALLBACK = parseEther("0.2");
-const NATIVE = "0x0000000000000000000000000000000000000000";
+// 1.8M gas (a whole v2 trade, see V2_TRADE_GAS) at a 171-gwei spike, +25%.
+const GAS_RESERVE_FALLBACK = parseEther("0.4");
 
 const ERC20 = [
   {
@@ -205,6 +222,13 @@ export default function SpotPage() {
   const [usdcBal, setUsdcBal] = useState<bigint | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [approving, setApproving] = useState(false);
+  // Funds sitting in the hunter's Kuru account — left there by a trade that
+  // stopped between deposit and withdrawal. Read on every refresh, so they
+  // are offered back even after the tab was closed mid-trade.
+  const [inKuru, setInKuru] = useState<{ monWei: bigint; usdc: bigint } | null>(
+    null,
+  );
+  const [withdrawing, setWithdrawing] = useState(false);
   const [tx, setTx] = useState<string | null>(null);
   const [got, setGot] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -246,12 +270,13 @@ export default function SpotPage() {
    * one than an error message about bookkeeping over a fill that worked.
    */
   const record = useCallback(
-    async (hash: string) => {
+    async (hashes: { hash: string; deposit?: string; withdraw?: string }) => {
       try {
         await fetch("/api/cota/kuru/history", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ hash, side }),
+          // v: 2 — a relaunched-Kuru trade, three transactions under one row.
+          body: JSON.stringify({ ...hashes, side, v: 2 }),
         });
       } catch {
         /* the trade stands either way */
@@ -294,6 +319,7 @@ export default function SpotPage() {
           args: [address],
         })) as bigint,
       );
+      setInKuru(await balancesInKuru({ read: (c) => pc.readContract(c as never) }, address));
     } catch {
       // The poll below retries; a dropped read must not strand the display.
     }
@@ -339,20 +365,21 @@ export default function SpotPage() {
           return;
         }
         try {
-          const token = await kuruToken(address);
-          const q = await kuruQuote({
-            token,
-            userAddress: address,
-            tokenIn: side === "sell" ? NATIVE : USDC,
-            tokenOut: side === "sell" ? USDC : NATIVE,
+          // Straight off the book contract — no Kuru API in between. A book
+          // that cannot fill the whole amount shows no quote rather than one
+          // the trade would refuse.
+          const pc = publicClient();
+          const q = await quoteKuru(
+            { read: (c) => pc.readContract(c as never) },
+            side,
             amount,
-          });
+          );
+          const fills = q.amountInUsed >= amount && q.amountOut > 0n;
           if (!cancelled) {
-            setOut(q.output);
-            setFloor(q.minOut);
-            // Measured from the calldata about to be signed, not assumed. The
-            // router picks a venue per quote and the label must follow it.
-            setOnBook(q.usesOrderBook);
+            setOut(fills ? q.amountOut : null);
+            setFloor(fills ? minAmountOut(q.amountOut, 100) : null);
+            // The relaunched exchange has no router: every trade is the book.
+            setOnBook(fills ? true : null);
           }
         } catch {
           if (!cancelled) {
@@ -404,7 +431,7 @@ export default function SpotPage() {
       monWei: monBal ?? 0n,
       usdcUnits: usdcBal ?? 0n,
       gasReserveWei:
-        gasPrice === null ? GAS_RESERVE_FALLBACK : gasReserveWei(gasPrice),
+        gasPrice === null ? GAS_RESERVE_FALLBACK : v2GasReserveWei(gasPrice),
     });
     if (!afford.ok) {
       setError(afford.reason === "no_gas" ? t.keepGas : t.notEnough);
@@ -412,206 +439,102 @@ export default function SpotPage() {
     }
 
     setPhase("working");
+    // Every hash the moment it is broadcast, so a step that then reverts still
+    // leaves something to record and to look up.
+    const sent: Record<string, `0x${string}`> = {};
     try {
       const pc = publicClient();
       const { account } = await signInAccount();
-      const token = await kuruToken(address);
-
-      // Selling USDC pulls an ERC-20, and the spender is Kuru's EXECUTOR — not
-      // the entrypoint the transaction is addressed to. Approving the wrong one
-      // reverts with a correct allowance in place.
-      if (side === "buy") {
-        const allowance = (await pc.readContract({
-          address: USDC,
-          abi: ERC20,
-          functionName: "allowance",
-          args: [address, KURU_EXECUTOR],
-        })) as bigint;
-        if (allowance < amount) {
-          setApproving(true);
-          const h = await walletClientFor(account).writeContract({
-            address: USDC,
-            abi: ERC20,
-            functionName: "approve",
-            args: [KURU_EXECUTOR, amount],
-          });
-          await pc.waitForTransactionReceipt({ hash: h });
-          setApproving(false);
-        }
-      }
-
-      // Quote, simulate, re-quote past a route that will not execute. Kuru
-      // intermittently returns one that reverts; retrying gets a working one.
-      let sent: `0x${string}` | null = null;
-      let received = 0n;
-      let lastRevert: `0x${string}` | null = null;
-      for (let attempt = 0; attempt < 4 && sent === null; attempt++) {
-        // EACH RETRY ASKS FOR SLIGHTLY LESS. Re-sending the identical amount —
-        // which this did — cannot fix the failure that actually happens.
-        //
-        // Kuru can return a transaction that spends MORE than the amount it was
-        // quoted for: asked for 47.337660 USDC it built calldata spending
-        // 47.403196, about 0.138% over. That is fatal here precisely because
-        // the tap-the-balance shortcut spends the WHOLE holding, so there is no
-        // headroom for Kuru to round into and a wallet is always a few wei
-        // short of its own quote.
-        //
-        // Half a percent per attempt. The remainder stays in the wallet.
-        const ask =
-          attempt === 0
-            ? amount
-            : (amount * BigInt(1000 - attempt * 5)) / 1000n;
-        const q = await kuruQuote({
-          token,
-          userAddress: address,
-          tokenIn: side === "sell" ? NATIVE : USDC,
-          tokenOut: side === "sell" ? USDC : NATIVE,
-          amount: ask,
-        });
-        // Cheaper than a simulation and catches a quote that could only ever
-        // revert — a minOut above the output, or nothing out at all.
-        if (!quoteAcceptable(q)) {
-          await new Promise((r) => setTimeout(r, 1200));
-          continue;
-        }
-        try {
-          await pc.call({
-            account: address,
-            to: q.to,
-            data: q.calldata,
-            value: q.value,
-          });
-        } catch {
-          // ANY simulation failure on a buy asks the allowance question, rather
-          // than trying to recognise the revert that means it.
-          //
-          // Kuru uses both of its contracts as the spender depending on the
-          // route — mainnet on 4 October carried 778 USDC approvals to the
-          // executor and 164 to the entrypoint, hours apart — and this
-          // approved only the executor, so a hunter handed an entrypoint route
-          // could not trade and was told "no route that would execute".
-          //
-          // A first attempt at this matched the selector 0x7939f424
-          // (TransferFromFailed) in the error MESSAGE. viem does not put it
-          // there, so the branch never ran and the approval went to the
-          // executor exactly as before — a fix that changed nothing while
-          // looking like it had. Asking the chain what the allowance is cannot
-          // be wrong about it.
-          if (side === "buy") {
-            const spent = (await pc.readContract({
+      const holding = () =>
+        side === "sell"
+          ? (pc.readContract({
               address: USDC,
               abi: ERC20,
-              functionName: "allowance",
-              args: [address, q.to],
-            })) as bigint;
-            if (spent < amount) {
-              setApproving(true);
-              const h = await walletClientFor(account).writeContract({
-                address: USDC,
-                abi: ERC20,
-                functionName: "approve",
-                args: [q.to, amount],
-              });
-              await pc.waitForTransactionReceipt({ hash: h });
-              setApproving(false);
-              continue;
-            }
-          }
-          await new Promise((r) => setTimeout(r, 1200));
-          continue;
-        }
-        const before =
-          side === "sell"
-            ? ((await pc.readContract({
-                address: USDC,
-                abi: ERC20,
-                functionName: "balanceOf",
-                args: [address],
-              })) as bigint)
-            : await pc.getBalance({ address });
-        // gasFor is tested: Monad charges the whole limit on a revert, so a
-        // tight estimate buys a failed transaction at full price rather than
-        // saving anything.
-        let estimate: bigint | null = null;
-        try {
-          estimate = await pc.estimateGas({
-            account: address,
-            to: q.to,
-            data: q.calldata,
-            value: q.value,
-          });
-        } catch {
-          // A failed estimate is not a reason to send nothing; gasFor floors it.
-        }
-        const gas = gasFor(estimate);
-        const hash = await walletClientFor(account).sendTransaction({
-          to: q.to,
-          data: q.calldata,
-          value: q.value,
-          gas,
-        });
-        const receipt = await pc.waitForTransactionReceipt({ hash });
-        if (receipt.status !== "success") {
-          // Keep the hash. A revert with no hash is a dead end — nobody can
-          // look at what happened, which is how "it just says reverted" became
-          // the whole bug report. Then try another route: the simulation
-          // passed, so the book moved under it rather than the call being
-          // wrong, and the next quote may well land.
-          setTx(hash);
-          lastRevert = hash;
-          // Record the REVERT too. It cost the whole gas limit and delivered
-          // nothing, which is precisely the trade a hunter needs to find again
-          // — and a log of successes only would have hidden every one of the
-          // failures that took this screen a week to get right.
-          void record(hash);
-          await new Promise((r) => setTimeout(r, 1200));
-          continue;
-        }
-        const after =
-          side === "sell"
-            ? ((await pc.readContract({
-                address: USDC,
-                abi: ERC20,
-                functionName: "balanceOf",
-                args: [address],
-              })) as bigint)
-            : await pc.getBalance({ address });
-        sent = hash;
-        // Measured, not quoted. On a MON buy this is net of gas — what the
-        // wallet actually gained — and it clamps at zero rather than showing a
-        // negative number nobody can act on.
-        received = receivedFrom(before, after);
-      }
-      if (sent === null) {
-        const f = explainFailure(lastRevert, {
-          noRoute: t.noRoute,
-          revertedTx: t.revertedTx,
-        });
-        throw new Error(f.message);
-      }
-      setTx(sent);
-      setGot(received);
+              functionName: "balanceOf",
+              args: [address],
+            }) as Promise<bigint>)
+          : pc.getBalance({ address });
+      const before = await holding();
+      // Deposit, swap, withdraw — three transactions, four on a first buy —
+      // under ONE passkey unlock: the account signs each without prompting.
+      const r = await swapOnKuru({
+        chain: viemChain(account, (fn, h) => {
+          sent[fn] = h;
+        }),
+        owner: address,
+        side,
+        amountIn: amount,
+        onStep: (s) => setApproving(s === "approving"),
+      });
+      const after = await holding();
+      setTx(r.swapTx);
+      // Measured, not quoted. On a MON buy this is net of gas — what the
+      // wallet actually gained — clamped at zero.
+      setGot(receivedFrom(before, after));
       setPhase("done");
       void refresh();
-      // Record, then reload — sequential, because the row has to exist before
-      // the list that should contain it is fetched.
-      void record(sent).then(loadLog);
+      // Record, then reload — the row has to exist before the list is fetched.
+      void record({
+        hash: r.swapTx,
+        deposit: r.depositTx,
+        withdraw: r.withdrawTx,
+      }).then(loadLog);
     } catch (e) {
       setApproving(false);
-      setError(e instanceof Error ? e.message : "failed");
+      // A swap that was sent is recorded even if it reverted or a later step
+      // failed: it cost gas, and it is the trade a hunter most needs to find.
+      if (sent.swap) {
+        setTx(sent.swap);
+        void record({
+          hash: sent.swap,
+          deposit: sent.deposit,
+          withdraw: sent.withdraw,
+        }).then(loadLog);
+      }
+      setError(
+        e instanceof KuruStopped && e.inKuru === true
+          ? t.inKuru
+          : e instanceof KuruStopped && e.inKuru === null
+            ? t.depositUnknown
+            : e instanceof Error
+              ? e.message
+              : "failed",
+      );
       setPhase("error");
+      void refresh();
     }
   }, [
     address,
     input,
     side,
+    monBal,
+    usdcBal,
+    gasPrice,
     t.noAmount,
-    t.noRoute,
-    t.revertedTx,
+    t.notEnough,
+    t.keepGas,
+    t.inKuru,
+    t.depositUnknown,
     refresh,
     record,
     loadLog,
   ]);
+
+  const doWithdraw = useCallback(async () => {
+    if (!address) return;
+    setWithdrawing(true);
+    setError(null);
+    try {
+      const { account } = await signInAccount();
+      await withdrawAll({ chain: viemChain(account), owner: address });
+      setPhase("idle");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "failed");
+    } finally {
+      setWithdrawing(false);
+      void refresh();
+    }
+  }, [address, refresh]);
 
   const fmt = (v: bigint | null, dp: number) =>
     v === null ? "—" : (Number(v) / 10 ** dp).toFixed(4);
@@ -631,7 +554,7 @@ export default function SpotPage() {
   // less than the gas every real trade has paid, so tapping the balance built
   // an input the wallet could not afford to sign.
   const reserve =
-    gasPrice === null ? GAS_RESERVE_FALLBACK : gasReserveWei(gasPrice);
+    gasPrice === null ? GAS_RESERVE_FALLBACK : v2GasReserveWei(gasPrice);
   const maxMon = monBal !== null && monBal > reserve ? monBal - reserve : 0n;
 
   return (
@@ -786,6 +709,28 @@ export default function SpotPage() {
                 <p className="text-ink-faint text-xs">{t.keepGas}</p>
               )}
               {error && <Note tone="warn">{error}</Note>}
+              {inKuru && (inKuru.monWei > 0n || inKuru.usdc > 0n) && (
+                <Note tone="warn">
+                  <span className="block">
+                    {t.heldInKuru}{" "}
+                    {[
+                      inKuru.monWei > 0n &&
+                        `${Number(formatEther(inKuru.monWei)).toFixed(4)} MON`,
+                      inKuru.usdc > 0n &&
+                        `${Number(formatUnits(inKuru.usdc, 6)).toFixed(4)} USDC`,
+                    ]
+                      .filter(Boolean)
+                      .join(" + ")}
+                  </span>
+                  <Button
+                    className="mt-2"
+                    onClick={() => void doWithdraw()}
+                    disabled={withdrawing}
+                  >
+                    {withdrawing ? t.withdrawingKuru : t.withdrawKuru}
+                  </Button>
+                </Note>
+              )}
               {phase === "done" && got !== null && (
                 <Note>
                   {t.done} {fmt(got, side === "sell" ? 6 : 18)}{" "}

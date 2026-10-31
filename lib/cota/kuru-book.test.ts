@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { depthUsd, parseBook } from "./kuru-book";
+import { depthUsd, parseBook, parseGatewayDepth } from "./kuru-book";
 
 // ---------------------------------------------------------------------------
 // Rows taken verbatim from https://exchange.kuru.io/api/v3/depth?symbol=MON_USDC
@@ -89,5 +89,33 @@ describe("depthUsd", () => {
 
   it("is zero on an empty side", () => {
     expect(depthUsd([])).toBe(0);
+  });
+});
+
+describe("parseGatewayDepth (Kuru relaunch, gateway.mainnet.kuru.io)", () => {
+  // The top of the live MONUSDC book, verbatim, 2026-10-31.
+  const LIVE = {
+    feedEpoch: 9,
+    data: {
+      symbol: "MONUSDC",
+      bids: [
+        { price: "1968900", total_base: "507897810960434" },
+        { price: "1967900", total_base: "1143061804461608" },
+      ],
+      asks: [{ price: "1971000", total_base: "250000000000000" }],
+    },
+  };
+
+  it("reads native price and size precision", () => {
+    const b = parseGatewayDepth(LIVE);
+    expect(b.bestBidUsd).toBeCloseTo(0.019689, 9);
+    expect(b.bids[0].sizeMon).toBeCloseTo(50_789.781096, 5);
+    expect(b.bestAskUsd).toBeCloseTo(0.01971, 9);
+  });
+
+  it("an error body is an empty book, not a crash", () => {
+    const b = parseGatewayDepth({ feedEpoch: 9, error: { code: "BadRequest" } });
+    expect(b.bestBidUsd).toBeNull();
+    expect(b.bestAskUsd).toBeNull();
   });
 });

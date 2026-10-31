@@ -9,6 +9,7 @@ import {
   type MinimalReceipt,
   type TraceFrame,
 } from "@/lib/cota/kuru-history";
+import { toRecordV2, type ChainTx } from "@/lib/cota/kuru-history-v2";
 
 // ---------------------------------------------------------------------------
 // The hunter's own Kuru trades.
@@ -61,6 +62,30 @@ async function tracedNativeIn(
   }
 }
 
+/**
+ * A v2 swap's own return value, from a trace. Null on any failure — the row is
+ * still worth keeping, with the output marked unknown (see toRecordV2).
+ */
+async function tracedSwapOutput(hash: string): Promise<`0x${string}` | null> {
+  try {
+    const frame = (await publicClient().request({
+      method: "debug_traceTransaction",
+      params: [hash, { tracer: "callTracer" }],
+    } as never)) as { output?: `0x${string}` } | null;
+    return frame?.output ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function chainTx(hash: `0x${string}`): Promise<ChainTx> {
+  const [receipt, tx] = await Promise.all([
+    publicClient().getTransactionReceipt({ hash }),
+    publicClient().getTransaction({ hash }),
+  ]);
+  return { receipt, input: tx.input };
+}
+
 export async function POST(req: Request) {
   let body: unknown;
   try {
@@ -68,7 +93,14 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
   }
-  const { hash, side } = (body ?? {}) as { hash?: unknown; side?: unknown };
+  const { hash, side, v, deposit, withdraw } = (body ?? {}) as {
+    hash?: unknown;
+    side?: unknown;
+    /** 2 = Kuru's relaunched exchange (kuru-v2.ts); absent = the old router. */
+    v?: unknown;
+    deposit?: unknown;
+    withdraw?: unknown;
+  };
 
   if (typeof hash !== "string" || !isHash(hash)) {
     return NextResponse.json({ error: "hash required" }, { status: 400 });
@@ -127,12 +159,33 @@ export async function POST(req: Request) {
 
   let record;
   try {
-    record = toRecord(
-      hash,
-      receipt.from,
-      tx.value,
-      receipt as unknown as MinimalReceipt,
-    );
+    if (v === 2) {
+      // The deposit and withdrawal are optional: a trade that stopped after
+      // the swap is still a trade. Each one named is checked, not trusted.
+      // One that cannot be fetched is left out (its gas uncounted) rather
+      // than losing the swap's row over it.
+      const extra = async (h: unknown) =>
+        typeof h === "string" && isHash(h)
+          ? chainTx(h).catch(() => undefined)
+          : undefined;
+      const [dep, wd] = await Promise.all([extra(deposit), extra(withdraw)]);
+      record = toRecordV2({
+        hash,
+        side,
+        swap: { receipt, input: tx.input },
+        swapOutput:
+          receipt.status === "success" ? await tracedSwapOutput(hash) : null,
+        deposit: dep,
+        withdraw: wd,
+      });
+    } else {
+      record = toRecord(
+        hash,
+        receipt.from,
+        tx.value,
+        receipt as unknown as MinimalReceipt,
+      );
+    }
   } catch (err) {
     if (err instanceof NotAKuruTrade) {
       return NextResponse.json({ error: err.message }, { status: 400 });
@@ -144,7 +197,8 @@ export async function POST(req: Request) {
   // because it is a far heavier call. Still null afterwards is stored as null —
   // unknown, which the reader can flag — and never coerced to zero.
   const nativeInWei =
-    record.nativeInWei ?? (await tracedNativeIn(record.hash, record.wallet));
+    record.nativeInWei ??
+    (v === 2 ? null : await tracedNativeIn(record.hash, record.wallet));
 
   try {
     await prisma.kuruSwap.create({

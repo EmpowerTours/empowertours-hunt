@@ -88,3 +88,30 @@ export function parseBook(body: unknown): KuruBook {
 export function depthUsd(side: BookLevel[], levels = 10): number {
   return side.slice(0, levels).reduce((sum, l) => sum + l.notionalUsd, 0);
 }
+
+/**
+ * The relaunched exchange's book: gateway.mainnet.kuru.io/api/depth?symbol=MONUSDC.
+ *
+ * `{ data: { bids: [{ price, total_base }], asks: [...] } }`, both integer
+ * strings in the market's NATIVE precisions — for MONUSDC pricePrecision 1e8
+ * and sizePrecision 1e10 (docs.kuru.io contract reference, market parameters).
+ * So bid price "1968900" is $0.019689, which sat 0.1% under Chainlink's
+ * MON/USD when read on 2026-10-31. Mapped onto the same KuruBook as before so
+ * the screen does not change.
+ */
+const GATEWAY_PRICE_SCALE = 1e8;
+const GATEWAY_SIZE_SCALE = 1e10;
+
+export function parseGatewayDepth(body: unknown): KuruBook {
+  const d = (body as { data?: { bids?: unknown; asks?: unknown } })?.data ?? {};
+  const toPairs = (side: unknown) =>
+    (Array.isArray(side) ? side : []).map((l) => {
+      const x = l as { price?: unknown; total_base?: unknown };
+      // Re-scaled into the old [price, size] pair so level() validates both.
+      return [
+        (Number(x.price) / GATEWAY_PRICE_SCALE) * PRICE_SCALE,
+        (Number(x.total_base) / GATEWAY_SIZE_SCALE) * SIZE_SCALE,
+      ];
+    });
+  return parseBook({ bids: toPairs(d.bids), asks: toPairs(d.asks) });
+}
