@@ -28,7 +28,9 @@ const BY_ID = new Map<number, Market>(
   Object.values(EXECUTABLE_MARKETS).map((m) => [m.id, m]),
 );
 
-export function describePositions(frames: readonly OpenPositionFrame[]): PositionView[] {
+export function describePositions(
+  frames: readonly OpenPositionFrame[],
+): PositionView[] {
   return frames.map((p) => {
     const m = BY_ID.get(p.marketId);
     return {
@@ -46,4 +48,55 @@ export function describePositions(frames: readonly OpenPositionFrame[]): Positio
             : p.entryPriceScaled,
     };
   });
+}
+
+/**
+ * Collateral that can back a NEW order, in USD.
+ *
+ * Perpl's account frame said locked 0 and available $26.00 while a 395 MON long
+ * was open (2026-10-31), and three orders sized off that $26 were refused at
+ * settlement. So "available" is not trusted on its own: each open position is
+ * charged its margin at the current mark, plus any loss it is carrying, and the
+ * result is capped at what the venue calls available in case it ever does
+ * report locked margin. A position we cannot price frees nothing — null.
+ */
+export function freeMarginUsd(args: {
+  balanceUsd: number;
+  availableUsd: number;
+  positions: readonly PositionView[];
+  /** Mark per market symbol, e.g. { MON: 0.0192 }. */
+  marks: Readonly<Record<string, number>>;
+}): number | null {
+  let held = 0;
+  for (const p of args.positions) {
+    const mark = args.marks[p.market];
+    if (
+      !p.scaled ||
+      p.side === "unknown" ||
+      p.entryUsd === null ||
+      !(mark > 0) ||
+      !(p.leverageX > 0)
+    ) {
+      return null;
+    }
+    const loss =
+      p.side === "long"
+        ? (p.entryUsd - mark) * p.size
+        : (mark - p.entryUsd) * p.size;
+    held += (p.size * mark) / p.leverageX + Math.max(0, loss);
+  }
+  return Math.max(0, Math.min(args.availableUsd, args.balanceUsd - held));
+}
+
+/**
+ * True when opening `side` on `market` would trade against a position already
+ * open there. Adding to a long is fine; a short against it is not, and neither
+ * is anything on a side we cannot read.
+ */
+export function opensAgainst(
+  positions: readonly PositionView[],
+  market: string,
+  side: "long" | "short",
+): boolean {
+  return positions.some((p) => p.market === market && p.side !== side);
 }

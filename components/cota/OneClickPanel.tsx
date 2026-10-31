@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { PositionView } from "@/lib/cota/venue/position-view";
+import {
+  opensAgainst,
+  type PositionView,
+} from "@/lib/cota/venue/position-view";
 import { Button, Disclosure, Note, Panel } from "@/components/ui/primitives";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { formatMon } from "@/components/hunt/format";
@@ -224,6 +227,7 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
   // What is already open at Perpl, read through the hunter's own key — so
   // nobody has to go to app.perpl.xyz to find out what is holding margin.
   const [positions, setPositions] = useState<PositionView[]>([]);
+  const [freeUsd, setFreeUsd] = useState<number | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState<Step | null>(null);
@@ -306,19 +310,17 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
       const b: Balances = {
         walletMonWei: monWei,
         walletAusd6: ausd6,
-        // AVAILABLE, not balance: margin already locked by an open position
-        // or order cannot back a new one, and sizing from the balance would
-        // count it twice.
+        // FREE margin, not available: Perpl's `available` has counted the
+        // margin an open position holds as free (2026-10-31), so the server
+        // charges each position itself (freeMarginUsd). Null — an open
+        // position it could not price — backs nothing.
         perplAusd6: BigInt(
-          Math.round(
-            (accountRes?.account?.availableUsd ??
-              accountRes?.account?.balanceUsd ??
-              0) * 1e6,
-          ),
+          Math.round((accountRes?.account?.freeUsd ?? 0) * 1e6),
         ),
       };
       setBalances(b);
       setPositions(accountRes?.account?.positions ?? []);
+      setFreeUsd(accountRes?.account?.freeUsd ?? null);
       setPlan(
         planOneClick(b, {
           enrolled: Boolean(accountRes?.enrolled),
@@ -484,6 +486,13 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
     trade: t.stepTrade,
   };
 
+  // Open positions don't stop a new order on the same side; they shrink it to
+  // the margin left free. They stop it only when it would trade against one,
+  // or when nobody could price them.
+  const blocked =
+    opensAgainst(positions, ONE_CLICK.market, side) ||
+    (positions.length > 0 && freeUsd === null);
+
   return (
     <Panel className="space-y-3" noTranslate>
       <div>
@@ -637,16 +646,17 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
             setBusy(false);
           }
         }}
-        // One position at a time; the server refuses a second open as well,
+        // Adding to a long is fine; opening against it, or sizing with open
+        // positions nobody could price, is not. The server refuses both too,
         // but by then the swap and deposit would already have moved the money.
-        disabled={busy || positions.length > 0}
+        disabled={busy || blocked}
       >
         {busy
           ? `${t.working}${running ? ` (${label[running]})` : ""}`
-          : positions.length > 0
+          : blocked
             ? lang === "es"
-              ? "Ya hay una posición abierta"
-              : "A position is already open"
+              ? "No se puede abrir ahora"
+              : "Can't open right now"
             : `${t.ready} $${ausdLabel(plan.orderNotional6)}`}
       </Button>
 
@@ -693,7 +703,15 @@ export function OneClickPanel({ lang }: { lang: Lang }) {
             </span>
           ))}
           <span className="mt-1 block">
-            {refusalText("position_open", lang)}
+            {opensAgainst(positions, ONE_CLICK.market, side)
+              ? refusalText("position_open", lang)
+              : freeUsd === null
+                ? lang === "es"
+                  ? "No se pudo calcular el margen libre, así que no se abre nada."
+                  : "The free margin could not be worked out, so nothing will open."
+                : lang === "es"
+                  ? `Margen libre para sumar: $${freeUsd.toFixed(2)}. Lo demás lo retienen estas posiciones.`
+                  : `Free margin to add with: $${freeUsd.toFixed(2)}. The rest is held by these positions.`}
           </span>
           <a href="/cota/trade" className="mt-2 block font-semibold underline">
             {lang === "es" ? "Ir a operar →" : "Go to trade →"}

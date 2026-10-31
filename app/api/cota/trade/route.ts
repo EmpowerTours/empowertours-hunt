@@ -1,4 +1,8 @@
-import { describePositions } from "@/lib/cota/venue/position-view";
+import {
+  describePositions,
+  freeMarginUsd,
+  opensAgainst,
+} from "@/lib/cota/venue/position-view";
 import type { OpenPositionFrame } from "@/lib/cota/venue/frames";
 import { NextResponse } from "next/server";
 import { postOnlyResponse } from "@/lib/cota/post-only";
@@ -164,17 +168,48 @@ export async function POST(req: Request) {
       });
     }
 
-    // One position at a time. The venue's account frame reported locked 0 and
-    // available $26.00 while a 395 MON long sat open (2026-10-31), so an order
-    // sized off "available" asked for margin that was not free. Refuse before
-    // anything is sent rather than stack a second open on the first.
-    if (venuePositions.length > 0) {
+    // Adding to an open position is allowed; trading against it is not, and
+    // neither is asking for more margin than is actually free. The venue's
+    // account frame reported locked 0 and available $26.00 while a 395 MON long
+    // sat open (2026-10-31), so an order sized off "available" asked for margin
+    // that was not free. freeMarginUsd charges each open position itself.
+    const positions = describePositions(venuePositions);
+    if (opensAgainst(positions, market.symbol, side)) {
       return NextResponse.json({
         allowed: false,
         reason: "position_open",
         detail:
-          "the account already holds an open position; Cota opens one at a time, so close it first",
-        positions: describePositions(venuePositions),
+          "the account holds a position on the other side of this market; close it before opening the opposite way",
+        positions,
+        markUsd,
+      });
+    }
+    const freeUsd = venueAccount
+      ? freeMarginUsd({
+          balanceUsd: venueAccount.balance / 1e6,
+          availableUsd: venueAccount.available / 1e6,
+          positions,
+          marks: { [market.symbol]: markUsd },
+        })
+      : null;
+    // A null account with nothing open is venuePreflight's call, not ours.
+    if (positions.length > 0 && freeUsd === null) {
+      return NextResponse.json({
+        allowed: false,
+        reason: "state_unavailable",
+        detail:
+          "could not price the open positions, so the free margin is unknown; refusing",
+        positions,
+        markUsd,
+      });
+    }
+    if (freeUsd !== null && targetNotionalUsd / leverageX > freeUsd) {
+      return NextResponse.json({
+        allowed: false,
+        reason: "no_free_margin",
+        detail: `that order needs $${(targetNotionalUsd / leverageX).toFixed(2)} of margin and only $${freeUsd.toFixed(2)} is free`,
+        freeUsd,
+        positions,
         markUsd,
       });
     }
