@@ -21,8 +21,7 @@ export type ExecRefusal =
   | "forwarding_disabled"
   | "account_frozen"
   | "no_collateral"
-  | "position_open"
-  | "position_underwater";
+  | "position_open";
 
 export type RefusalReason = DenyReason | ExecRefusal;
 
@@ -112,12 +111,6 @@ const TEXT: Record<RefusalReason, Record<Lang, string>> = {
   position_open: {
     en: "You have a position open the other way on this market. Nothing was sent and nothing was spent. Close it on the trade page first if you want to switch sides.",
     es: "Tienes una posición abierta en sentido contrario en este mercado. No se envió nada ni se gastó nada. Ciérrala primero en la página de operar si quieres cambiar de lado.",
-  },
-  // Perpl will not settle an order adding to a position losing more than the
-  // market's order_max_neg_pnl_collat_bps of its collateral (300 on MON).
-  position_underwater: {
-    en: "Perpl won't add to a position that's this far down. Nothing was sent and nothing was spent. You can add again once the price recovers, or after you close the position in profit.",
-    es: "Perpl no suma a una posición que va tan abajo. No se envió nada ni se gastó nada. Podrás sumar cuando el precio se recupere, o cuando cierres la posición con ganancia.",
   },
 };
 

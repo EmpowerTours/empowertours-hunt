@@ -2,12 +2,7 @@ import { NextResponse } from "next/server";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { loadPerpKey } from "@/lib/cota/keystore";
 import { readAccountPositions } from "@/lib/cota/venue/account-read";
-import { EXECUTABLE_MARKETS } from "@/lib/cota/order";
-import { readLossCheckInputs } from "@/lib/cota/venue/market-data";
-import {
-  addBlockedByLoss,
-  describePositions,
-} from "@/lib/cota/venue/position-view";
+import { describePositions } from "@/lib/cota/venue/position-view";
 
 // ---------------------------------------------------------------------------
 // GET /api/cota/account — what the hunter already has AT PERPL.
@@ -46,23 +41,6 @@ export async function GET(req: Request) {
     }
 
     const positions = describePositions(read.positions);
-    // Whether Perpl will settle an order ADDING to what is open on MON, the
-    // market one-click trades. One context read, only when something is open.
-    const mon = EXECUTABLE_MARKETS.MON;
-    let addCheck: ReturnType<typeof addBlockedByLoss> = { blocked: false };
-    if (positions.some((p) => p.market === mon.symbol)) {
-      const { markUsd, limitBps } = await readLossCheckInputs(
-        mon.id,
-        mon.priceDecimals,
-      );
-      addCheck = addBlockedByLoss({
-        positions,
-        market: mon.symbol,
-        markUsd,
-        limitBps,
-      });
-    }
-
     return NextResponse.json({
       enrolled: true,
       account: {
@@ -77,8 +55,6 @@ export async function GET(req: Request) {
         // Open positions hold margin the order form cannot spend. Shown so a
         // hunter never has to go to app.perpl.xyz to find out what is open.
         positions,
-        // Can one-click add to the open MON position? See addBlockedByLoss.
-        addCheck,
       },
     });
   } catch (err) {

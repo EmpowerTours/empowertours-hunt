@@ -455,6 +455,25 @@ export const ORDER_STATUS_REASON: Record<number, string> = {
   52: "WrongMarket",
 };
 
+/**
+ * `fr` on an mt 24 update: the exchange-level detail Perpl adds when `sr` is
+ * 23, 36 or 44 (docs.perpl.xyz, Types & Errors, OrderFailureReason). Five
+ * orders came back 44 TakerOrderSettlementFailed on 2026-10-31 while this field
+ * was dropped, and three different causes were guessed in its place.
+ */
+export const ORDER_FAILURE_REASON: Record<number, string> = {
+  0: "Unspecified",
+  1: "InsufficientBalance",
+  2: "InsufficientCollateralIncrease",
+  3: "InsufficientCollateralInvert",
+  4: "NoPositionToClose",
+  5: "PerpetualSolvency",
+  6: "NegativePositionValue",
+  7: "ReferencePriceStale",
+  8: "ExceedsMaxNegPnlCollat",
+  9: "Other",
+};
+
 export interface OrderUpdate {
   /** The `rq` the order went out under — how an update is tied to its order. */
   orderRq: number;
@@ -464,6 +483,10 @@ export interface OrderUpdate {
   reason: number;
   /** ORDER_STATUS_REASON name, or `reason <n>` for an unknown code. */
   reasonName: string;
+  /** `fr`, the exchange's detail on a failure, or null when not sent. */
+  failure: number | null;
+  /** ORDER_FAILURE_REASON name, `failure <n>` if unknown, null when not sent. */
+  failureName: string | null;
   /** Filled size, scaled. */
   filledScaled: number;
   /** Originally requested size, scaled. */
@@ -532,12 +555,18 @@ export function parseOrderUpdate(frame: unknown): OrderUpdate[] {
     if (o.rq === null || o.rq === undefined) continue;
     const status = Number(o.st ?? 0);
     const reason = Number(o.sr ?? 0);
+    const failure = o.fr === null || o.fr === undefined ? null : Number(o.fr);
     out.push({
       orderRq: Number(o.rq),
       status,
       statusName: ORDER_STATUS[status] ?? `status ${status}`,
       reason,
       reasonName: ORDER_STATUS_REASON[reason] ?? `reason ${reason}`,
+      failure,
+      failureName:
+        failure === null
+          ? null
+          : (ORDER_FAILURE_REASON[failure] ?? `failure ${failure}`),
       filledScaled: Number(o.fs ?? 0),
       originalScaled: Number(o.os ?? 0),
       terminal: TERMINAL_STATUS.has(status),

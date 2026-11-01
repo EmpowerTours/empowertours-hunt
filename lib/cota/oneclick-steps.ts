@@ -154,6 +154,7 @@ export function buildRunners(args: {
         venue?: {
           statusName?: string;
           reasonName?: string;
+          failureName?: string | null;
           terminal?: boolean;
           expectsFill?: boolean;
         } | null;
@@ -189,6 +190,7 @@ export function tradeOutcome(body: {
   venue?: {
     statusName?: string;
     reasonName?: string;
+    failureName?: string | null;
     terminal?: boolean;
     expectsFill?: boolean;
   } | null;
@@ -197,7 +199,7 @@ export function tradeOutcome(body: {
   if (body.filled === true || v?.expectsFill === true) return "filled";
   if (v?.terminal) {
     throw new Error(
-      `Perpl refused the order (${v.statusName ?? "failed"}: ${v.reasonName ?? "no reason given"}). No position was opened.`,
+      `Perpl refused the order (${v.statusName ?? "failed"}: ${v.reasonName ?? "no reason given"}${v.failureName ? ` — ${v.failureName}` : ""}). No position was opened.`,
     );
   }
   throw new Error(

@@ -21,7 +21,6 @@ const ALL: RefusalReason[] = [
   "size_zero",
   "forwarding_disabled",
   "position_open",
-  "position_underwater",
 ];
 
 describe("refusal text", () => {

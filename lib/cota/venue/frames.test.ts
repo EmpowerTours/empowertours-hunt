@@ -568,3 +568,30 @@ describe("parseAccountStats — the only authority on a close we never saw", () 
     expect(parseAccountStats({ mt: 19 })).toEqual([]);
   });
 });
+
+describe("parseOrderUpdate — `fr`, the venue's own reason for a failure", () => {
+  it("names the exchange-level detail Perpl sends with sr 44", () => {
+    const [u] = parseOrderUpdate({
+      mt: 24,
+      d: [{ rq: 18, st: 7, sr: 44, fr: 8, fs: 0, os: 821 }],
+    });
+    expect(u.reasonName).toBe("TakerOrderSettlementFailed");
+    expect(u.failure).toBe(8);
+    expect(u.failureName).toBe("ExceedsMaxNegPnlCollat");
+  });
+  it("is null, not Unspecified, when the frame leaves it out", () => {
+    const [u] = parseOrderUpdate({
+      mt: 24,
+      d: [{ rq: 18, st: 7, sr: 44, fs: 0, os: 821 }],
+    });
+    expect(u.failure).toBeNull();
+    expect(u.failureName).toBeNull();
+  });
+  it("keeps a code this build does not know", () => {
+    const [u] = parseOrderUpdate({
+      mt: 24,
+      d: [{ rq: 1, st: 7, sr: 44, fr: 42 }],
+    });
+    expect(u.failureName).toBe("failure 42");
+  });
+});

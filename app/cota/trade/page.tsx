@@ -752,6 +752,7 @@ export default function TradePage() {
         venue?: {
           statusName?: string;
           reasonName?: string;
+          failureName?: string | null;
           filledScaled?: number;
           originalScaled?: number;
           /** Size changed hands; the mt 25 with the price is still in flight. */
@@ -792,7 +793,7 @@ export default function TradePage() {
         const head = v?.expectsFill ? t.placeFilledPending : t.placeAccepted;
         setPlaceMsg(
           v?.statusName
-            ? `${head} — ${v.statusName}: ${v.reasonName ?? "?"}`
+            ? `${head} — ${v.statusName}: ${v.reasonName ?? "?"}${v.failureName ? ` (${v.failureName})` : ""}`
             : head,
         );
         setPlacePhase("done");
