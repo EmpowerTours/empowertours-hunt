@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parsePositions } from "./frames";
 import {
+  addLossUsd,
   describePositions,
   opensAgainst,
   type PositionView,
@@ -89,5 +90,27 @@ describe("opensAgainst", () => {
     expect(
       opensAgainst([{ ...LIVE_LONG, market: "BTC" }], "MON", "short"),
     ).toBe(false);
+  });
+});
+
+describe("addLossUsd", () => {
+  it("is the live long's loss at the 2026-11-02 mark", () => {
+    // 395 × (0.02466 − 0.018713) = 2.349
+    expect(addLossUsd([LIVE_LONG], "MON", "long", 0.018713)).toBeCloseTo(
+      2.349,
+      3,
+    );
+  });
+  it("is zero when the position is in profit", () => {
+    expect(addLossUsd([LIVE_LONG], "MON", "long", 0.03)).toBe(0);
+  });
+  it("ignores other markets and the other side", () => {
+    expect(addLossUsd([LIVE_LONG], "BTC", "long", 0.01)).toBe(0);
+    expect(addLossUsd([LIVE_LONG], "MON", "short", 0.01)).toBe(0);
+  });
+  it("is null for a position it cannot price", () => {
+    expect(
+      addLossUsd([{ ...LIVE_LONG, entryUsd: null }], "MON", "long", 0.01),
+    ).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  addLossUsd,
   describePositions,
   opensAgainst,
 } from "@/lib/cota/venue/position-view";
@@ -72,7 +73,8 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "bad request" }, { status: 400 });
     }
-    const { digest, side, targetNotionalUsd, leverageX } = parsed.data;
+    const { digest, side, leverageX } = parsed.data;
+    let { targetNotionalUsd } = parsed.data;
     const symbol = parsed.data.market.toUpperCase();
 
     const market = executableMarket(symbol);
@@ -178,6 +180,36 @@ export async function POST(req: Request) {
         positions,
         markUsd,
       });
+    }
+
+    // An add to a losing position must also collateralize that loss out of
+    // free balance (InsufficientCollateralIncrease, fr 2, 2026-11-02, when a
+    // $25.35 add met $26.00 free and a $2.43 loss). Shrink the order to what
+    // is left after the loss, with 10% + $0.25 for funding and fees.
+    const addLoss = addLossUsd(positions, market.symbol, side, markUsd);
+    if (addLoss === null) {
+      return NextResponse.json({
+        allowed: false,
+        reason: "state_unavailable",
+        detail:
+          "could not price the position this order would add to, so the collateral it needs is unknown; refusing",
+        positions,
+        markUsd,
+      });
+    }
+    if (addLoss > 0 && venueAccount) {
+      const freeUsd = (venueAccount.balance - venueAccount.locked) / 1e6;
+      const capUsd = (freeUsd - addLoss * 1.1 - 0.25) * leverageX;
+      if (capUsd <= 0) {
+        return NextResponse.json({
+          allowed: false,
+          reason: "no_collateral",
+          detail: `free balance $${freeUsd.toFixed(2)} does not cover the $${addLoss.toFixed(2)} loss an add must collateralize`,
+          positions,
+          markUsd,
+        });
+      }
+      targetNotionalUsd = Math.min(targetNotionalUsd, capUsd);
     }
 
     // Null means loss could not be vouched for (the venue holds size we have no

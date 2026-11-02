@@ -62,3 +62,34 @@ export function opensAgainst(
 ): boolean {
   return positions.some((p) => p.market === market && p.side !== side);
 }
+
+/**
+ * Unrealized loss, in USD, on the positions an add to `side` on `market` would
+ * grow. Zero when they are in profit.
+ *
+ * An add to a losing position must post collateral for that loss on top of its
+ * own margin. On 2026-11-02 a $25.35 add against $26.00 free, with the MON long
+ * $2.43 under water, came back InsufficientCollateralIncrease (fr 2).
+ *
+ * Price PnL only: funding owed is not on the position frame. Callers keep a
+ * buffer for it. A position we cannot read in USD (unscaled, no entry) counts
+ * as unknown and returns null, so the caller refuses rather than guesses.
+ */
+export function addLossUsd(
+  positions: readonly PositionView[],
+  market: string,
+  side: "long" | "short",
+  markUsd: number,
+): number | null {
+  let loss = 0;
+  for (const p of positions) {
+    if (p.market !== market || p.side !== side) continue;
+    if (!p.scaled || p.entryUsd === null) return null;
+    const pnl =
+      side === "long"
+        ? (markUsd - p.entryUsd) * p.size
+        : (p.entryUsd - markUsd) * p.size;
+    if (pnl < 0) loss += -pnl;
+  }
+  return loss;
+}
