@@ -11,7 +11,8 @@ import {
   toSize,
   TIF_GTC,
   TIF_IOC,
-  TIF_POST_ONLY,} from "./order";
+  TIF_POST_ONLY,
+} from "./order";
 
 const NOW = 1_760_000_000n;
 const bound: EnforcedBound = {
@@ -178,5 +179,26 @@ describe("orderFrame — time in force", () => {
     expect(orderFrame({ ...base, flags: TIF_POST_ONLY }).fl).toBe(
       TIF_POST_ONLY,
     );
+  });
+});
+
+describe("orderFrame — max negative-PnL collateralization", () => {
+  const base = {
+    sn: 1,
+    rq: 2,
+    market: MON_MARKET,
+    accountId: 5273,
+    orderType: T_OPEN_LONG,
+    sizeUnits: 10,
+    leverageX: 1,
+    feeBps: 1,
+  };
+  it("omits mnp so the venue default applies", () => {
+    expect("mnp" in orderFrame(base)).toBe(false);
+  });
+  it("sends mnp when asked, clamped to the wire's u16", () => {
+    expect(orderFrame({ ...base, maxNegPnlBps: 10_000 }).mnp).toBe(10_000);
+    expect(orderFrame({ ...base, maxNegPnlBps: 99_999 }).mnp).toBe(65535);
+    expect(orderFrame({ ...base, maxNegPnlBps: 0 }).mnp).toBe(0);
   });
 });

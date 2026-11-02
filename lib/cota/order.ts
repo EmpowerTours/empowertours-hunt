@@ -284,7 +284,18 @@ export function orderFrame(args: {
   lastExecBlock?: number;
   /** Time-in-force bits. Defaults to IOC for a market order, GTC for a limit. */
   flags?: number;
+  /**
+   * `mnp`: how much negative PnL on the existing position this order may
+   * collateralize, in bps (0-65535). Omitted, the venue uses the market's
+   * `order_max_neg_pnl_collat_bps` — 300 on MON — and refuses an add to a long
+   * more than ~3% under water with ExceedsMaxNegPnlCollat (seen 2026-11-02).
+   */
+  maxNegPnlBps?: number;
 }): Record<string, number> {
+  const mnp: Record<string, number> =
+    args.maxNegPnlBps === undefined
+      ? {}
+      : { mnp: Math.max(0, Math.min(65535, Math.round(args.maxNegPnlBps))) };
   return {
     mt: MT_ORDER_REQUEST,
     sn: args.sn,
@@ -308,5 +319,6 @@ export function orderFrame(args: {
     lv: Math.round(args.leverageX * 100),
     lb: args.lastExecBlock ?? 0,
     bf: bpsToBf(args.feeBps),
+    ...mnp,
   };
 }

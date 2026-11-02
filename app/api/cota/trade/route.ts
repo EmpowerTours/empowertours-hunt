@@ -257,6 +257,12 @@ export async function POST(req: Request) {
       // that arrives sooner still ends the wait at once (client.ts).
       fillWaitMs: 25_000,
       timeoutMs: 35_000,
+      // Let an add to a losing position through. Left to the market default
+      // (300 bps), Perpl refused every add once the MON long was past ~3% down:
+      // TakerOrderSettlementFailed / ExceedsMaxNegPnlCollat (fr 8), 2026-11-02.
+      // 10_000 bps = up to the whole of the position's collateral. Size, loss
+      // and leverage stay bounded by the leash gate above, not by this.
+      maxNegPnlBps: 10_000,
     });
 
     // Record the fill so the NEXT trade's loss read reconciles. A failure here

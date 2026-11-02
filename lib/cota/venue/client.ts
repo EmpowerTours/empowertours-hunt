@@ -70,6 +70,8 @@ export interface PlaceOrderArgs {
    * or is rejected — never takes.
    */
   flags?: number;
+  /** Sent as `mnp`; see orderFrame. Omit for the market default. */
+  maxNegPnlBps?: number;
   chainId?: number;
   /** Whole-session cap. */
   timeoutMs?: number;
@@ -253,6 +255,7 @@ export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
               feeBps: args.feeBps,
               priceUsd: args.priceUsd,
               flags: args.flags,
+              maxNegPnlBps: args.maxNegPnlBps,
             }),
           ),
         );
