@@ -251,6 +251,12 @@ export async function POST(req: Request) {
       sizeUnits: plan.sizeUnits,
       leverageX,
       feeBps: BUILDER_FEE_BPS,
+      // Wait for the venue's verdict, not just its ack. At the default 6 s a
+      // one-click order on 2026-11-01 came back with no mt 24 at all, so neither
+      // a fill nor Perpl's failure reason (`fr`) reached the hunter. A verdict
+      // that arrives sooner still ends the wait at once (client.ts).
+      fillWaitMs: 25_000,
+      timeoutMs: 35_000,
     });
 
     // Record the fill so the NEXT trade's loss read reconciles. A failure here
