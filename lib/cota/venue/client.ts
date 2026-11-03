@@ -132,6 +132,13 @@ function b64url(bytes: Uint8Array): string {
  * failure or a total timeout with no answer at all.
  */
 export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
+  // A deployment that must never trade (the Cotas preview, any staging copy)
+  // sets COTA_ORDERS_DISABLED=1. Checked here because every real order in the
+  // app goes through this one function: trade, close and the agent alike. No
+  // socket is opened, so nothing can reach the venue.
+  if (process.env.COTA_ORDERS_DISABLED === "1") {
+    return Promise.reject(new Error("orders are disabled on this deployment (COTA_ORDERS_DISABLED=1)"));
+  }
   const chainId = args.chainId ?? 143;
   const timeoutMs = args.timeoutMs ?? 15_000;
   const fillWaitMs = args.fillWaitMs ?? 6_000;
