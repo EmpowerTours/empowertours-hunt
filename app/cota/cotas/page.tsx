@@ -37,6 +37,7 @@ interface View {
   walls: Walls | null;
   leash: { long: number; short: number } | null;
   qty: number;
+  next: number | null;
   sizes: number[];
   pos: 0 | 1 | -1;
   entry: number;
@@ -67,7 +68,10 @@ const T = {
     down: "Quitar paredes",
     refill: "Recargar 1,000 fichas",
     size: "Tamaño por atrapada",
-    sizeLocked: "El tamaño queda fijo hasta que esta atrapada cierre.",
+    sizeLocked: (now: string, next: string | null) =>
+      next
+        ? `Esta atrapada sigue en ${now} MON; la siguiente será de ${next} MON.`
+        : `Esta atrapada sigue en ${now} MON. Elige un tamaño para la siguiente.`,
     chips: "Fichas",
     open: "Abierta",
     crossings: "Cruces",
@@ -115,7 +119,10 @@ const T = {
     down: "Take walls down",
     refill: "Refill 1,000 chips",
     size: "Size per catch",
-    sizeLocked: "Size is locked until this catch closes.",
+    sizeLocked: (now: string, next: string | null) =>
+      next
+        ? `This catch stays ${now} MON; the next one will be ${next} MON.`
+        : `This catch stays ${now} MON. Pick a size for the next one.`,
     chips: "Chips",
     open: "Open",
     crossings: "Crossings",
@@ -627,14 +634,14 @@ export default function CotasPage() {
             <button
               key={q}
               type="button"
-              disabled={busy || !v || v.pos !== 0}
+              disabled={busy || !v}
               onClick={() =>
                 v &&
                 (v.walls
                   ? void sendWalls(v.walls, q)
                   : setView({ ...v, qty: q }))
               }
-              className={`rounded-xl border px-3 py-2 font-mono text-sm ${v?.qty === q ? "border-phosphor text-phosphor" : "border-hull-line text-ink-dim"}`}
+              className={`rounded-xl border px-3 py-2 font-mono text-sm ${(v?.next ?? v?.qty) === q ? "border-phosphor text-phosphor" : "border-hull-line text-ink-dim"}`}
             >
               {q.toLocaleString(lang === "es" ? "es-MX" : "en-US")} MON
             </button>
@@ -642,7 +649,12 @@ export default function CotasPage() {
         </div>
         {v && v.pos !== 0 ? (
           <p className="text-ink-faint mt-1 font-mono text-[11px]">
-            {t.sizeLocked}
+            {t.sizeLocked(
+              v.qty.toLocaleString(lang === "es" ? "es-MX" : "en-US"),
+              v.next
+                ? v.next.toLocaleString(lang === "es" ? "es-MX" : "en-US")
+                : null,
+            )}
           </p>
         ) : null}
       </div>

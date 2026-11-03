@@ -189,7 +189,13 @@ async function save(
       },
     });
     if (r.count !== 1) return false;
-    const rows = eventRows(playerId, row.state, events);
+    // One timestamp per row, a millisecond apart: rows written together would
+    // otherwise share now(), and the log would show them in any order.
+    const base = Date.now();
+    const rows = eventRows(playerId, row.state, events).map((r, i) => ({
+      ...r,
+      createdAt: new Date(base + i),
+    }));
     if (rows.length) await tx.cotasEvent.createMany({ data: rows });
     return true;
   });
@@ -334,6 +340,7 @@ export async function view(playerId: string, row: Row) {
       ? { long: leashLong(s.walls), short: leashShort(s.walls) }
       : null,
     qty: s.qty,
+    next: s.next ?? null,
     sizes: SIZES,
     pos: s.pos,
     entry: s.entry,

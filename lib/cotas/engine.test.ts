@@ -101,6 +101,21 @@ describe("walls", () => {
     expect(setWalls(s, { lo: 17500, hi: 17580 }, 5_000).qty).toBe(1_000);
   });
 
+  it("a size picked while holding closes the trade at the old size and opens the next at the new", () => {
+    const held = run(armed(), [17500]).s;
+    const picked = setWalls(held, W, 500);
+    expect(picked.next).toBe(500);
+    const { s, events } = run(picked, [17570, 17530, 17570]);
+    const cross = events.find((e) => e.kind === "cross");
+    const open = events.filter((e) => e.kind === "open");
+    expect(cross && "qty" in cross && cross.qty).toBe(1_000);
+    expect(open[0]).toMatchObject({ side: -1, qty: 500 });
+    expect(s.qty).toBe(500);
+    expect(s.next).toBeUndefined();
+    // Picking the size already held clears a pending change.
+    expect(setWalls(picked, W, 1_000).next).toBeUndefined();
+  });
+
   it("will not take the walls down under an open trade", () => {
     const { s } = run(armed(), [17500]);
     expect(() => clearWalls(s)).toThrow();

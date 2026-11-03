@@ -56,7 +56,10 @@ export interface Walls {
 
 export interface GameState {
   walls: Walls | null;
+  /** Size of the open trade; while flat, the size the next catch will use. */
   qty: Size;
+  /** Size chosen while holding, applied when the next catch opens. */
+  next?: Size;
   /** +1 long from the bottom wall, -1 short from the top, 0 flat. */
   pos: 0 | 1 | -1;
   entry: number;
@@ -183,18 +186,18 @@ export function checkWalls(
 }
 
 /**
- * Apply new walls. Size changes only while flat: changing the size of an open
- * trade is a second trade, and the game has no such move.
+ * Apply new walls. The open trade keeps its size: changing it would be a second
+ * trade, and the game has no such move. A size picked while holding is kept as
+ * `next` and used by the next catch.
  */
 export function setWalls(s: GameState, w: Walls, qty: Size): GameState {
   const ok = checkWalls(s, w, qty);
   if (!ok.ok) throw new Error(`walls refused: ${ok.reason}`);
-  return {
-    ...s,
-    walls: { ...w },
-    qty: s.pos === 0 ? qty : s.qty,
-    armed: s.pos === 0 ? true : s.armed,
-  };
+  const { next: _drop, ...rest } = s; // eslint-disable-line @typescript-eslint/no-unused-vars
+  if (s.pos === 0) return { ...rest, walls: { ...w }, qty, armed: true };
+  return qty === s.qty
+    ? { ...rest, walls: { ...w } }
+    : { ...rest, walls: { ...w }, next: qty };
 }
 
 /** Take the walls down. Only while flat: an open trade keeps its exit and leash. */
@@ -231,6 +234,10 @@ export function step(
     const side: 0 | 1 | -1 = price <= w.lo ? 1 : price >= w.hi ? -1 : 0;
     if (side !== 0) {
       const px = side > 0 ? w.lo : w.hi;
+      if (s.next !== undefined) {
+        s.qty = s.next;
+        delete s.next;
+      }
       if (s.qty * px > s.balance) {
         // Disarm, so a price sitting on the wall reports this once rather
         // than on every trade until the player notices.
