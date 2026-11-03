@@ -210,6 +210,9 @@ model Player {
   agentDecisions  CotaAgentDecision[]
   cotaNotes       CotaNote[]
   auroraAddresses AuroraDepositAddress[]
+  cotasGame       CotasGame?
+  cotasEvents     CotasEvent[]
+  cotasProfile    CotasProfile?
 
   @@index([turboUsername])
   @@index([active, suspendedAt])
@@ -1800,4 +1803,85 @@ model AuroraDepositAddress {
 
   @@unique([playerId, depositChain, destinationAsset])
   @@index([depositAddress])
+}
+
+// ---------------------------------------------------------------------------
+// COTAS — the play-money wall game (lib/cotas/engine.ts).
+//
+// Chips are play money with no value and no way out: there is no withdraw, no
+// transfer between players, and nothing here is ever converted to MON, AUSD or
+// TOURS. That is what keeps it a game rather than a wager, and every route that
+// touches these tables must keep it that way.
+//
+// Amounts are micro-chips (1 chip = 1,000,000) as BigInt; prices are Perpl's
+// scaled integers (17549 = $0.017549).
+// ---------------------------------------------------------------------------
+
+/// One game per player. `state` is the engine's GameState, `cursor` the last
+/// Perpl candle it has consumed. `version` is the optimistic lock: two tabs
+/// advancing the same game must not both apply the same trades.
+model CotasGame {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String @unique
+
+  state   Json
+  cursor  Json
+  version Int  @default(0)
+
+  /// Last time chips were topped back up. At most once a day, and only when
+  /// broke, so a refill can never be used to erase a bad week (the loss stays in
+  /// CotasEvent, which is what the leaderboard reads).
+  refilledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Everything that moved chips, append-only. The leaderboard is computed from
+/// these rows and nothing else, so a score can always be recomputed and never
+/// has to be trusted.
+model CotasEvent {
+  id String @id @default(cuid())
+
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String
+
+  /// "grant" | "open" | "cross" | "escape" | "refill"
+  kind  String
+  /// +1 long, -1 short; null for grant/refill.
+  side  Int?
+  price Int?
+  entry Int?
+  qty   Int?
+  /// Booked result after the closing fee (cross/escape), or the chips added
+  /// (grant/refill). Null for "open".
+  pnl   BigInt?
+  /// Fee charged by this event (open/cross/escape).
+  fee   BigInt?
+  /// Balance after this event: the running ledger, for audit.
+  balanceAfter BigInt
+  /// Open time of the Perpl one-minute candle this happened in.
+  candleAt DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([playerId, candleAt])
+  @@index([candleAt])
+}
+
+/// Opt-in public identity for the leaderboard. Without a row with `listed`
+/// true, a player is never shown — losses are not published by default.
+model CotasProfile {
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId String @id
+
+  /// 3-16 of [A-Za-z0-9_], unique case-insensitively (stored lowercased in
+  /// aliasKey, shown as typed).
+  alias    String
+  aliasKey String  @unique
+  listed   Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
 }

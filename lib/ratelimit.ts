@@ -35,6 +35,7 @@ export type LimitName =
   | "spawnScan"
   | "register"
   | "cota"
+  | "cotas"
   | "browse"
   | "admin";
 
@@ -156,6 +157,15 @@ const LIMITS: Record<LimitName, LimitSpec> = {
   // failClosed is false here, unlike every money path above. A Redis blip must
   // not turn the front page into an error: nothing is spent by listing hunts,
   // and the worst case of letting it through unlimited is served cache.
+  // The play-money wall game. It polls every ~3s while open (20/min) and a
+  // wall drag sends a few moves, so 60/min per player is room to play, not a
+  // ceiling anyone reaches by hand. Fails open: chips have no value, and a Redis
+  // blip refusing a game screen protects nothing.
+  cotas: {
+    perPlayer: { tokens: 60, windowSeconds: 60 },
+    perIp: { tokens: 180, windowSeconds: 60 },
+    failClosed: false,
+  },
   browse: {
     perPlayer: null,
     perIp: { tokens: 60, windowSeconds: 60 },
