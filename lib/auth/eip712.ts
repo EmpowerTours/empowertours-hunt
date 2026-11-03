@@ -202,6 +202,24 @@ export class MemoryNonceStore implements NonceStore {
 const memoryNonceStore = new MemoryNonceStore();
 
 /**
+ * The one way a production build may use the memory store: a deployment that
+ * declares itself single-instance (HUNT_SINGLE_INSTANCE_NONCES=1) and is NOT
+ * Railway's production environment. That is the Cotas preview, which runs one
+ * replica and is deliberately given no Upstash credentials so that it holds no
+ * production secret. Both conditions, so the flag set by mistake on the live
+ * service changes nothing.
+ */
+function singleInstanceNoncesAllowed(): boolean {
+  const env = process.env.RAILWAY_ENVIRONMENT_NAME;
+  return (
+    process.env.HUNT_SINGLE_INSTANCE_NONCES === "1" &&
+    typeof env === "string" &&
+    env.length > 0 &&
+    env !== "production"
+  );
+}
+
+/**
  * Redis when configured, otherwise the bounded memory store.
  *
  * In production the memory store is a footgun — two instances each accept the
@@ -210,7 +228,7 @@ const memoryNonceStore = new MemoryNonceStore();
  */
 export function defaultNonceStore(): NonceStore {
   if (getRedis()) return new RedisNonceStore();
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.NODE_ENV === "production" && !singleInstanceNoncesAllowed()) {
     throw new Error(
       "UPSTASH_REDIS_REST_URL is required in production: the in-memory nonce " +
         "store cannot prevent replay across instances",
