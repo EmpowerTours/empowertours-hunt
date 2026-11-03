@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale } from "next-intl";
-import { Button, Note, Panel, Stat } from "@/components/ui/primitives";
+import { Button, LinkButton, Note, Panel, Stat } from "@/components/ui/primitives";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 
 // ---------------------------------------------------------------------------
@@ -520,6 +520,13 @@ export default function CotasPage() {
     return (
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
         <Note tone="info">{t.signIn}</Note>
+        {/* Sign-in lives on the Hunt home page; it returns to /hunt, so the
+            card on /cota is the way back here. */}
+        <div className="mt-3">
+          <LinkButton href="/" tone="primary">
+            {lang === "es" ? "Iniciar sesión" : "Sign in"}
+          </LinkButton>
+        </div>
       </main>
     );
   }
