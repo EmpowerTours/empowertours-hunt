@@ -67,6 +67,7 @@ const T = {
     down: "Quitar paredes",
     refill: "Recargar 1,000 fichas",
     size: "Tamaño por atrapada",
+    sizeLocked: "El tamaño queda fijo hasta que esta atrapada cierre.",
     chips: "Fichas",
     open: "Abierta",
     crossings: "Cruces",
@@ -114,6 +115,7 @@ const T = {
     down: "Take walls down",
     refill: "Refill 1,000 chips",
     size: "Size per catch",
+    sizeLocked: "Size is locked until this catch closes.",
     chips: "Chips",
     open: "Open",
     crossings: "Crossings",
@@ -638,6 +640,11 @@ export default function CotasPage() {
             </button>
           ))}
         </div>
+        {v && v.pos !== 0 ? (
+          <p className="text-ink-faint mt-1 font-mono text-[11px]">
+            {t.sizeLocked}
+          </p>
+        ) : null}
       </div>
 
       {v ? (
