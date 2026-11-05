@@ -8,15 +8,13 @@ import {
   setProfile,
   validAlias,
   weeklyBoard,
-} from "@/lib/cotas/leaderboard";
+} from "@/lib/mercado/board";
 
 // ---------------------------------------------------------------------------
-// /api/cotas/leaderboard
+// /api/mercado/tabla
 //
-// GET is public: aliases, returns and counts for players who opted in. No
-// wallet, no player id and no chip balance leaves this route — return % and
-// counts only, so a listed player publishes how well they read the market, not
-// how much they had.
+// GET is public: aliases, points per match and counts for players who opted
+// in. No wallet and no player id leaves this route.
 //
 // With a session it also returns the caller's own week (listed or not) and
 // their profile. POST sets the alias and whether to be listed.
@@ -48,22 +46,21 @@ export async function GET(req: Request) {
       board: board.slice(0, 100).map((r) => ({
         rank: r.rank,
         alias: r.alias,
-        ret: r.ret,
-        crossings: r.crossings,
-        escapes: r.escapes,
-        hitRate: r.hitRate,
+        avg: r.avg,
+        matches: r.matches,
+        wins: r.wins,
         mine: me !== null && r.playerId === me.playerId,
       })),
       me: me && {
-        ret: me.ret,
-        crossings: me.crossings,
-        escapes: me.escapes,
+        avg: me.avg,
+        matches: me.matches,
+        wins: me.wins,
         qualifies: me.qualifies,
       },
       profile,
     });
   } catch (err) {
-    console.error("[cotas/leaderboard] read failed", err);
+    console.error("[mercado/tabla] read failed", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });
   }
 }
@@ -73,7 +70,7 @@ const Input = z.object({ alias: z.unknown(), listed: z.boolean() });
 export async function POST(req: Request) {
   try {
     const player = await requirePlayer(req);
-    const limit = await checkLimit("cotas", {
+    const limit = await checkLimit("mercado", {
       playerId: player.id,
       ip: clientIp(req),
     });
@@ -100,7 +97,7 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof AuthError)
       return NextResponse.json({ error: "sign in first" }, { status: 401 });
-    console.error("[cotas/leaderboard] profile failed", err);
+    console.error("[mercado/tabla] profile failed", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Perpl's MON one-minute candles, for the play game.
+// Perpl's MON one-minute candles, for Haz Mercado.
 //
 // Public market data: no key, no account, nothing that can trade. Verified
 // 2026-11-02 against https://app.perpl.xyz/api/v1/market-data/10/candles/60/...
@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { z } from "zod";
-import type { Candle } from "./advance";
+import type { Candle } from "./game";
 
 const API = process.env.PERPL_API_URL ?? "https://app.perpl.xyz/api";
 const MON_MARKET = 10;
@@ -125,7 +125,9 @@ export async function latestPrice(
 }
 
 /** The last ~30 minutes of traded closes, for drawing the ball's trail. */
-export async function recentTrail(now = Date.now()): Promise<Array<{ t: number; p: number }>> {
+export async function recentTrail(
+  now = Date.now(),
+): Promise<Array<{ t: number; p: number }>> {
   const win = await recentWindow(now);
   return win.candles.filter((c) => c.n > 0).map((c) => ({ t: c.t, p: c.c }));
 }

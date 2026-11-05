@@ -343,19 +343,20 @@ export default function CotaPage() {
           signed leash, needs a funded Perpl account". The panel below now says
           both, with the hunter's actual numbers instead of a general warning —
           and a general warning above a specific one is read as neither. */}
-      {/* Cotas, the wall game. On its branch it sits above one-click so it can
-          be played next to what it is meant to replace; whether it replaces
-          OneClickPanel outright is decided after it has been played. */}
+      {/* Haz Mercado, the quote-and-take game. On its branch it sits above
+          one-click so it can be played next to what it is meant to replace;
+          whether it replaces OneClickPanel outright is decided after it has
+          been played. */}
       <a
-        href="/cota/cotas"
+        href="/cota/mercado"
         className="border-spawn/50 bg-hull active:bg-hull-2 flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border-2 px-5 py-3"
       >
         <span>
-          <span className="text-spawn block text-lg font-black">Cotas</span>
+          <span className="text-spawn block text-lg font-black">Haz Mercado</span>
           <span className="text-ink-dim block text-xs leading-snug">
             {lang === "es"
-              ? "Pon dos paredes y deja que el precio real de MON rebote. Fichas de juego, tabla semanal."
-              : "Set two walls and let MON's real price bounce. Play chips, weekly board."}
+              ? "Pon precio o toma el del bot; el cierre real del minuto de MON decide. Puntos de juego, tabla semanal."
+              : "Quote a price or take the bot's; MON's real minute close decides. Play points, weekly board."}
           </span>
         </span>
         <span className="text-spawn shrink-0 text-xl" aria-hidden>

@@ -210,8 +210,7 @@ model Player {
   agentDecisions  CotaAgentDecision[]
   cotaNotes       CotaNote[]
   auroraAddresses AuroraDepositAddress[]
-  cotasGame       CotasGame?
-  cotasEvents     CotasEvent[]
+  mercadoMatches  MercadoMatch[]
   cotasProfile    CotasProfile?
 
   @@index([turboUsername])
@@ -1806,69 +1805,38 @@ model AuroraDepositAddress {
 }
 
 // ---------------------------------------------------------------------------
-// COTAS — the play-money wall game (lib/cotas/engine.ts).
+// HAZ MERCADO — the quote-and-take game against the bot (lib/mercado/game.ts).
 //
-// Chips are play money with no value and no way out: there is no withdraw, no
-// transfer between players, and nothing here is ever converted to MON, AUSD or
-// TOURS. That is what keeps it a game rather than a wager, and every route that
-// touches these tables must keep it that way.
+// Points only: no chips, no balance, nothing that can be withdrawn, transferred
+// or converted to MON, AUSD or TOURS. That is what keeps it a game rather than
+// a wager, and every route that touches these tables must keep it that way.
 //
-// Amounts are micro-chips (1 chip = 1,000,000) as BigInt; prices are Perpl's
-// scaled integers (17549 = $0.017549).
+// Prices are Perpl's scaled integers (17549 = $0.017549); points are tenths of
+// a basis point (10 = 0.01%).
 // ---------------------------------------------------------------------------
 
-/// One game per player. `state` is the engine's GameState, `cursor` the last
-/// Perpl candle it has consumed. `version` is the optimistic lock: two tabs
-/// advancing the same game must not both apply the same trades.
-model CotasGame {
-  id String @id @default(cuid())
-
-  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  playerId String @unique
-
-  state   Json
-  cursor  Json
-  version Int  @default(0)
-
-  /// Last time chips were topped back up. At most once a day, and only when
-  /// broke, so a refill can never be used to erase a bad week (the loss stays in
-  /// CotasEvent, which is what the leaderboard reads).
-  refilledAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-/// Everything that moved chips, append-only. The leaderboard is computed from
-/// these rows and nothing else, so a score can always be recomputed and never
-/// has to be trusted.
-model CotasEvent {
+/// One match of ten rounds. `state` is the engine's Match; `version` is the
+/// optimistic lock, so two tabs acting on the same match cannot both apply a
+/// move. `you` is copied out of `state` when the match finishes, for the board.
+/// The migration adds a partial unique index: one unfinished match per player.
+model MercadoMatch {
   id String @id @default(cuid())
 
   player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
   playerId String
 
-  /// "grant" | "open" | "cross" | "escape" | "refill"
-  kind  String
-  /// +1 long, -1 short; null for grant/refill.
-  side  Int?
-  price Int?
-  entry Int?
-  qty   Int?
-  /// Booked result after the closing fee (cross/escape), or the chips added
-  /// (grant/refill). Null for "open".
-  pnl   BigInt?
-  /// Fee charged by this event (open/cross/escape).
-  fee   BigInt?
-  /// Balance after this event: the running ledger, for audit.
-  balanceAfter BigInt
-  /// Open time of the Perpl one-minute candle this happened in.
-  candleAt DateTime
+  state   Json
+  version Int  @default(0)
+
+  /// Final points to the player (the bot's are minus this). Null until finished.
+  you        Int?
+  finishedAt DateTime?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([playerId, candleAt])
-  @@index([candleAt])
+  @@index([playerId, finishedAt])
+  @@index([finishedAt])
 }
 
 /// Opt-in public identity for the leaderboard. Without a row with `listed`

@@ -1,25 +1,17 @@
 import { describe, expect, it } from "vitest";
-import {
-  MIN_CROSSINGS,
-  rank,
-  validAlias,
-  weekStart,
-  type Tally,
-} from "./leaderboard";
+import { MIN_MATCHES, rank, validAlias, weekStart, type Tally } from "./board";
 
 const t = (
   alias: string,
-  net: number,
-  crossings: number,
-  escapes = 0,
-  capital = 1_000_000_000,
+  points: number,
+  matches: number,
+  wins = 0,
 ): Tally => ({
   playerId: alias,
   alias,
-  net,
-  crossings,
-  escapes,
-  capital,
+  matches,
+  wins,
+  points,
 });
 
 describe("weekStart (Monday 00:00 Mexico City, fixed UTC-6)", () => {
@@ -43,34 +35,23 @@ describe("weekStart (Monday 00:00 Mexico City, fixed UTC-6)", () => {
 });
 
 describe("rank", () => {
-  it("orders by return, not by volume", () => {
+  it("orders by points per match, not by total", () => {
     const board = rank([
-      t("busy", 10_000_000, 200, 50), // +1% on lots of trading
-      t("sharp", 50_000_000, 12, 1), // +5% on few
+      t("busy", 400, 20), // 20 per match over many matches
+      t("sharp", 150, 3), // 50 per match
     ]);
     expect(board.map((r) => r.alias)).toEqual(["sharp", "busy"]);
-    expect(board[0]).toMatchObject({ rank: 1, ret: 0.05 });
+    expect(board[0]).toMatchObject({ rank: 1, avg: 50 });
   });
 
-  it("is size-blind: the same return on ten times the capital ranks the same", () => {
-    const board = rank([
-      t("big", 500_000_000, 20, 5, 10_000_000_000),
-      t("small", 50_000_000, 20, 5, 1_000_000_000),
-    ]);
-    expect(board[0].ret).toBe(board[1].ret);
+  it(`needs ${MIN_MATCHES} finished matches to qualify`, () => {
+    expect(rank([t("lucky", 900, MIN_MATCHES - 1)])).toEqual([]);
+    expect(rank([t("enough", 1, MIN_MATCHES)])).toHaveLength(1);
   });
 
-  it(`needs ${MIN_CROSSINGS} crossings to qualify`, () => {
-    expect(rank([t("lucky", 900_000_000, MIN_CROSSINGS - 1)])).toEqual([]);
-    expect(rank([t("enough", 1, MIN_CROSSINGS)])).toHaveLength(1);
-  });
-
-  it("breaks ties on hit rate", () => {
-    const board = rank([
-      t("loose", 20_000_000, 10, 10),
-      t("tight", 20_000_000, 10, 2),
-    ]);
-    expect(board.map((r) => r.alias)).toEqual(["tight", "loose"]);
+  it("breaks ties on wins", () => {
+    const board = rank([t("even", 60, 3, 1), t("steady", 60, 3, 2)]);
+    expect(board.map((r) => r.alias)).toEqual(["steady", "even"]);
   });
 });
 
