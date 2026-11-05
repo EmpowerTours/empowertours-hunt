@@ -1,5 +1,6 @@
 // ---------------------------------------------------------------------------
-// Haz Mercado: the quote-and-take game against the bot.
+// Cota Práctica: the quote-and-take game against the bot. (Code lives
+// under lib/mercado from its working name, "Haz Mercado".)
 //
 // One player QUOTES two walls around MON's price ("I buy at the bottom, I sell
 // at the top"); the other TAKES one of them or passes. Roles swap every round,

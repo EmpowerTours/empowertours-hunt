@@ -12,7 +12,7 @@ import {
 } from "@/lib/mercado/service";
 
 // ---------------------------------------------------------------------------
-// /api/mercado — Haz Mercado, the quote-and-take game against the bot.
+// /api/mercado — Cota Práctica, the quote-and-take game against the bot.
 //
 // GET brings the player's match up to now (settles closed minutes, runs out
 // clocks, opens the next round) and returns it.

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Perpl's MON one-minute candles, for Haz Mercado.
+// Perpl's MON one-minute candles, for Cota Práctica.
 //
 // Public market data: no key, no account, nothing that can trade. Verified
 // 2026-11-02 against https://app.perpl.xyz/api/v1/market-data/10/candles/60/...

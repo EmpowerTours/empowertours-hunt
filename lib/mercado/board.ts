@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The Haz Mercado weekly board.
+// The Cota Práctica weekly board.
 //
 // RANKED ON POINTS PER MATCH, NOT TOTAL. A board that ranks the total is a board
 // the player who plays most wins; the average is fair to someone who plays three

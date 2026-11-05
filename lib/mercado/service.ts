@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Haz Mercado, persisted: load a player's match, bring it up to now with
+// Cota Práctica, persisted: load a player's match, bring it up to now with
 // Perpl's real candles, apply a move, save it.
 //
 // TWO TABS, ONE MATCH. Every write is conditional on the version it read

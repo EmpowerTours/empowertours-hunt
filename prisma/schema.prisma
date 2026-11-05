@@ -1805,7 +1805,7 @@ model AuroraDepositAddress {
 }
 
 // ---------------------------------------------------------------------------
-// HAZ MERCADO — the quote-and-take game against the bot (lib/mercado/game.ts).
+// COTA PRÁCTICA (working name "Haz Mercado") — the quote-and-take game against the bot (lib/mercado/game.ts).
 //
 // Points only: no chips, no balance, nothing that can be withdrawn, transferred
 // or converted to MON, AUSD or TOURS. That is what keeps it a game rather than

@@ -319,7 +319,12 @@ export default function SpotPage() {
           args: [address],
         })) as bigint,
       );
-      setInKuru(await balancesInKuru({ read: (c) => pc.readContract(c as never) }, address));
+      setInKuru(
+        await balancesInKuru(
+          { read: (c) => pc.readContract(c as never) },
+          address,
+        ),
+      );
     } catch {
       // The poll below retries; a dropped read must not strand the display.
     }

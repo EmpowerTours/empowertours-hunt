@@ -157,7 +157,7 @@ const LIMITS: Record<LimitName, LimitSpec> = {
   // failClosed is false here, unlike every money path above. A Redis blip must
   // not turn the front page into an error: nothing is spent by listing hunts,
   // and the worst case of letting it through unlimited is served cache.
-  // Haz Mercado, the play game. It polls every ~2s while open (30/min) plus a
+  // Cota Práctica, the play game. It polls every ~2s while open (30/min) plus a
   // move or two a round, so 60/min per player is room to play, not a ceiling
   // anyone reaches by hand. Fails open: points have no value, and a Redis blip
   // refusing a game screen protects nothing.

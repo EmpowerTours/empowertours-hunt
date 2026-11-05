@@ -364,7 +364,10 @@ export default function SwapPage() {
   }, [monInput, lang, t.tooLittle, t.reverted, refreshBalances, deskMinMon]);
 
   const deskLow =
-    route === "desk" && quote !== null && available !== null && quote > available;
+    route === "desk" &&
+    quote !== null &&
+    available !== null &&
+    quote > available;
   const noMon = monBalance !== null && monBalance === 0n;
   // Cap the amount so a hunter always keeps MON for gas. Derived from the
   // MEASURED cost of this swap and the live price rather than a flat constant:
@@ -411,19 +414,20 @@ export default function SwapPage() {
         </Panel>
       ) : (
         <>
-          {shouldResumeUsdc(usdcBalance, ausdBalance) && usdcBalance !== null && (
-            <Note tone="warn" title={t.resumeTitle}>
-              <span className="block">
-                {t.resumeBody(Number(formatUnits(usdcBalance, 6)).toFixed(2))}
-              </span>
-              <a
-                href="/cota/spot"
-                className="mt-2 block font-semibold underline"
-              >
-                {t.resumeCta}
-              </a>
-            </Note>
-          )}
+          {shouldResumeUsdc(usdcBalance, ausdBalance) &&
+            usdcBalance !== null && (
+              <Note tone="warn" title={t.resumeTitle}>
+                <span className="block">
+                  {t.resumeBody(Number(formatUnits(usdcBalance, 6)).toFixed(2))}
+                </span>
+                <a
+                  href="/cota/spot"
+                  className="mt-2 block font-semibold underline"
+                >
+                  {t.resumeCta}
+                </a>
+              </Note>
+            )}
           <Panel className="space-y-2">
             <p className="text-ink-dim text-xs tracking-wide uppercase">
               {t.wallet}
@@ -524,9 +528,7 @@ export default function SwapPage() {
               <p className="text-ink-faint text-xs leading-snug">
                 {route === "v4" ? t.v4Note : t.deskNote}
               </p>
-              {deskLow && (
-                <Note tone="warn">{t.deskLow}</Note>
-              )}
+              {deskLow && <Note tone="warn">{t.deskLow}</Note>}
               {route === "desk" && deskMinMon !== null && (
                 <p className="text-ink-faint text-xs">
                   {t.deskMin(formatMonCeil(deskMinMon))}
