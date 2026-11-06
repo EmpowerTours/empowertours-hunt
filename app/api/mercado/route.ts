@@ -16,7 +16,7 @@ import {
 //
 // GET brings the player's match up to now (settles closed minutes, runs out
 // clocks, opens the next round) and returns it.
-// POST makes a move: { action: "start" } | { action: "quote", bid, ask }
+// POST makes a move: { action: "start" } | { action: "quote", below, above }
 //      | { action: "take", side: "buy" | "sell" | "pass" }.
 //
 // The request carries intentions only. The reference price, the bot's moves
@@ -32,8 +32,10 @@ const Input = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("quote"),
-      bid: z.number().int().positive(),
-      ask: z.number().int().positive(),
+      // Distances in ticks from the live price, not prices: the server
+      // places the walls around whatever MON trades at when this arrives.
+      below: z.number().int().positive(),
+      above: z.number().int().positive(),
     })
     .strict(),
   z
@@ -111,7 +113,7 @@ export async function POST(req: Request) {
       a.action === "start"
         ? await start(player.id)
         : a.action === "quote"
-          ? await placeQuote(player.id, a.bid, a.ask)
+          ? await placeQuote(player.id, a.below, a.above)
           : await takeQuote(player.id, a.side);
     return NextResponse.json(await view(player.id, s), noStore);
   } catch (err) {

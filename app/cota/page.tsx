@@ -347,8 +347,8 @@ export default function CotaPage() {
           one-click so it can be played next to what it is meant to replace;
           whether it replaces OneClickPanel outright is decided after it has
           been played. */}
-      <a
-        href="/cota/practica"
+      <Link
+        href="/"
         className="border-spawn/50 bg-hull active:bg-hull-2 flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border-2 px-5 py-3"
       >
         <span>
@@ -364,7 +364,7 @@ export default function CotaPage() {
         <span className="text-spawn shrink-0 text-xl" aria-hidden>
           →
         </span>
-      </a>
+      </Link>
 
       {/* The one control. Everything else on this page is now behind it. */}
       <OneClickPanel lang={lang} />

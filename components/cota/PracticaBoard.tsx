@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { Button, Note, Panel, Stat } from "@/components/ui/primitives";
@@ -79,7 +80,7 @@ const T = {
 const pts = (x: number) =>
   `${x >= 0 ? "+" : "−"}${Math.abs(x / 10).toFixed(1)}`;
 
-export default function MercadoBoardPage() {
+export function PracticaBoard() {
   const locale = useLocale();
   const lang: Lang = locale === "en" ? "en" : "es";
   const t = T[lang];
@@ -122,9 +123,9 @@ export default function MercadoBoardPage() {
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <span className="flex gap-4">
-          <a href="/cota/practica" className="text-ink-dim font-mono text-xs">
+          <Link href="/" className="text-ink-dim font-mono text-xs">
             ← {t.back}
-          </a>
+          </Link>
           <a href="/cota" className="text-ink-faint font-mono text-xs">
             Cota
           </a>

@@ -9,5 +9,6 @@ import { headers } from "next/headers";
 export async function isCotaHost(): Promise<boolean> {
   const h = await headers();
   const host = (h.get("x-forwarded-host") ?? h.get("host") ?? "").toLowerCase();
-  return host.startsWith("cota.");
+  // cotas-preview.* is the cota app's preview environment: same front door.
+  return host.startsWith("cota.") || host.startsWith("cotas-preview.");
 }

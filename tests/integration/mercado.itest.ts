@@ -130,30 +130,26 @@ describe("haz mercado", () => {
     expect(final.you).toBe(expected - 50);
   });
 
-  it("refuses a quote the price is not between, and any field it did not ask for", async () => {
+  it("places the walls around the live price, refuses walls too close, and any field it did not ask for", async () => {
     const p = await makePlayer(3);
     await post(p.address, { action: "start" });
     await post(p.address, { action: "take", side: "pass" });
-    const bad = await post(p.address, {
-      action: "quote",
-      bid: 17500,
-      ask: 17510,
-    });
-    expect(bad.status).toBe(422);
-    expect(bad.body.reason).toBe("price_not_between");
+    const tight = await post(p.address, { action: "quote", below: 1, above: 1 });
+    expect(tight.status).toBe(422);
+    expect(tight.body.reason).toBe("spread_too_small");
+    // A client naming a price is refused outright, not ignored.
     const sneaky = await post(p.address, {
       action: "quote",
-      bid: 17496,
-      ask: 17504,
+      below: 4,
+      above: 4,
       price: 17000,
     });
     expect(sneaky.status).toBe(400);
-    const ok = await post(p.address, {
-      action: "quote",
-      bid: 17496,
-      ask: 17504,
-    });
+    // MON trades at 17530 after the player last looked: the walls follow it.
+    feed.candles.push(c(5, 17530));
+    const ok = await post(p.address, { action: "quote", below: 4, above: 4 });
     expect(ok.status).toBe(200);
+    expect(ok.body.match.rounds[1]).toMatchObject({ ref: 17530, bid: 17526, ask: 17534 });
     expect(ok.body.match.rounds[1].action).toMatch(/buy|sell|pass/);
   });
 

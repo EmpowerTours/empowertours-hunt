@@ -1,11 +1,12 @@
-import { redirect } from "next/navigation";
 import { SignInPanel } from "@/components/auth/SignInPanel";
 import { RadarScope } from "@/components/radar/RadarScope";
 import { isCotaHost } from "@/lib/host";
+import { PracticaGame } from "@/components/cota/PracticaGame";
 
 export default async function LandingPage() {
-  // cota.* is the trading app, not the hunt game — send its root to Cota.
-  if (await isCotaHost()) redirect("/cota");
+  // cota.* is the trading app, not the hunt game. Its front door is Cota
+  // Práctica, the play-points game; real-money one-click stays at /cota.
+  if (await isCotaHost()) return <PracticaGame />;
   return (
     /* -----------------------------------------------------------------------
        The same shell as the hunt screen, and for the same reason.

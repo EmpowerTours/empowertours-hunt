@@ -154,17 +154,25 @@ describe("a round the player quotes", () => {
     let m = take(opened(), T0, "pass");
     m = tick(m, T0 + 1, flat, [], half).match;
     expect(current(m)!.quoter).toBe("you");
-    expect(() => quote(m, T0 + 2, flat, 17500, 17504, half)).toThrow(
+    expect(() => quote(m, T0 + 2, flat, 0, 4, half)).toThrow(
       "price_not_between",
     );
-    m = quote(m, T0 + 2, flat, 17496, 17504, half);
+    m = quote(m, T0 + 2, flat, 4, 4, half);
     expect(m.rounds[1].action).toMatch(/buy|sell|pass/);
     expect(m.rounds[1].lockedAt).toBe(T0 + 2);
   });
 
+  it("walls are placed around the live price when the quote arrives, even if it moved", () => {
+    let m = tick(take(opened(), T0, "pass"), T0, flat, [], half).match;
+    // the player saw 17500; MON traded at 17540 before the quote arrived
+    const moved: Market = { price: 17540, closes: flat.closes };
+    m = quote(m, T0 + 5, moved, 6, 6, half);
+    expect(m.rounds[1]).toMatchObject({ ref: 17540, bid: 17534, ask: 17546 });
+  });
+
   it("a very wide quote gets passed by the bot while it has passes", () => {
     let m = tick(take(opened(), T0, "pass"), T0, flat, [], half).match;
-    m = quote(m, T0 + 1, flat, 17450, 17550, half);
+    m = quote(m, T0 + 1, flat, 50, 50, half);
     expect(m.rounds[1]).toMatchObject({ action: "pass", you: 0 });
     expect(m.passes.bot).toBe(PASSES - 1);
   });
@@ -180,7 +188,7 @@ describe("a match", () => {
       expect(pending(m).length).toBeLessThanOrEqual(MAX_PENDING);
       const r = current(m);
       if (r?.quoter === "bot") m = take(m, now, "buy");
-      else if (r?.quoter === "you") m = quote(m, now, flat, 17496, 17504, half);
+      else if (r?.quoter === "you") m = quote(m, now, flat, 4, 4, half);
       now += 10_000;
       const minute = Math.floor(now / MINUTE) * MINUTE;
       if (!candles.some((c) => c.t === minute - MINUTE))

@@ -327,8 +327,8 @@ export function quote(
   match: Match,
   now: number,
   market: Market,
-  bid: number,
-  ask: number,
+  below: number,
+  above: number,
   rng: Rng,
 ): Match {
   const m = clone(match);
@@ -337,6 +337,15 @@ export function quote(
   const d = deadline(r);
   if (d !== null && now >= d) throw new GameError("too_late");
   if (market.price === null) throw new GameError("feed_unavailable");
+  // The player names DISTANCES from the price, and the walls are placed around
+  // the live price at the moment the quote arrives. A quote made against a
+  // price that moved while the player was deciding can therefore never miss:
+  // MON can jump several ticks between two polls, and absolute walls kept
+  // failing "price_not_between" until the clock ran out.
+  if (!Number.isSafeInteger(below) || !Number.isSafeInteger(above))
+    throw new GameError("bad_number");
+  const bid = market.price - below;
+  const ask = market.price + above;
   const refused = checkQuote(market.price, bid, ask);
   if (refused) throw new GameError(refused);
   r.ref = market.price;
@@ -345,6 +354,11 @@ export function quote(
   r.quotedAt = now;
   lock(m, r, botTake(r, market.closes, m.passes.bot, rng), now);
   return m;
+}
+
+/** How far a minute usually moves, in ticks: the default half-width of a quote. */
+export function typicalMove(closes: number[], ref: number): number {
+  return read(closes, ref).vol;
 }
 
 /** The player takes the bot's quote, or passes. */

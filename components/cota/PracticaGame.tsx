@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale } from "next-intl";
-import { Button, LinkButton, Note, Panel } from "@/components/ui/primitives";
+import { Button, Note, Panel } from "@/components/ui/primitives";
+import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { LanguageSwitch } from "@/components/hunt/LanguageSwitch";
 
 // ---------------------------------------------------------------------------
-// Cota Práctica — quote and take against the bot, settled on Perpl's real MON
+// Cota Práctica, the root of the cota subdomain — quote and take against the bot, settled on Perpl's real MON
 // minute candles.
 //
 // Everything on this screen comes from /api/mercado. The page holds only the
@@ -35,6 +36,7 @@ interface View {
   price: number | null;
   trail: Array<{ t: number; p: number }>;
   limits: { min: number; max: number } | null;
+  typical: number | null;
   rounds: number;
   match: {
     you: number;
@@ -51,8 +53,9 @@ const T = {
     title: "Cota · Práctica",
     lede: "Uno pone precio, el otro decide. Quien cotiza pone dos paredes alrededor del precio real de MON: “compro aquí, vendo aquí”. Quien toma compra en la de arriba, vende en la de abajo o pasa. El cierre del minuto siguiente decide quién gana. Se turnan cada ronda.",
     play: "Puntos de juego: sin valor, no se retiran. 1 punto = 0.01% del precio. Precios reales de Perpl.",
-    signIn: "Inicia sesión en Hunt para jugar.",
+    signIn: "Inicia sesión con tu llave de acceso para jugar.",
     signInBtn: "Iniciar sesión",
+    real: "Dinero real →",
     feed: "No se pudo leer el precio de Perpl. Reintentando…",
     start: "Nueva partida contra el bot",
     round: "Ronda",
@@ -72,21 +75,25 @@ const T = {
     sellSub: (p: string) => `a ${p} · ganas si cierra más abajo`,
     pass: "Paso",
     passSub: (n: number) => `te quedan ${n}`,
-    quoteHelp:
-      "Abierto es seguro pero el bot puede pasar; cerrado invita a operar. Mover ambas paredes muestra hacia dónde crees que va.",
+    quoteHelp: (typ: string) =>
+      `Tus paredes siguen al precio hasta que envías. Elige qué tan abajo compras y qué tan arriba vendes. Más abiertas son más seguras, pero el bot puede pasar. Ahora MON suele moverse ${typ} en un minuto.`,
     youBuy: "Tú compras a",
     youSell: "Tú vendes a",
-    below: (n: number) => `${n} abajo`,
-    above: (n: number) => `${n} arriba`,
+    below: (p: string) => `${p} abajo`,
+    above: (p: string) => `${p} arriba`,
+    farther: "+ aleja la pared del precio, − la acerca",
     leanDownBtn: "◀ Inclinar abajo",
     leanUpBtn: "Inclinar arriba ▶",
     send: "Mostrarle mi precio al bot",
-    spread: (p: string, min: number, max: number) =>
-      `Diferencial ${p} · mín ${min}, máx ${max} (en ticks de $0.000001)`,
+    spread: (p: string, min: string, max: string) =>
+      `Entre tus paredes: ${p} (mínimo ${min}, máximo ${max})`,
     waiting: (s: string) =>
-      `Esperando a que cierre un minuto pendiente (${s}) para abrir la siguiente ronda.`,
+      `Tienes 2 operaciones esperando el cierre de su minuto. La siguiente ronda abre cuando se decida la primera, en ${s}.`,
+    allPlayed: (s: string) =>
+      `Ya jugaste las 10 rondas. Falta que cierren los minutos de tus últimas operaciones (${s}).`,
     noPrice: "Esperando una operación de MON en Perpl para abrir la ronda.",
-    settles: (s: string) => `se decide en ${s}`,
+    settles: (s: string, at: string) =>
+      `se decide con el cierre de las ${at}, en ${s}`,
     settling: "esperando el cierre",
     final: (y: string, b: string) => `Partida terminada · tú ${y}, bot ${b}`,
     won: "¡Ganaste!",
@@ -95,12 +102,16 @@ const T = {
     rounds: "Rondas",
     none: "Todavía nada.",
     quoted: (w: Who) => (w === "you" ? "Tú cotizaste" : "Cotizó el bot"),
+    yourTurn: "Te tocaba cotizar",
     act: (a: Action | null, taker: Who) => {
       const who = taker === "you" ? "tú" : "bot";
       if (a === "buy") return `${who} compró`;
       if (a === "sell") return `${who} vendió`;
       if (a === "pass") return `${who} pasó`;
-      if (a === "timeout") return "se acabó el tiempo";
+      if (a === "timeout")
+        return taker === "bot"
+          ? "no enviaste tu precio a tiempo"
+          : "no elegiste a tiempo";
       return "…";
     },
     closed: (c: string) => `cerró ${c}`,
@@ -120,8 +131,9 @@ const T = {
     title: "Cota · Practice",
     lede: "One side names a price, the other decides. The quoter sets two walls around MON's real price: “I buy here, I sell here”. The taker buys at the top wall, sells at the bottom one, or passes. The next minute's close decides who wins. Roles swap every round.",
     play: "Play points: no value, can't be withdrawn. 1 point = 0.01% of the price. Real Perpl prices.",
-    signIn: "Sign in to Hunt to play.",
+    signIn: "Sign in with your passkey to play.",
     signInBtn: "Sign in",
+    real: "Real money →",
     feed: "Couldn't read Perpl's price. Retrying…",
     start: "New match against the bot",
     round: "Round",
@@ -141,21 +153,25 @@ const T = {
     sellSub: (p: string) => `at ${p} · win if it closes lower`,
     pass: "Pass",
     passSub: (n: number) => `${n} left`,
-    quoteHelp:
-      "Wide is safe but the bot may pass; tight invites a trade. Shifting both walls shows which way you think it goes.",
+    quoteHelp: (typ: string) =>
+      `Your walls follow the price until you send. Choose how far below you'd buy and how far above you'd sell. Wider is safer, but the bot may pass. MON usually moves ${typ} in a minute right now.`,
     youBuy: "You buy at",
     youSell: "You sell at",
-    below: (n: number) => `${n} below`,
-    above: (n: number) => `${n} above`,
+    below: (p: string) => `${p} below`,
+    above: (p: string) => `${p} above`,
+    farther: "+ moves the wall away from the price, − brings it closer",
     leanDownBtn: "◀ Lean down",
     leanUpBtn: "Lean up ▶",
     send: "Show the bot my quote",
-    spread: (p: string, min: number, max: number) =>
-      `Spread ${p} · min ${min}, max ${max} (in $0.000001 ticks)`,
+    spread: (p: string, min: string, max: string) =>
+      `Between your walls: ${p} (minimum ${min}, maximum ${max})`,
     waiting: (s: string) =>
-      `Waiting for a pending minute to close (${s}) before the next round opens.`,
+      `You have 2 trades waiting for their minute to close. The next round opens when the first one is decided, in ${s}.`,
+    allPlayed: (s: string) =>
+      `All 10 rounds played. Waiting for the minutes of your last trades to close (${s}).`,
     noPrice: "Waiting for a MON trade on Perpl to open the round.",
-    settles: (s: string) => `settles in ${s}`,
+    settles: (s: string, at: string) =>
+      `decided by the close at ${at}, in ${s}`,
     settling: "waiting for the close",
     final: (y: string, b: string) => `Match over · you ${y}, bot ${b}`,
     won: "You won!",
@@ -164,12 +180,16 @@ const T = {
     rounds: "Rounds",
     none: "Nothing yet.",
     quoted: (w: Who) => (w === "you" ? "You quoted" : "Bot quoted"),
+    yourTurn: "Your turn to quote",
     act: (a: Action | null, taker: Who) => {
       const who = taker === "you" ? "you" : "bot";
       if (a === "buy") return `${who} bought`;
       if (a === "sell") return `${who} sold`;
       if (a === "pass") return `${who} passed`;
-      if (a === "timeout") return "time ran out";
+      if (a === "timeout")
+        return taker === "bot"
+          ? "you didn't send a quote in time"
+          : "you didn't choose in time";
       return "…";
     },
     closed: (c: string) => `closed ${c}`,
@@ -206,7 +226,7 @@ const COLORS = {
   ask: "#ff9d2e",
 };
 
-export default function MercadoPage() {
+export function PracticaGame() {
   const locale = useLocale();
   const lang: Lang = locale === "en" ? "en" : "es";
   const t = T[lang];
@@ -218,10 +238,12 @@ export default function MercadoPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // The quote a player is still adjusting, as DISTANCES in ticks from the
+  // price. The walls follow the live price until it is sent.
   const [draft, setDraft] = useState<{
     n: number;
-    bid: number;
-    ask: number;
+    below: number;
+    above: number;
   } | null>(null);
   const [skew, setSkew] = useState(0);
   const canvas = useRef<HTMLCanvasElement | null>(null);
@@ -289,43 +311,47 @@ export default function MercadoPage() {
   const serverNow = now + skew;
   const left = cur?.deadline ? cur.deadline - serverNow : 0;
 
-  // A fresh default quote when a quoting round opens: a few ticks either side.
+  // A fresh default quote when a quoting round opens: each wall about one
+  // typical minute's move away from the price.
   const quoting = cur?.quoter === "you" && v?.price != null && v.limits != null;
+  const dflt = quoting
+    ? Math.max(Math.ceil(v!.limits!.min / 2), v!.typical ?? 3)
+    : 0;
   const q =
     quoting && draft?.n === cur!.n
       ? draft
       : quoting
-        ? {
-            n: cur!.n,
-            bid: v!.price! - Math.max(3, Math.ceil(v!.limits!.min / 2)),
-            ask: v!.price! + Math.max(3, Math.ceil(v!.limits!.min / 2)),
-          }
+        ? { n: cur!.n, below: dflt, above: dflt }
         : null;
+  const pct = (ticks: number) =>
+    v?.price ? `${((ticks / v.price) * 100).toFixed(2)}%` : "—";
 
-  const nudge = (which: "bid" | "ask" | "both", d: number) => {
-    if (!q || !v?.price || !v.limits) return;
-    let { bid, ask } = q;
-    if (which === "both") {
-      bid += d;
-      ask += d;
-    } else if (which === "bid") bid += d;
-    else ask += d;
-    bid = Math.min(bid, v.price - 1);
-    ask = Math.max(ask, v.price + 1);
-    if (ask - bid < v.limits.min) {
-      if (which === "bid") bid = ask - v.limits.min;
-      else ask = bid + v.limits.min;
-    }
-    if (ask - bid > v.limits.max) {
-      if (which === "bid") bid = ask - v.limits.max;
-      else ask = bid + v.limits.max;
-    }
-    setDraft({ n: q.n, bid, ask });
+  const nudge = (which: "below" | "above" | "lean", d: number) => {
+    if (!q || !v?.limits) return;
+    let { below, above } = q;
+    if (which === "lean") {
+      // Leaning up moves both walls up: buy closer, sell farther.
+      below -= d;
+      above += d;
+    } else if (which === "below") below += d;
+    else above += d;
+    below = Math.max(1, below);
+    above = Math.max(1, above);
+    const other = which === "below" ? "above" : "below";
+    const fix = (sum: number) => {
+      if (other === "above") above = Math.max(1, above + sum);
+      else below = Math.max(1, below + sum);
+    };
+    if (below + above < v.limits.min) fix(v.limits.min - (below + above));
+    if (below + above > v.limits.max) fix(v.limits.max - (below + above));
+    setDraft({ n: q.n, below, above });
   };
 
   // Walls to draw: the live quote (draft or the bot's), plus pending trades.
   const wallsNow =
-    q ??
+    (q && v?.price
+      ? { bid: v.price - q.below, ask: v.price + q.above }
+      : null) ??
     (curRound && curRound.bid !== null && curRound.ask !== null
       ? { bid: curRound.bid, ask: curRound.ask }
       : null);
@@ -450,14 +476,19 @@ export default function MercadoPage() {
   });
 
   if (status === "signin") {
+    // Sign in right here: this screen is the root of the cota subdomain, so
+    // there is no other page to send the player to. The 2 s poll picks the
+    // session up as soon as the passkey ceremony finishes.
     return (
       <main className="mx-auto w-full max-w-2xl px-4 py-6">
-        <Note tone="info">{t.signIn}</Note>
-        <div className="mt-3">
-          <LinkButton href="/" tone="primary">
-            {t.signInBtn}
-          </LinkButton>
-        </div>
+        <h1 className="text-spawn text-4xl font-black tracking-tight">
+          {t.title}
+        </h1>
+        <p className="text-ink-dim mt-2 text-sm">{t.lede}</p>
+        <Panel className="mt-4 space-y-3">
+          <p className="text-ink text-sm">{t.signIn}</p>
+          <SignInPrompt label={t.signInBtn} />
+        </Panel>
       </main>
     );
   }
@@ -477,7 +508,7 @@ export default function MercadoPage() {
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <a href="/cota" className="text-ink-dim font-mono text-xs">
-          ← Cota
+          {t.real}
         </a>
         <LanguageSwitch />
       </div>
@@ -626,23 +657,25 @@ export default function MercadoPage() {
               <span className="bg-spawn text-void rounded-full px-3 py-1 text-xs font-bold tracking-wider uppercase">
                 {t.youQuote} · {clock(left)}
               </span>
-              <span className="text-ink-dim text-sm">{t.quoteHelp}</span>
+              <span className="text-ink-dim text-sm">
+                {t.quoteHelp(pct(v.typical ?? 1))}
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
                   [
-                    "bid",
+                    "below",
                     t.youBuy,
-                    q.bid,
-                    t.below(v.price - q.bid),
+                    v.price - q.below,
+                    t.below(pct(q.below)),
                     "text-phosphor",
                   ],
                   [
-                    "ask",
+                    "above",
                     t.youSell,
-                    q.ask,
-                    t.above(q.ask - v.price),
+                    v.price + q.above,
+                    t.above(pct(q.above)),
                     "text-[#ff9d2e]",
                   ],
                 ] as const
@@ -670,31 +703,38 @@ export default function MercadoPage() {
                 </div>
               ))}
             </div>
+            <p className="text-ink-faint font-mono text-[11px]">{t.farther}</p>
             <div className="grid grid-cols-2 gap-2">
-              <Button tone="ghost" onClick={() => nudge("both", -2)}>
+              <Button tone="ghost" onClick={() => nudge("lean", -2)}>
                 {t.leanDownBtn}
               </Button>
-              <Button tone="ghost" onClick={() => nudge("both", 2)}>
+              <Button tone="ghost" onClick={() => nudge("lean", 2)}>
                 {t.leanUpBtn}
               </Button>
             </div>
             <Button
               disabled={busy}
               onClick={() =>
-                void act({ action: "quote", bid: q.bid, ask: q.ask })
+                void act({ action: "quote", below: q.below, above: q.above })
               }
             >
               {t.send}
             </Button>
             <p className="text-ink-faint font-mono text-[11px]">
-              {t.spread(String(q.ask - q.bid), v.limits.min, v.limits.max)}
+              {t.spread(
+                pct(q.below + q.above),
+                pct(v.limits.min),
+                pct(v.limits.max),
+              )}
             </p>
           </>
         ) : (
           <Note tone="info">
             {!v?.price
               ? t.noPrice
-              : t.waiting(clock((pendingNext ?? serverNow) - serverNow))}
+              : m.rounds.length >= v.rounds
+                ? t.allPlayed(clock((pendingNext ?? serverNow) - serverNow))
+                : t.waiting(clock((pendingNext ?? serverNow) - serverNow))}
           </Note>
         )}
       </div>
@@ -717,7 +757,17 @@ export default function MercadoPage() {
                       : ""
                     : r.settleAt
                       ? r.settleAt + 5_000 > serverNow
-                        ? t.settles(clock(r.settleAt - serverNow))
+                        ? t.settles(
+                            clock(r.settleAt - serverNow),
+                            new Date(r.settleAt).toLocaleTimeString(
+                              lang === "es" ? "es-MX" : "en-GB",
+                              {
+                                timeZone: "America/Mexico_City",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              },
+                            ),
+                          )
                         : t.settling
                       : "";
                 return (
@@ -728,7 +778,9 @@ export default function MercadoPage() {
                     <span className="text-ink-dim font-mono">#{r.n}</span>
                     <span>
                       <span className="text-ink">
-                        {t.quoted(r.quoter)} {quoteOf(r)}
+                        {r.bid === null
+                          ? t.yourTurn
+                          : `${t.quoted(r.quoter)} ${quoteOf(r)}`}
                       </span>
                       <span className="text-ink-dim block font-mono text-[11px]">
                         {r.action ? t.act(r.action, taker) : "…"}{" "}
@@ -781,10 +833,7 @@ export default function MercadoPage() {
       ) : null}
 
       <div className="mt-4">
-        <a
-          href="/cota/practica/tabla"
-          className="text-phosphor font-mono text-sm"
-        >
+        <a href="/tabla" className="text-phosphor font-mono text-sm">
           {t.board}
         </a>
       </div>

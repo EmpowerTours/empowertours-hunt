@@ -30,6 +30,7 @@ import {
   spreadLimits,
   take,
   tick,
+  typicalMove,
   type Candle,
   type Market,
   type Match,
@@ -193,9 +194,14 @@ export async function start(playerId: string) {
   return step(playerId);
 }
 
-export async function placeQuote(playerId: string, bid: number, ask: number) {
+/** `below` / `above`: how many ticks from the live price to put each wall. */
+export async function placeQuote(
+  playerId: string,
+  below: number,
+  above: number,
+) {
   return step(playerId, (m, mk, now) =>
-    quote(m, now, mk, bid, ask, Math.random),
+    quote(m, now, mk, below, above, Math.random),
   );
 }
 
@@ -224,6 +230,10 @@ export async function view(
     price: s.market.price,
     trail: s.trail,
     limits: s.market.price ? spreadLimits(s.market.price) : null,
+    /** Median one-minute move lately, ticks: the default distance for a wall. */
+    typical: s.market.price
+      ? typicalMove(s.market.closes, s.market.price)
+      : null,
     rounds: ROUNDS,
     match: m && {
       you: score(m),
