@@ -51,7 +51,7 @@ interface View {
 const T = {
   es: {
     title: "Cota · Práctica",
-    lede: "Uno pone precio, el otro decide. Quien cotiza pone dos paredes alrededor del precio real de MON: “compro aquí, vendo aquí”. Quien toma compra en la de arriba, vende en la de abajo o pasa. El cierre del minuto siguiente decide quién gana. Se turnan cada ronda.",
+    lede: "Cada ronda hay dos líneas alrededor del precio de MON: una ARRIBA y una ABAJO. Apuesta ▲ Sube y ganas si el minuto siguiente cierra por encima de la línea de arriba. Apuesta ▼ Baja y ganas si cierra por debajo de la de abajo. Si cierra entre las dos, gana quien dibujó las líneas. Tú y el bot se turnan: uno dibuja, el otro apuesta.",
     play: "Puntos de juego: sin valor, no se retiran. 1 punto = 0.01% del precio. Precios reales de Perpl.",
     signIn: "Inicia sesión con tu llave de acceso para jugar.",
     signInBtn: "Iniciar sesión",
@@ -61,39 +61,33 @@ const T = {
     round: "Ronda",
     you: "Tú",
     bot: "Bot",
-    passes: "Pases",
-    youTake: "Tú tomas",
-    youQuote: "Tú cotizas",
-    botQuoted: (bid: string, ask: string, lean: string) =>
-      `El bot compra a ${bid} y vende a ${ask}. ${lean}`,
-    leanUp: "Se inclina al alza.",
-    leanDown: "Se inclina a la baja.",
-    leanNone: "No se inclina.",
-    buy: "Comprarle",
-    buySub: (p: string) => `a ${p} · ganas si cierra más arriba`,
-    sell: "Venderle",
-    sellSub: (p: string) => `a ${p} · ganas si cierra más abajo`,
-    pass: "Paso",
+    passes: "Saltos",
+    youTake: "Tú apuestas",
+    youQuote: "Tú dibujas",
+    botQuoted:
+      "El bot dibujó las líneas. ¿El minuto siguiente cierra fuera de ellas?",
+    up: "Línea arriba",
+    down: "Línea abajo",
+    buy: "▲ Sube",
+    buySub: (p: string) => `cierra ${p} o más arriba`,
+    sell: "▼ Baja",
+    sellSub: (p: string) => `cierra ${p} o más abajo`,
+    pass: "Saltar",
     passSub: (n: number) => `te quedan ${n}`,
     quoteHelp: (typ: string) =>
-      `Tus paredes siguen al precio hasta que envías. Elige qué tan abajo compras y qué tan arriba vendes. Más abiertas son más seguras, pero el bot puede pasar. Ahora MON suele moverse ${typ} en un minuto.`,
-    youBuy: "Tú compras a",
-    youSell: "Tú vendes a",
-    below: (p: string) => `${p} abajo`,
-    above: (p: string) => `${p} arriba`,
-    farther: "+ aleja la pared del precio, − la acerca",
-    leanDownBtn: "◀ Inclinar abajo",
-    leanUpBtn: "Inclinar arriba ▶",
-    send: "Mostrarle mi precio al bot",
-    spread: (p: string, min: string, max: string) =>
-      `Entre tus paredes: ${p} (mínimo ${min}, máximo ${max})`,
-    waiting: (s: string) =>
-      `Tienes 2 operaciones esperando el cierre de su minuto. La siguiente ronda abre cuando se decida la primera, en ${s}.`,
+      `Dibuja dos líneas. El bot apostará al lado que más le convenga. Si MON cierra entre tus líneas, ganas tú. Líneas cerradas: el bot apuesta más, pero es más fácil que te pase. Líneas abiertas: más seguro, pero el bot puede saltar. MON suele moverse ${typ} por minuto.`,
+    closer: "más cerca",
+    farther: "más lejos",
+    shiftDown: "▼ Bajar ambas",
+    shiftUp: "Subir ambas ▲",
+    send: "Listo, que apueste el bot",
+    spread: (p: string) => `Espacio entre tus líneas: ${p}`,
+    waiting: (s: string, at: string) =>
+      `Esperando el cierre de las ${at} para decidir tus apuestas. Siguiente ronda en ${s}.`,
     allPlayed: (s: string) =>
-      `Ya jugaste las 10 rondas. Falta que cierren los minutos de tus últimas operaciones (${s}).`,
+      `Ya jugaste las 10 rondas. Faltan los últimos cierres (${s}).`,
     noPrice: "Esperando una operación de MON en Perpl para abrir la ronda.",
-    settles: (s: string, at: string) =>
-      `se decide con el cierre de las ${at}, en ${s}`,
+    settles: (s: string, at: string) => `se decide a las ${at}, en ${s}`,
     settling: "esperando el cierre",
     final: (y: string, b: string) => `Partida terminada · tú ${y}, bot ${b}`,
     won: "¡Ganaste!",
@@ -101,35 +95,36 @@ const T = {
     tie: "Empate.",
     rounds: "Rondas",
     none: "Todavía nada.",
-    quoted: (w: Who) => (w === "you" ? "Tú cotizaste" : "Cotizó el bot"),
-    yourTurn: "Te tocaba cotizar",
+    quoted: (w: Who) => (w === "you" ? "Tus líneas" : "Líneas del bot"),
+    yourTurn: "Te tocaba dibujar",
     act: (a: Action | null, taker: Who) => {
-      const who = taker === "you" ? "tú" : "bot";
-      if (a === "buy") return `${who} compró`;
-      if (a === "sell") return `${who} vendió`;
-      if (a === "pass") return `${who} pasó`;
+      const who = taker === "you" ? "apostaste" : "el bot apostó";
+      if (a === "buy") return `${who} ▲ Sube`;
+      if (a === "sell") return `${who} ▼ Baja`;
+      if (a === "pass") return taker === "you" ? "saltaste" : "el bot saltó";
       if (a === "timeout")
         return taker === "bot"
-          ? "no enviaste tu precio a tiempo"
-          : "no elegiste a tiempo";
+          ? "no dibujaste a tiempo"
+          : "no apostaste a tiempo";
       return "…";
     },
-    closed: (c: string) => `cerró ${c}`,
+    above: (p: string) => `cerró ${p} arriba de la línea`,
+    below: (p: string) => `cerró ${p} abajo de la línea`,
+    inside: "cerró entre las líneas",
     board: "Tabla semanal →",
     history: "Últimas partidas",
     refused: {
-      price_not_between:
-        "El precio tiene que quedar entre tus paredes. Se movió: ajusta y reenvía.",
-      spread_too_small: "Tus paredes están demasiado juntas.",
-      spread_too_wide: "Tus paredes están demasiado separadas.",
+      price_not_between: "El precio se movió. Intenta de nuevo.",
+      spread_too_small: "Tus líneas están demasiado juntas.",
+      spread_too_wide: "Tus líneas están demasiado separadas.",
       too_late: "Se acabó el tiempo de esa ronda.",
-      no_passes: "Ya no te quedan pases.",
+      no_passes: "Ya no te quedan saltos.",
       default: "No se pudo hacer ese movimiento.",
     } as Record<string, string>,
   },
   en: {
     title: "Cota · Practice",
-    lede: "One side names a price, the other decides. The quoter sets two walls around MON's real price: “I buy here, I sell here”. The taker buys at the top wall, sells at the bottom one, or passes. The next minute's close decides who wins. Roles swap every round.",
+    lede: "Each round has two lines around MON's price: an UP line and a DOWN line. Bet ▲ Higher and you win if the next minute closes above the UP line. Bet ▼ Lower and you win if it closes below the DOWN line. If it closes between them, whoever drew the lines wins. You and the bot take turns: one draws, the other bets.",
     play: "Play points: no value, can't be withdrawn. 1 point = 0.01% of the price. Real Perpl prices.",
     signIn: "Sign in with your passkey to play.",
     signInBtn: "Sign in",
@@ -139,39 +134,33 @@ const T = {
     round: "Round",
     you: "You",
     bot: "Bot",
-    passes: "Passes",
-    youTake: "You take",
-    youQuote: "You quote",
-    botQuoted: (bid: string, ask: string, lean: string) =>
-      `The bot buys at ${bid} and sells at ${ask}. ${lean}`,
-    leanUp: "It leans up.",
-    leanDown: "It leans down.",
-    leanNone: "It doesn't lean.",
-    buy: "Buy from it",
-    buySub: (p: string) => `at ${p} · win if it closes higher`,
-    sell: "Sell to it",
-    sellSub: (p: string) => `at ${p} · win if it closes lower`,
-    pass: "Pass",
+    passes: "Skips",
+    youTake: "You bet",
+    youQuote: "You draw",
+    botQuoted:
+      "The bot drew the lines. Will the next minute close outside them?",
+    up: "UP line",
+    down: "DOWN line",
+    buy: "▲ Higher",
+    buySub: (p: string) => `closes ${p}+ above now`,
+    sell: "▼ Lower",
+    sellSub: (p: string) => `closes ${p}+ below now`,
+    pass: "Skip",
     passSub: (n: number) => `${n} left`,
     quoteHelp: (typ: string) =>
-      `Your walls follow the price until you send. Choose how far below you'd buy and how far above you'd sell. Wider is safer, but the bot may pass. MON usually moves ${typ} in a minute right now.`,
-    youBuy: "You buy at",
-    youSell: "You sell at",
-    below: (p: string) => `${p} below`,
-    above: (p: string) => `${p} above`,
-    farther: "+ moves the wall away from the price, − brings it closer",
-    leanDownBtn: "◀ Lean down",
-    leanUpBtn: "Lean up ▶",
-    send: "Show the bot my quote",
-    spread: (p: string, min: string, max: string) =>
-      `Between your walls: ${p} (minimum ${min}, maximum ${max})`,
-    waiting: (s: string) =>
-      `You have 2 trades waiting for their minute to close. The next round opens when the first one is decided, in ${s}.`,
+      `Draw two lines. The bot bets whichever side looks best to it. If MON closes between your lines, you win. Tight lines: the bot bets more, but MON breaks out more easily. Wide lines: safer, but the bot may skip. MON usually moves ${typ} a minute.`,
+    closer: "closer",
+    farther: "farther",
+    shiftDown: "▼ Shift both down",
+    shiftUp: "Shift both up ▲",
+    send: "Done, let the bot bet",
+    spread: (p: string) => `Room between your lines: ${p}`,
+    waiting: (s: string, at: string) =>
+      `Waiting for the ${at} close to decide your bets. Next round in ${s}.`,
     allPlayed: (s: string) =>
-      `All 10 rounds played. Waiting for the minutes of your last trades to close (${s}).`,
+      `All 10 rounds played. Waiting for the last closes (${s}).`,
     noPrice: "Waiting for a MON trade on Perpl to open the round.",
-    settles: (s: string, at: string) =>
-      `decided by the close at ${at}, in ${s}`,
+    settles: (s: string, at: string) => `decided at ${at}, in ${s}`,
     settling: "waiting for the close",
     final: (y: string, b: string) => `Match over · you ${y}, bot ${b}`,
     won: "You won!",
@@ -179,29 +168,30 @@ const T = {
     tie: "Tie.",
     rounds: "Rounds",
     none: "Nothing yet.",
-    quoted: (w: Who) => (w === "you" ? "You quoted" : "Bot quoted"),
-    yourTurn: "Your turn to quote",
+    quoted: (w: Who) => (w === "you" ? "Your lines" : "Bot's lines"),
+    yourTurn: "Your turn to draw",
     act: (a: Action | null, taker: Who) => {
-      const who = taker === "you" ? "you" : "bot";
-      if (a === "buy") return `${who} bought`;
-      if (a === "sell") return `${who} sold`;
-      if (a === "pass") return `${who} passed`;
+      const who = taker === "you" ? "you bet" : "bot bet";
+      if (a === "buy") return `${who} ▲ Higher`;
+      if (a === "sell") return `${who} ▼ Lower`;
+      if (a === "pass") return taker === "you" ? "you skipped" : "bot skipped";
       if (a === "timeout")
         return taker === "bot"
-          ? "you didn't send a quote in time"
-          : "you didn't choose in time";
+          ? "you didn't draw in time"
+          : "you didn't bet in time";
       return "…";
     },
-    closed: (c: string) => `closed ${c}`,
+    above: (p: string) => `closed ${p} past the line`,
+    below: (p: string) => `closed ${p} short of the line`,
+    inside: "closed between the lines",
     board: "Weekly board →",
     history: "Last matches",
     refused: {
-      price_not_between:
-        "The price has to sit between your walls. It moved: adjust and send again.",
-      spread_too_small: "Your walls are too close together.",
-      spread_too_wide: "Your walls are too far apart.",
+      price_not_between: "The price moved. Try again.",
+      spread_too_small: "Your lines are too close together.",
+      spread_too_wide: "Your lines are too far apart.",
       too_late: "That round's time ran out.",
-      no_passes: "You have no passes left.",
+      no_passes: "You have no skips left.",
       default: "That move didn't go through.",
     } as Record<string, string>,
   },
@@ -323,8 +313,9 @@ export function PracticaGame() {
       : quoting
         ? { n: cur!.n, below: dflt, above: dflt }
         : null;
-  const pct = (ticks: number) =>
-    v?.price ? `${((ticks / v.price) * 100).toFixed(2)}%` : "—";
+  const pctOf = (ticks: number, base: number | null | undefined) =>
+    base ? `${((Math.abs(ticks) / base) * 100).toFixed(2)}%` : "—";
+  const pct = (ticks: number) => pctOf(ticks, v?.price);
 
   const nudge = (which: "below" | "above" | "lean", d: number) => {
     if (!q || !v?.limits) return;
@@ -436,7 +427,7 @@ export function PracticaGame() {
       wall(
         p,
         "rgba(217,245,236,.45)",
-        `#${r.n} ${r.action === "buy" ? "▲" : "▼"} ${usd(p)}`,
+        `#${r.n} ${r.action === "buy" ? "▲" : "▼"}`,
         false,
       );
     }
@@ -444,13 +435,13 @@ export function PracticaGame() {
       wall(
         wallsNow.ask,
         COLORS.ask,
-        `${lang === "es" ? "vende" : "sell"} ${usd(wallsNow.ask)}`,
+        `${t.up}${v.price ? ` +${pctOf(wallsNow.ask - v.price, v.price)}` : ""}`,
         true,
       );
       wall(
         wallsNow.bid,
         COLORS.bid,
-        `${lang === "es" ? "compra" : "buy"} ${usd(wallsNow.bid)}`,
+        `${t.down}${v.price ? ` −${pctOf(v.price - wallsNow.bid, v.price)}` : ""}`,
         true,
       );
     }
@@ -494,12 +485,23 @@ export function PracticaGame() {
   }
 
   const quoteOf = (r: RoundView) =>
-    r.bid !== null && r.ask !== null ? `${usd(r.bid)} / ${usd(r.ask)}` : "—";
-  const lean = (r: RoundView) => {
-    if (r.bid === null || r.ask === null || r.ref === null) return t.leanNone;
-    const mid = (r.bid + r.ask) / 2 - r.ref;
-    return Math.abs(mid) < 1 ? t.leanNone : mid > 0 ? t.leanUp : t.leanDown;
+    r.bid !== null && r.ask !== null && r.ref !== null
+      ? `▼${pctOf(r.ref - r.bid, r.ref)} · ▲${pctOf(r.ask - r.ref, r.ref)}`
+      : "—";
+  // How the close landed against the line that was bet on.
+  const outcome = (r: RoundView) => {
+    if (r.close === null || r.bid === null || r.ask === null) return "";
+    if (r.action !== "buy" && r.action !== "sell") return "";
+    if (r.close > r.bid && r.close < r.ask) return t.inside;
+    const d = r.action === "buy" ? r.close - r.ask : r.bid - r.close;
+    return d >= 0 ? t.above(pctOf(d, r.ref)) : t.below(pctOf(d, r.ref));
   };
+  const hhmm = (ms: number) =>
+    new Date(ms).toLocaleTimeString(lang === "es" ? "es-MX" : "en-GB", {
+      timeZone: "America/Mexico_City",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   const pendingNext = pendingTrades
     .map((r) => r.settleAt ?? 0)
     .sort((a, b) => a - b)[0];
@@ -607,13 +609,7 @@ export function PracticaGame() {
               <span className="bg-spawn text-void rounded-full px-3 py-1 text-xs font-bold tracking-wider uppercase">
                 {t.youTake} · {clock(left)}
               </span>
-              <span className="text-ink-dim text-sm">
-                {t.botQuoted(
-                  usd(curRound.bid!),
-                  usd(curRound.ask!),
-                  lean(curRound),
-                )}
-              </span>
+              <span className="text-ink-dim text-sm">{t.botQuoted}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -624,7 +620,7 @@ export function PracticaGame() {
               >
                 {t.buy}
                 <span className="block font-mono text-[11px] font-medium">
-                  {t.buySub(usd(curRound.ask!))}
+                  {t.buySub(pctOf(curRound.ask! - curRound.ref!, curRound.ref))}
                 </span>
               </button>
               <button
@@ -635,7 +631,9 @@ export function PracticaGame() {
               >
                 {t.sell}
                 <span className="block font-mono text-[11px] font-medium">
-                  {t.sellSub(usd(curRound.bid!))}
+                  {t.sellSub(
+                    pctOf(curRound.ref! - curRound.bid!, curRound.ref),
+                  )}
                 </span>
               </button>
               <button
@@ -664,52 +662,59 @@ export function PracticaGame() {
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
-                  [
-                    "below",
-                    t.youBuy,
-                    v.price - q.below,
-                    t.below(pct(q.below)),
-                    "text-phosphor",
-                  ],
-                  [
-                    "above",
-                    t.youSell,
-                    v.price + q.above,
-                    t.above(pct(q.above)),
-                    "text-[#ff9d2e]",
-                  ],
+                  ["above", t.up, `+${pct(q.above)}`, "text-[#ff9d2e]"],
+                  ["below", t.down, `−${pct(q.below)}`, "text-phosphor"],
                 ] as const
-              ).map(([k, label, p, dist, cls]) => (
+              ).map(([k, label, dist, cls]) => (
                 <div key={k} className="border-hull-line rounded-xl border p-2">
-                  <div className="text-ink-dim flex justify-between text-[11px] tracking-wider uppercase">
-                    <span>{label}</span>
-                    <span>{dist}</span>
+                  <div className="text-ink-dim text-[11px] tracking-wider uppercase">
+                    {label}
                   </div>
-                  <div className={`font-mono text-lg font-bold ${cls}`}>
-                    {usd(p)}
+                  <div className={`font-mono text-2xl font-bold ${cls}`}>
+                    {dist}
                   </div>
-                  <div className="mt-1 grid grid-cols-4 gap-1">
-                    {[-5, -1, 1, 5].map((d) => (
+                  <div className="mt-1 grid grid-cols-2 gap-1">
+                    {(
+                      [
+                        [
+                          -Math.max(1, Math.round((v.typical ?? 2) / 2)),
+                          t.closer,
+                        ],
+                        [
+                          Math.max(1, Math.round((v.typical ?? 2) / 2)),
+                          t.farther,
+                        ],
+                      ] as const
+                    ).map(([d, word]) => (
                       <button
-                        key={d}
+                        key={word}
                         type="button"
                         onClick={() => nudge(k, d)}
-                        className="border-hull-line bg-hull-2 text-ink min-h-11 rounded-lg border font-mono text-sm"
+                        className="border-hull-line bg-hull-2 text-ink min-h-11 rounded-lg border text-sm"
                       >
-                        {d > 0 ? `+${d}` : `−${-d}`}
+                        {word}
                       </button>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
-            <p className="text-ink-faint font-mono text-[11px]">{t.farther}</p>
             <div className="grid grid-cols-2 gap-2">
-              <Button tone="ghost" onClick={() => nudge("lean", -2)}>
-                {t.leanDownBtn}
+              <Button
+                tone="ghost"
+                onClick={() =>
+                  nudge("lean", -Math.max(1, Math.round((v.typical ?? 2) / 2)))
+                }
+              >
+                {t.shiftDown}
               </Button>
-              <Button tone="ghost" onClick={() => nudge("lean", 2)}>
-                {t.leanUpBtn}
+              <Button
+                tone="ghost"
+                onClick={() =>
+                  nudge("lean", Math.max(1, Math.round((v.typical ?? 2) / 2)))
+                }
+              >
+                {t.shiftUp}
               </Button>
             </div>
             <Button
@@ -721,11 +726,7 @@ export function PracticaGame() {
               {t.send}
             </Button>
             <p className="text-ink-faint font-mono text-[11px]">
-              {t.spread(
-                pct(q.below + q.above),
-                pct(v.limits.min),
-                pct(v.limits.max),
-              )}
+              {t.spread(pct(q.below + q.above))}
             </p>
           </>
         ) : (
@@ -734,7 +735,10 @@ export function PracticaGame() {
               ? t.noPrice
               : m.rounds.length >= v.rounds
                 ? t.allPlayed(clock((pendingNext ?? serverNow) - serverNow))
-                : t.waiting(clock((pendingNext ?? serverNow) - serverNow))}
+                : t.waiting(
+                    clock((pendingNext ?? serverNow) - serverNow),
+                    hhmm(pendingNext ?? serverNow),
+                  )}
           </Note>
         )}
       </div>
@@ -752,21 +756,12 @@ export function PracticaGame() {
                 const taker: Who = r.quoter === "you" ? "bot" : "you";
                 const state =
                   r.you !== null
-                    ? r.close !== null
-                      ? t.closed(usd(r.close))
-                      : ""
+                    ? outcome(r)
                     : r.settleAt
                       ? r.settleAt + 5_000 > serverNow
                         ? t.settles(
                             clock(r.settleAt - serverNow),
-                            new Date(r.settleAt).toLocaleTimeString(
-                              lang === "es" ? "es-MX" : "en-GB",
-                              {
-                                timeZone: "America/Mexico_City",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              },
-                            ),
+                            hhmm(r.settleAt),
                           )
                         : t.settling
                       : "";
