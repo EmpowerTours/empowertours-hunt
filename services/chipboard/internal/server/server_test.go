@@ -470,6 +470,23 @@ func TestWebSocketProtocol(t *testing.T) {
 	if r := rounds[0].(map[string]any); int64(r["id"].(float64)) != K0 || r["status"] != "open" || len(r["edges"].([]any)) != 11 {
 		t.Fatalf("hello round: %v", r)
 	}
+	// The trail: one [ts, price] per second up to now, oldest first, on whole
+	// seconds, each equal to the settlement rule's price at that second.
+	trail := hello["trail"].([]any)
+	if len(trail) != helloTrailS+1 {
+		t.Fatalf("hello trail: %d points, want %d", len(trail), helloTrailS+1)
+	}
+	for i, pt := range trail {
+		pair := pt.([]any)
+		ts, p := int64(pair[0].(float64)), pair[1].(float64)
+		want, ok := w.hub.settler.CloseAt(ts)
+		if ts%1000 != 0 || !ok || p != want || (i > 0 && ts != int64(trail[i-1].([]any)[0].(float64))+1000) {
+			t.Fatalf("trail[%d] = %v (rule price %v %v)", i, pair, want, ok)
+		}
+	}
+	if last := int64(trail[len(trail)-1].([]any)[0].(float64)); last > w.clock.Load() || w.clock.Load()-last >= 1000 {
+		t.Errorf("trail ends at %d, clock %d", last, w.clock.Load())
+	}
 
 	chips := make([]int, 12)
 	chips[6] = 60

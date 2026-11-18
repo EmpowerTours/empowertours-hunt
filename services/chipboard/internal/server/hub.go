@@ -419,9 +419,28 @@ func (h *Hub) broadcast(b []byte) {
 	}
 }
 
+// helloTrailS is how many seconds of the reference price hello carries, so a
+// client that just connected can draw the line before NOW instead of starting
+// from an empty chart.
+const helloTrailS = 90
+
+// trail samples the reference price once a second over the last helloTrailS
+// seconds, oldest first, as [ts, price] pairs. Seconds with no price are
+// skipped. It reads only the book, so call it without holding mu.
+func (h *Hub) trail(now int64) [][2]float64 {
+	end := now - now%1000
+	out := make([][2]float64, 0, helloTrailS+1)
+	for t := end - helloTrailS*1000; t <= end; t += 1000 {
+		if p, ok := h.settler.CloseAt(t); ok {
+			out = append(out, [2]float64{float64(t), p})
+		}
+	}
+	return out
+}
+
 // hello is the first message after auth: server time, the live rounds with
-// this player's chips on them, and today's standing.
-func (h *Hub) helloLocked(player string) []byte {
+// this player's chips on them, today's standing, and the recent price trail.
+func (h *Hub) helloLocked(player string, trail [][2]float64) []byte {
 	now := h.nowMs()
 	type roundView struct {
 		engine.Round
@@ -435,6 +454,7 @@ func (h *Hub) helloLocked(player string) []byte {
 		"t": "hello", "ts": now, "player": player, "rule": h.cfg.Rule, "rounds": rounds,
 		"chipsPerRound": engine.ChipsPerRound, "bands": engine.NB, "qualifyRounds": h.cfg.QualifyRounds,
 		"periodMs": engine.PeriodMs, "openMs": engine.OpenMs, "holdMs": engine.HoldMs, "day": engine.DayOf(now),
+		"trail": trail,
 	}
 	lb := h.tour.Leaderboard(engine.DayOf(now))
 	for _, st := range lb {

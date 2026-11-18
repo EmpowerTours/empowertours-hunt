@@ -512,6 +512,9 @@ export function PracticaGame() {
         <a href="/cota" className="text-ink-dim font-mono text-xs">
           {t.real}
         </a>
+        <a href="/cota/chips" className="text-ink-dim font-mono text-xs">
+          {lang === "es" ? "Torneo Chip Board →" : "Chip Board tournament →"}
+        </a>
         <LanguageSwitch />
       </div>
       <h1 className="text-spawn text-4xl font-black tracking-tight">

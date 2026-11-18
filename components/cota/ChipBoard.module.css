@@ -1,0 +1,375 @@
+/* Ported from the approved mockup (cota-chips.html). Layout: live chart on the
+   left of NOW; to the right, each round is a column of price bands standing at
+   its closing time. The open round's column is the big board you stack chips
+   on; locked rounds shrink to thin columns the price line runs into. Controls
+   under the board; today's tournament + rules in a right rail (stacks under on
+   phones). Single committed night look. The mockup's :root tokens live on
+   .app so they stay scoped to this screen. */
+.app {
+  --night: #120a2a;
+  --panel: #1a1038;
+  --panel-2: #22164a;
+  --edge: rgba(255, 159, 28, 0.22);
+  --text: #f6efe4;
+  --muted: #b3a7c9;
+  --marigold: #ff9f1c;
+  --rosa: #e4007c;
+  --mint: #3ee6a8;
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-num: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--night);
+  color: var(--text);
+  font-family: var(--f-display);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top side" "board side" "ctl side";
+}
+.top {
+  grid-area: top;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-block: max(12px, env(safe-area-inset-top, 0px)) 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: 16px;
+}
+.brand b {
+  display: block;
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1;
+}
+.brand span {
+  font: 500 11px var(--f-num);
+  color: var(--marigold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.brand a {
+  color: inherit;
+  text-decoration: none;
+}
+.kpis {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.kpi small {
+  display: block;
+  font: 500 10px var(--f-num);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kpi strong {
+  font: 700 19px var(--f-num);
+  font-variant-numeric: tabular-nums;
+}
+.conn {
+  font: 700 10px var(--f-num);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted);
+}
+.conn[data-state="live"] {
+  color: var(--mint);
+  border-color: rgba(62, 230, 168, 0.4);
+}
+.conn[data-state="reconnecting"],
+.conn[data-state="connecting"] {
+  color: var(--marigold);
+}
+.board {
+  grid-area: board;
+  position: relative;
+  min-height: 0;
+  touch-action: manipulation;
+}
+.board canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.ctl {
+  grid-area: ctl;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-block: 8px max(14px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: 16px;
+}
+.lbl {
+  font: 500 11px var(--f-num);
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.seg {
+  display: flex;
+  gap: 4px;
+}
+.seg button,
+.plain {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: 700 13px var(--f-num);
+  cursor: pointer;
+}
+.seg button[aria-pressed="true"] {
+  background: var(--marigold);
+  color: var(--night);
+  border-color: var(--marigold);
+}
+.plain:disabled,
+.seg button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.hand {
+  font: 700 15px var(--f-num);
+  margin-left: auto;
+}
+.hand span {
+  color: var(--marigold);
+}
+.hand span[data-flash="true"] {
+  color: var(--rosa);
+}
+.refusal {
+  flex-basis: 100%;
+  font: 700 12px var(--f-num);
+  color: var(--rosa);
+  min-height: 16px;
+}
+.app button:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 2px;
+}
+.side {
+  grid-area: side;
+  background: var(--panel);
+  border-left: 1px solid var(--edge);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding-block: 14px;
+  padding-left: 14px;
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
+  overflow-y: auto;
+}
+.side h3 {
+  margin: 0 0 6px;
+  font: 700 11px var(--f-num);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--marigold);
+}
+.lb ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lb li {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 6px;
+  font: 500 12px var(--f-num);
+  font-variant-numeric: tabular-nums;
+}
+.lb li.me {
+  color: var(--marigold);
+  font-weight: 700;
+}
+.lb .anon {
+  color: var(--muted);
+}
+.lb .note {
+  font: 500 11px var(--f-num);
+  color: var(--muted);
+  margin-top: 6px;
+}
+.rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.rd {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: 500 12px/1.4 var(--f-num);
+}
+.rd .r {
+  text-align: right;
+  font-weight: 700;
+}
+.rd small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+.empty {
+  color: var(--muted);
+  font: 500 12px var(--f-num);
+}
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: 500 11px/1.5 var(--f-num);
+  color: var(--muted);
+}
+.rules div {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 6px;
+}
+.rules div::before {
+  content: "✓";
+  color: var(--mint);
+  font-weight: 700;
+}
+.rules b {
+  color: var(--text);
+  font-weight: 700;
+}
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(12, 6, 30, 0.9);
+  backdrop-filter: blur(3px);
+  z-index: 5;
+  overflow-y: auto;
+  padding-block: 20px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.card {
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card .kicker {
+  font: 700 12px var(--f-num);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--marigold);
+}
+.card h1 {
+  margin: 0;
+  font-size: clamp(40px, 9vw, 70px);
+  font-weight: 800;
+  line-height: 0.93;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.card h1 em {
+  font-style: normal;
+  color: var(--marigold);
+}
+.card h2 {
+  margin: 0;
+  font-size: clamp(28px, 6vw, 40px);
+  font-weight: 800;
+  line-height: 1;
+}
+.card p {
+  margin: 0;
+  font: 500 15px/1.5 var(--f-display);
+  color: #ddd3ec;
+}
+.steps3 {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+  font: 500 14px/1.45 var(--f-display);
+  color: #ddd3ec;
+}
+.steps3 i {
+  font-style: normal;
+  font: 700 12px var(--f-num);
+  background: var(--marigold);
+  color: var(--night);
+  border-radius: 4px;
+  padding: 2px 7px;
+  height: fit-content;
+}
+.go {
+  align-self: flex-start;
+  border: 0;
+  border-radius: 10px;
+  padding: 14px 26px;
+  background: var(--marigold);
+  color: var(--night);
+  font: 800 20px var(--f-display);
+  cursor: pointer;
+}
+.fine {
+  font: 500 11px/1.5 var(--f-num);
+  color: var(--muted);
+}
+.langSide {
+  display: none;
+}
+@media (max-width: 760px) {
+  /* The language switch moves to the rail: on a phone its own row in the top
+     bar took the height the board needs. */
+  .langTop {
+    display: none;
+  }
+  .langSide {
+    display: block;
+  }
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto 26%;
+    grid-template-areas: "top" "board" "ctl" "side";
+  }
+  .side {
+    border-left: 0;
+    border-top: 1px solid var(--edge);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .side .rulesBox {
+    display: none;
+  }
+  .kpi strong {
+    font-size: 15px;
+  }
+  .brand b {
+    font-size: 18px;
+  }
+  .hand {
+    margin-left: 0;
+  }
+}

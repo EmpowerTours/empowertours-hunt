@@ -217,6 +217,9 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	c := &client{hub: h, player: player, ws: ws, send: make(chan outMsg, sendBuffer), ctx: ctx, cancel: cancel}
 
+	// Sampled before taking the lock: it only reads the price book.
+	trail := h.trail(h.nowMs())
+
 	// One live connection per player: the newest wins.
 	h.mu.Lock()
 	if old := h.conns[player]; old != nil {
@@ -226,7 +229,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	h.conns[player] = c
 	h.shardSeq++
 	c.shard = h.shardSeq % pxShards
-	c.enqueue(h.helloLocked(player))
+	c.enqueue(h.helloLocked(player, trail))
 	h.mu.Unlock()
 	h.inc("connections_total", 1)
 	defer func() {
