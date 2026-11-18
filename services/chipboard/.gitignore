@@ -1,0 +1,6 @@
+# local runs
+/eventlog/
+# binaries from "go build ./cmd/..."
+/chipboard
+/replay
+/loadtest
