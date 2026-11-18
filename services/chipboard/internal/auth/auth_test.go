@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const testSecret = "test-secret-test-secret-test-secret-0123"
+const testSecret = "TEST-ONLY-not-a-real-secret-chipboard-fixtures"
 
 func TestHMACRoundTrip(t *testing.T) {
 	h, err := NewHMAC(testSecret)
@@ -70,5 +70,14 @@ func TestSecretAndIDRules(t *testing.T) {
 		if ValidPlayerID(id) != want {
 			t.Errorf("ValidPlayerID(%q) != %v", id, want)
 		}
+	}
+}
+
+func TestIsTestSecret(t *testing.T) {
+	if !IsTestSecret(testSecret) {
+		t.Error("the committed test secret must be flagged")
+	}
+	if IsTestSecret(strings.Repeat("r", 32)) {
+		t.Error("a normal secret must not be flagged")
 	}
 }

@@ -41,6 +41,13 @@ const MinSecretLen = 32
 // The Next.js app mints them with the same shared secret.
 type HMAC struct{ secret []byte }
 
+// TestSecretPrefix marks the fixed secrets in this repo's tests and fixtures.
+// They are public (committed), so a server must never run with one.
+const TestSecretPrefix = "TEST-ONLY"
+
+// IsTestSecret reports whether secret is one of the committed test secrets.
+func IsTestSecret(secret string) bool { return strings.HasPrefix(secret, TestSecretPrefix) }
+
 func NewHMAC(secret string) (*HMAC, error) {
 	if len(secret) < MinSecretLen {
 		return nil, errors.New("session secret must be at least 32 characters")

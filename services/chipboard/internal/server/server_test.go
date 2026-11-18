@@ -26,7 +26,7 @@ import (
 const (
 	T0     = int64(1_800_000_000_000)
 	K0     = T0 / engine.PeriodMs
-	secret = "test-secret-test-secret-test-secret-0123"
+	secret = "TEST-ONLY-not-a-real-secret-chipboard-fixtures"
 )
 
 type nullFeed struct{}

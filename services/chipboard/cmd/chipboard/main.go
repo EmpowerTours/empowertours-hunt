@@ -90,6 +90,9 @@ func main() {
 	// connect, so refuse to start rather than run a server that looks alive.
 	var verifier auth.Verifier
 	if secret := os.Getenv("CHIPBOARD_SESSION_SECRET"); secret != "" {
+		if auth.IsTestSecret(secret) {
+			log.Fatal("CHIPBOARD_SESSION_SECRET is a committed test secret; generate a real one")
+		}
 		v, err := auth.NewHMAC(secret)
 		if err != nil {
 			log.Fatalf("CHIPBOARD_SESSION_SECRET: %v", err)

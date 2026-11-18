@@ -75,4 +75,12 @@ describe("chipboard tokens", () => {
       .digest("base64url");
     expect(tok).toBe(`ana.1800003600.${want}`);
   });
+  it("refuses the committed test secret as a real one", () => {
+    expect(sessionSecret({ CHIPBOARD_SESSION_SECRET: fixture.secret })).toBe(
+      null,
+    );
+    expect(
+      sessionSecret({ CHIPBOARD_SESSION_SECRET: "r".repeat(32) }),
+    ).not.toBe(null);
+  });
 });

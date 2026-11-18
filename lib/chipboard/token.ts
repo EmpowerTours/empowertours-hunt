@@ -27,11 +27,16 @@ export function validPlayerId(id: string): boolean {
 }
 
 /** The configured secret, or null when it is missing or too short (fail closed). */
+export const TEST_SECRET_PREFIX = "TEST-ONLY";
+
 export function sessionSecret(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
   const s = env.CHIPBOARD_SESSION_SECRET;
-  return s && s.length >= MIN_SECRET_LEN ? s : null;
+  // Secrets starting TEST-ONLY are committed test fixtures, public by
+  // definition: refuse them like a missing secret (the Go server does too).
+  if (!s || s.startsWith(TEST_SECRET_PREFIX)) return null;
+  return s.length >= MIN_SECRET_LEN ? s : null;
 }
 
 export function mintToken(
