@@ -10,7 +10,13 @@ const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 // dependency cannot quietly start asking for a camera on an outdoor game.
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
+  // Only www.empowertours.xyz / empowertours.xyz may frame the app (portfolio
+  // embed). No X-Frame-Options: DENY would block that embed regardless of CSP.
+  {
+    key: "Content-Security-Policy",
+    value:
+      "frame-ancestors https://www.empowertours.xyz https://empowertours.xyz",
+  },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
     key: "Permissions-Policy",
