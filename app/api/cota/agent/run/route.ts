@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { loadPerpKey } from "@/lib/cota/keystore";
 import { executableMarket, planClose, planOpen } from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
+import { REAL_MONEY_CLOSED, realMoneyAllowed } from "@/lib/cota/real-money";
 import { readMark, readBook } from "@/lib/cota/venue/market-data";
 import { readAccountPositions } from "@/lib/cota/venue/account-read";
 import {
@@ -160,6 +161,14 @@ export async function POST(req: Request) {
         .catch((e) => console.error("[cota/agent] decision log failed", e));
     };
 
+    // Real money is founder-only (lib/cota/real-money.ts). A hunter who is not
+    // on the allowlist gets no unattended action at all, opens or closes; their
+    // own close button (/api/cota/close) stays open to them.
+    if (!realMoneyAllowed(cota.player.walletAddress)) {
+      log({ act: "nothing", why: REAL_MONEY_CLOSED });
+      continue;
+    }
+
     // The grant, re-verified. A row someone wrote without the hunter's key
     // fails here and the hunter is skipped entirely.
     const grant = await verifyStoredGrant({
@@ -295,6 +304,7 @@ export async function POST(req: Request) {
           continue;
         }
         const result = await placeOrder({
+          ownerWallet: cota.player.walletAddress,
           apiKey: cred.apiKey,
           secretHex: cred.secretHex,
           market,
@@ -393,6 +403,7 @@ export async function POST(req: Request) {
       }
 
       const result = await placeOrder({
+        ownerWallet: cota.player.walletAddress,
         apiKey: cred.apiKey,
         secretHex: cred.secretHex,
         market,

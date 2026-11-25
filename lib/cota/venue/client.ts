@@ -29,9 +29,12 @@ import {
 import {
   MT_API_KEY_SIGNIN,
   MT_ORDER_UPDATE,
+  T_CLOSE_LONG,
+  T_CLOSE_SHORT,
   orderFrame,
   type Market,
 } from "../order";
+import { REAL_MONEY_CLOSED_TEXT, realMoneyAllowed } from "../real-money";
 
 const WS_BASE = process.env.PERPL_WS_URL ?? "wss://app.perpl.xyz";
 const TRADING_WS_PATH = "/ws/v1/trading";
@@ -48,6 +51,12 @@ const TRADING_WS_PATH = "/ws/v1/trading";
 const lastRequestIdByAccount = new Map<number, number>();
 
 export interface PlaceOrderArgs {
+  /**
+   * The hunter's own wallet (Player.walletAddress). Required so the transport
+   * can refuse an order that opens exposure for a wallet that is not on the
+   * real-money allowlist, even if a route forgot to ask. See ../real-money.ts.
+   */
+  ownerWallet: string;
   apiKey: string;
   /** Ed25519 signing secret, hex — the enrolled key. */
   secretHex: string;
@@ -127,11 +136,39 @@ function b64url(bytes: Uint8Array): string {
 }
 
 /**
+ * Whether an order type only reduces exposure. Anything else, including a type
+ * this file does not know, counts as opening and is gated.
+ */
+export function isReducingOrderType(orderType: number): boolean {
+  return orderType === T_CLOSE_LONG || orderType === T_CLOSE_SHORT;
+}
+
+/**
  * Authenticate and place one order. Resolves with the outcome (accepted +
  * filled, accepted-but-unfilled, or rejected); rejects only on transport
  * failure or a total timeout with no answer at all.
+ *
+ * Defence in depth: an order that opens exposure for a wallet that is not on
+ * the real-money allowlist is refused here, before a socket opens. Closing and
+ * reducing stay allowed for everyone, so nobody is trapped in a position.
  */
 export function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {
+  if (
+    !isReducingOrderType(args.orderType) &&
+    !realMoneyAllowed(args.ownerWallet)
+  ) {
+    return Promise.resolve({
+      account: null,
+      sentToVenue: false,
+      accepted: false,
+      filled: false,
+      code: -1,
+      error: REAL_MONEY_CLOSED_TEXT.en,
+      fill: null,
+      update: null,
+      requestId: null,
+    });
+  }
   const chainId = args.chainId ?? 143;
   const timeoutMs = args.timeoutMs ?? 15_000;
   const fillWaitMs = args.fillWaitMs ?? 6_000;

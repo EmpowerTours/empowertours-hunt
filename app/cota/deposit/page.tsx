@@ -1,5 +1,7 @@
 "use client";
 
+import { RealMoneyGate } from "@/components/cota/RealMoneyAccess";
+
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
@@ -106,7 +108,7 @@ const T = {
   },
 } as const;
 
-export default function DepositPage() {
+function DepositPageInner() {
   const lang: Lang = useLocale() === "es" ? "es" : "en";
   const t = T[lang];
   const auth = useAuthSlot();
@@ -415,5 +417,14 @@ export default function DepositPage() {
         </>
       )}
     </main>
+  );
+}
+
+/** Founder-only while real-money Cota is closed; see lib/cota/real-money.ts. */
+export default function DepositPage() {
+  return (
+    <RealMoneyGate>
+      <DepositPageInner />
+    </RealMoneyGate>
   );
 }

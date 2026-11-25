@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  RealMoneyClosedNotice,
+  useRealMoneyAccess,
+} from "@/components/cota/RealMoneyAccess";
+
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { formatEther, formatUnits, parseEther, parseUnits } from "viem";
@@ -204,6 +209,9 @@ const ERC20 = [
 
 export default function SpotPage() {
   const lang: Lang = useLocale() === "es" ? "es" : "en";
+  // Founder-only real money (lib/cota/real-money.ts): buying and selling are
+  // disabled when closed; withdrawing from Kuru to the hunter's own wallet is not.
+  const realMoney = useRealMoneyAccess();
   const t = T[lang];
   const auth = useAuthSlot();
   const address = auth.walletAddress as `0x${string}` | null;
@@ -571,6 +579,8 @@ export default function SpotPage() {
         <LanguageSwitch />
       </header>
 
+      {realMoney === "closed" && <RealMoneyClosedNotice />}
+
       {auth.status !== "signed-in" ? (
         <div className="flex min-h-0 flex-1 flex-col justify-center gap-4">
           <p className="text-ink-dim text-sm">{t.lede}</p>
@@ -757,7 +767,9 @@ export default function SpotPage() {
           <div className="shrink-0 pb-1">
             <Button
               onClick={() => void doTrade()}
-              disabled={phase === "working" || out === null}
+              disabled={
+                realMoney !== "open" || phase === "working" || out === null
+              }
             >
               {phase !== "working"
                 ? t.trade

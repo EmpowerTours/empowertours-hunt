@@ -10,6 +10,7 @@ import {
   type MarketSnapshot,
 } from "@/lib/cota/propose";
 import { MON_MARKET } from "@/lib/cota/order";
+import { realMoneyAllowed, realMoneyClosedBody } from "@/lib/cota/real-money";
 import { readMark } from "@/lib/cota/venue/market-data";
 import { boundFromRow } from "@/lib/cota/bound";
 import { type DayState } from "@/lib/cota/enforce";
@@ -44,6 +45,9 @@ const Input = z.object({
 export async function POST(req: Request) {
   try {
     const player = await requirePlayer(req);
+    if (!realMoneyAllowed(player.walletAddress)) {
+      return NextResponse.json(realMoneyClosedBody(), { status: 403 });
+    }
     const parsed = Input.safeParse(await req.json().catch(() => ({})));
     const digest = parsed.success ? parsed.data.digest : undefined;
 

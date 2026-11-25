@@ -221,7 +221,10 @@ export async function POST(req: Request) {
     }
 
     const agentOrderId = newAgentOrderId();
+    // Not gated by the real-money allowlist on purpose: closing is how a hunter
+    // gets out, and placeOrder lets reducing orders through for everyone.
     const result = await placeOrder({
+      ownerWallet: player.walletAddress,
       apiKey: cred.apiKey,
       secretHex: cred.secretHex,
       market,

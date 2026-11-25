@@ -12,6 +12,7 @@ import { prisma } from "@/lib/db/prisma";
 import { loadPerpKey } from "@/lib/cota/keystore";
 import { executableMarket, planOpen } from "@/lib/cota/order";
 import { placeOrder } from "@/lib/cota/venue/client";
+import { realMoneyAllowed, realMoneyClosedBody } from "@/lib/cota/real-money";
 import { readMark } from "@/lib/cota/venue/market-data";
 import type { AccountSnapshot } from "@/lib/cota/venue/frames";
 import {
@@ -69,6 +70,9 @@ const Input = z.object({
 export async function POST(req: Request) {
   try {
     const player = await requirePlayer(req);
+    if (!realMoneyAllowed(player.walletAddress)) {
+      return NextResponse.json(realMoneyClosedBody(), { status: 403 });
+    }
     const parsed = Input.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json({ error: "bad request" }, { status: 400 });
@@ -276,6 +280,7 @@ export async function POST(req: Request) {
     const agentOrderId = newAgentOrderId();
 
     const result = await placeOrder({
+      ownerWallet: player.walletAddress,
       apiKey: cred.apiKey,
       secretHex: cred.secretHex,
       market,

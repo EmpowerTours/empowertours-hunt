@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  RealMoneyClosedNotice,
+  useRealMoneyAccess,
+} from "@/components/cota/RealMoneyAccess";
+
 import Link from "next/link";
 import { trackActivation, trackCoreAction } from "@/components/analytics/track";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -108,6 +113,9 @@ export default function CotaPage() {
   const t = useTranslations("cota");
   // The read-back carries both languages per line; the active locale picks one.
   const lang = useLocale() === "es" ? "es" : "en";
+  // Founder-only real money (lib/cota/real-money.ts). Closed: the one-click
+  // panel is replaced by the notice and signing a leash is disabled.
+  const realMoney = useRealMoneyAccess();
 
   const [markets, setMarkets] = useState<Market[] | null>(null);
   const [marketsFailed, setMarketsFailed] = useState(false);
@@ -344,7 +352,11 @@ export default function CotaPage() {
           both, with the hunter's actual numbers instead of a general warning —
           and a general warning above a specific one is read as neither. */}
       {/* The one control. Everything else on this page is now behind it. */}
-      <OneClickPanel lang={lang} />
+      {realMoney === "closed" ? (
+        <RealMoneyClosedNotice />
+      ) : realMoney === "loading" ? null : (
+        <OneClickPanel lang={lang} />
+      )}
 
       {/* Every destination, behind one disclosure.
           These eleven links are each a real step and they were each a button
@@ -671,7 +683,10 @@ export default function CotaPage() {
             <Button
               onClick={() => void onSign()}
               disabled={
-                busy || ceilings === null || maxNotional < MIN_LIVE_NOTIONAL_USD
+                realMoney !== "open" ||
+                busy ||
+                ceilings === null ||
+                maxNotional < MIN_LIVE_NOTIONAL_USD
               }
             >
               {busy ? t("signing") : t("sign")}

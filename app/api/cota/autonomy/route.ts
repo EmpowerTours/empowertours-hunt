@@ -4,6 +4,7 @@ import { AuthError, requirePlayer } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
 import { AUTONOMY_MODES, verifyStoredGrant } from "@/lib/cota/autonomy";
 import { governsLiveOrders } from "@/lib/cota/active-leash";
+import { realMoneyAllowed, realMoneyClosedBody } from "@/lib/cota/real-money";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/autonomy — grant or withdraw the agent's permission to act on
@@ -47,6 +48,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "bad request" }, { status: 400 });
     }
     const { digest, mode } = parsed.data;
+
+    // A grant lets the agent trade real money unattended: founder-only for now.
+    // Withdrawing ("off") stays open to everyone, under every condition.
+    if (mode !== "off" && !realMoneyAllowed(player.walletAddress)) {
+      return NextResponse.json(realMoneyClosedBody(), { status: 403 });
+    }
 
     const cota = await prisma.cota.findFirst({
       where: { digest, playerId: player.id },
