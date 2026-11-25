@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
+import { realMoneyAllowed, realMoneyClosedBody } from "@/lib/cota/real-money";
 import {
   AuroraError,
   DEPOSIT_TYPES,
@@ -116,6 +117,11 @@ function fail(err: unknown) {
 export async function GET(req: Request) {
   try {
     const player = await requirePlayer(req);
+    // An Aurora address converts any-chain assets into Monad funds for Cota:
+    // founder-only for now, like the rest of real-money Cota.
+    if (!realMoneyAllowed(player.walletAddress)) {
+      return NextResponse.json(realMoneyClosedBody(), { status: 403 });
+    }
     const url = new URL(req.url);
     const chain = url.searchParams.get("depositChain") ?? DEFAULT_CHAIN;
     if (!isDepositChain(chain)) {
@@ -187,6 +193,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const player = await requirePlayer(req);
+    if (!realMoneyAllowed(player.walletAddress)) {
+      return NextResponse.json(realMoneyClosedBody(), { status: 403 });
+    }
 
     const body = Post.safeParse(await req.json().catch(() => ({})));
     if (!body.success) {

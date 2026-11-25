@@ -1,5 +1,7 @@
 "use client";
 
+import { RealMoneyGate } from "@/components/cota/RealMoneyAccess";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale } from "next-intl";
 import type { Hex, TypedDataDefinition } from "viem";
@@ -135,7 +137,7 @@ function fmtDate(ms: number, locale: string): string {
   }
 }
 
-export default function CotaEnrollPage() {
+function CotaEnrollPageInner() {
   const auth = useAuthSlot();
   const locale = useLocale() === "es" ? "es" : "en";
   const t = T[locale];
@@ -490,5 +492,14 @@ export default function CotaEnrollPage() {
         </div>
       ) : null}
     </main>
+  );
+}
+
+/** Founder-only while real-money Cota is closed; see lib/cota/real-money.ts. */
+export default function CotaEnrollPage() {
+  return (
+    <RealMoneyGate>
+      <CotaEnrollPageInner />
+    </RealMoneyGate>
   );
 }

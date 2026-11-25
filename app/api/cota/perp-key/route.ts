@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, requirePlayer } from "@/lib/auth";
 import { getPerpKeyStatus, storePerpKey } from "@/lib/cota/keystore";
+import { realMoneyAllowed, realMoneyClosedBody } from "@/lib/cota/real-money";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/perp-key — a hunter hands their enrolled Perpl trading key to
@@ -25,6 +26,9 @@ const Input = z.object({
 export async function POST(req: Request) {
   try {
     const player = await requirePlayer(req);
+    if (!realMoneyAllowed(player.walletAddress)) {
+      return NextResponse.json(realMoneyClosedBody(), { status: 403 });
+    }
     const parsed = Input.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json({ error: "bad request" }, { status: 400 });

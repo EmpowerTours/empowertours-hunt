@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { AuthError, requirePlayer } from "@/lib/auth";
+import { realMoneyAllowed, realMoneyClosedBody } from "@/lib/cota/real-money";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/enroll/payload — step 1 of Perpl enrolment, proxied.
@@ -19,6 +21,21 @@ function perplApiUrl(): string {
 }
 
 export async function POST(req: Request) {
+  // Enrolling a Perpl trading key is the first step of real-money Cota, so it
+  // needs a session and an allowlisted wallet (lib/cota/real-money.ts).
+  try {
+    const player = await requirePlayer(req);
+    if (!realMoneyAllowed(player.walletAddress)) {
+      return NextResponse.json(realMoneyClosedBody(), { status: 403 });
+    }
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: "sign in first" }, { status: 401 });
+    }
+    console.error("[cota/enroll] session read failed", err);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
+  }
+
   const origin = process.env.PERPL_ORIGIN;
   if (!origin) {
     return NextResponse.json(

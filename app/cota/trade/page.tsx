@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  RealMoneyClosedNotice,
+  useRealMoneyAccess,
+} from "@/components/cota/RealMoneyAccess";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
@@ -431,6 +436,9 @@ function Sparkline({ closes }: { closes: number[] }) {
 
 export default function TradePage() {
   const lang: Lang = useLocale() === "es" ? "es" : "en";
+  // Founder-only real money (lib/cota/real-money.ts). Opening, Kimi, autonomy
+  // grants and forwarding are disabled when closed; close and revoke are not.
+  const realMoney = useRealMoneyAccess();
   const t = T[lang];
   const auth = useAuthSlot();
 
@@ -1164,6 +1172,8 @@ export default function TradePage() {
         <LanguageSwitch className="shrink-0" />
       </header>
 
+      {realMoney === "closed" && <RealMoneyClosedNotice />}
+
       {auth.status !== "signed-in" ? (
         <Panel className="space-y-3">
           <SignInPrompt label={t.signIn} />
@@ -1426,6 +1436,7 @@ export default function TradePage() {
             <Button
               onClick={() => void place()}
               disabled={
+                realMoney !== "open" ||
                 placePhase === "placing" ||
                 decision === null ||
                 !decision.ok ||
@@ -1541,7 +1552,9 @@ export default function TradePage() {
                 role="switch"
                 aria-checked={autonomy !== "off"}
                 aria-label={t.agentSimple}
-                disabled={autoBusy}
+                disabled={
+                  autoBusy || (autonomy === "off" && realMoney !== "open")
+                }
                 onClick={() =>
                   void setAutonomyMode(autonomy === "off" ? "exit_only" : "off")
                 }
@@ -1706,7 +1719,7 @@ export default function TradePage() {
             <Button
               tone="ghost"
               onClick={() => void suggest()}
-              disabled={kimiBusy}
+              disabled={kimiBusy || realMoney !== "open"}
             >
               {kimiBusy ? t.suggesting : `✨ ${t.suggest}`}
             </Button>
@@ -1738,7 +1751,9 @@ export default function TradePage() {
                   <button
                     key={mode}
                     type="button"
-                    disabled={autoBusy}
+                    disabled={
+                      autoBusy || (mode !== "off" && realMoney !== "open")
+                    }
                     onClick={() => void setAutonomyMode(mode)}
                     className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-2 text-left ${
                       autonomy === mode ? "border-phosphor" : "border-hull-line"
@@ -1904,7 +1919,7 @@ export default function TradePage() {
             {forwardingOff && (
               <Button
                 onClick={() => void enableForwarding()}
-                disabled={fwdBusy}
+                disabled={fwdBusy || realMoney !== "open"}
               >
                 {fwdBusy ? t.fwdFixing : t.fwdFix}
               </Button>

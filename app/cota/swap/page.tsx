@@ -1,5 +1,7 @@
 "use client";
 
+import { RealMoneyGate } from "@/components/cota/RealMoneyAccess";
+
 import { useCallback, useEffect, useState } from "react";
 import { trackFeature } from "@/components/analytics/track";
 import { useLocale } from "next-intl";
@@ -166,7 +168,7 @@ const T = {
  */
 const GAS_RESERVE_FALLBACK = parseEther("0.2");
 
-export default function SwapPage() {
+function SwapPageInner() {
   const lang: Lang = useLocale() === "es" ? "es" : "en";
   const t = T[lang];
   const auth = useAuthSlot();
@@ -562,5 +564,14 @@ export default function SwapPage() {
         </>
       )}
     </main>
+  );
+}
+
+/** Founder-only while real-money Cota is closed; see lib/cota/real-money.ts. */
+export default function SwapPage() {
+  return (
+    <RealMoneyGate>
+      <SwapPageInner />
+    </RealMoneyGate>
   );
 }

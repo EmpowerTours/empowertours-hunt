@@ -3,6 +3,7 @@ import { postOnlyResponse } from "@/lib/cota/post-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { mayOpen, mustHalt, type EnforcedBound } from "@/lib/cota/enforce";
+import { REAL_MONEY_CLOSED, realMoneyAllowed } from "@/lib/cota/real-money";
 
 // ---------------------------------------------------------------------------
 // POST /api/cota/check — the seam between a signed bound and an agent.
@@ -99,6 +100,7 @@ export async function POST(req: Request) {
         notBefore: true,
         notAfter: true,
         revokedAt: true,
+        player: { select: { walletAddress: true } },
       },
     });
     if (row === null) {
@@ -106,6 +108,13 @@ export async function POST(req: Request) {
         { allow: false, reason: "unknown_cota" },
         { status: 404 },
       );
+    }
+
+    // An OPEN for a hunter who is not on the real-money allowlist is refused
+    // before the bound is even judged. A halt poll (no order) is still
+    // answered, because it only ever tells an agent to reduce.
+    if (input.order && !realMoneyAllowed(row.player.walletAddress)) {
+      return NextResponse.json({ allow: false, reason: REAL_MONEY_CLOSED });
     }
 
     const bound: EnforcedBound = {

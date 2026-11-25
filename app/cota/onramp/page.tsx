@@ -1,5 +1,7 @@
 "use client";
 
+import { RealMoneyGate } from "@/components/cota/RealMoneyAccess";
+
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { useAuthSlot } from "@/app/providers";
@@ -154,7 +156,7 @@ function formatWhen(iso: string | null, lang: Lang): string | null {
   });
 }
 
-export default function OnrampPage() {
+function OnrampPageInner() {
   const lang = (useLocale() as Lang) ?? "en";
   const t = COPY[lang] ?? COPY.en;
   const auth = useAuthSlot();
@@ -469,5 +471,14 @@ export default function OnrampPage() {
         </>
       )}
     </main>
+  );
+}
+
+/** Founder-only while real-money Cota is closed; see lib/cota/real-money.ts. */
+export default function OnrampPage() {
+  return (
+    <RealMoneyGate>
+      <OnrampPageInner />
+    </RealMoneyGate>
   );
 }

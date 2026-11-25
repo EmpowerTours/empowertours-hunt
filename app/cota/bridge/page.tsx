@@ -1,5 +1,7 @@
 "use client";
 
+import { RealMoneyGate } from "@/components/cota/RealMoneyAccess";
+
 import dynamic from "next/dynamic";
 import { useLocale } from "next-intl";
 
@@ -48,7 +50,7 @@ const T = {
   },
 } as const;
 
-export default function CotaBridgePage() {
+function CotaBridgePageInner() {
   const t = T[useLocale() === "es" ? "es" : "en"];
 
   return (
@@ -75,5 +77,14 @@ export default function CotaBridgePage() {
 
       <BridgeWidget title={t.widgetTitle} />
     </main>
+  );
+}
+
+/** Founder-only while real-money Cota is closed; see lib/cota/real-money.ts. */
+export default function CotaBridgePage() {
+  return (
+    <RealMoneyGate>
+      <CotaBridgePageInner />
+    </RealMoneyGate>
   );
 }

@@ -6,6 +6,7 @@ import { verifyCotaSignature } from "@/lib/auth/eip712";
 import { checkLimit } from "@/lib/ratelimit";
 import { cotaDigest, isCotaVenue } from "@/lib/cota/typedData";
 import { verifyAnchorTx } from "@/lib/cota/anchor";
+import { realMoneyAllowed, realMoneyClosedBody } from "@/lib/cota/real-money";
 
 // ---------------------------------------------------------------------------
 // Storing a signed Cota.
@@ -58,6 +59,11 @@ function secondsToDate(v: string): Date {
 export async function POST(req: Request) {
   try {
     const player = await requirePlayer(req);
+    // Signing a leash authorises real-money orders, so it is founder-only for
+    // now. Listing (GET) and revoking stay open to everyone.
+    if (!realMoneyAllowed(player.walletAddress)) {
+      return NextResponse.json(realMoneyClosedBody(), { status: 403 });
+    }
 
     const limit = await checkLimit("cota", {
       playerId: player.id,
